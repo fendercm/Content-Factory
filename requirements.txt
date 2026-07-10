@@ -1,0 +1,43 @@
+# ── LLM ─────────────────────────────────────────────────────────────────────
+groq>=0.9.0
+openai>=1.30.0            # Cerebras client (OpenAI-compatible)
+google-genai>=0.5.0       # Gemini 2.0 Flash (safety + quality scorer)
+
+# ── Env ──────────────────────────────────────────────────────────────────────
+python-dotenv>=1.0.0
+
+# ── Voice ────────────────────────────────────────────────────────────────────
+edge-tts>=6.1.9
+requests>=2.31.0
+
+# ── Subtitles ────────────────────────────────────────────────────────────────
+openai-whisper>=20231117
+
+# ── Image / Video processing ─────────────────────────────────────────────────
+Pillow>=10.0.0
+numpy>=1.24.0             # fast gradient rendering in assembly_agent
+
+# ── Beat sync (optional, improves cut timing) ────────────────────────────────
+# librosa>=0.10.0         # uncomment to enable beat-sync; requires ffmpeg
+# soundfile>=0.12.1       # required by librosa
+
+# ── Research ─────────────────────────────────────────────────────────────────
+pytrends>=4.9.0           # Google Trends
+feedparser>=6.0.10        # RSS feeds (Google News, Habr, vc.ru)
+ddgs>=5.0.0               # DuckDuckGo search (no key required)
+
+# ── Reddit (Trend Scout) ─────────────────────────────────────────────────────
+praw>=7.7.0
+
+# ── Web API server (Admin Panel) ─────────────────────────────────────────────
+flask>=3.0.0
+
+# ── Scheduler ────────────────────────────────────────────────────────────────
+schedule>=1.2.0
+
+# ── Silero TTS (optional, local CPU inference) ───────────────────────────────
+# torch>=2.0.0            # uncomment for Silero TTS; large download ~2GB
+# torchaudio>=2.0.0
+# omegaconf>=2.3.0
+# soundfile>=0.12.1
+# scipy>=1.11.0

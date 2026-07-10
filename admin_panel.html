@@ -1,0 +1,1181 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Content Factory — Admin Panel</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0a0c14;color:#e0e0e0;min-height:100vh}
+
+/* ── Topbar ── */
+.topbar{background:#111320;border-bottom:1px solid #1e2235;padding:12px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:200}
+.topbar-l{display:flex;align-items:center;gap:14px}
+.logo{font-size:15px;font-weight:800;color:#fff;letter-spacing:-.3px}
+.logo span{color:#D97757}
+.conn{display:flex;align-items:center;gap:5px}
+.dot{width:7px;height:7px;border-radius:50%;background:#22c55e;transition:background .3s}
+.dot.off{background:#ef4444}
+.conn-txt{font-size:11px;color:#22c55e;transition:color .3s}
+.conn-txt.off{color:#ef4444}
+.topbar-r{display:flex;align-items:center;gap:8px}
+.clock{font-size:12px;color:#444;font-variant-numeric:tabular-nums}
+.btn{padding:6px 14px;border-radius:7px;font-size:12px;font-weight:600;border:none;cursor:pointer;transition:all .15s}
+.btn-primary{background:#D97757;color:#fff}.btn-primary:hover{background:#c1522a}
+.btn-ghost{background:#1e2235;color:#888}.btn-ghost:hover{background:#262a3e;color:#ddd}
+.btn-danger{background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3)}
+.btn-danger:hover{background:rgba(239,68,68,.25)}
+.btn-sm{padding:4px 10px;font-size:11px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* ── Layout ── */
+.layout{display:grid;grid-template-columns:210px 1fr;min-height:calc(100vh - 49px)}
+.sidebar{background:#0d0f1c;border-right:1px solid #1e2235;padding:12px 0;overflow-y:auto}
+.sl{font-size:10px;font-weight:700;color:#333;letter-spacing:1px;text-transform:uppercase;padding:10px 14px 4px}
+.ni{display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:7px;font-size:12px;color:#666;cursor:pointer;margin:1px 8px;transition:all .15s}
+.ni:hover{background:#161928;color:#bbb}
+.ni.active{background:#161928;color:#fff}
+.ni-ic{font-size:13px;width:18px;text-align:center;flex-shrink:0}
+.ni-badge{margin-left:auto;background:#D97757;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:99px}
+
+/* ── Main ── */
+.main{padding:20px;overflow-y:auto;min-height:0}
+.page{display:none}.page.active{display:block}
+.pg-title{font-size:18px;font-weight:700;color:#fff;margin-bottom:3px}
+.pg-sub{font-size:12px;color:#555;margin-bottom:18px}
+
+/* ── Offline banner ── */
+.offline{display:none;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);border-radius:9px;padding:9px 14px;margin-bottom:14px;font-size:12px;color:#ef4444}
+.offline.show{display:block}
+
+/* ── KPI ── */
+.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+.kpi{background:#111320;border:1px solid #1e2235;border-radius:11px;padding:14px 16px}
+.kpi-lbl{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
+.kpi-val{font-size:26px;font-weight:700;color:#fff;margin-bottom:2px}
+.kpi-sub{font-size:11px;color:#22c55e}.kpi-sub.down{color:#ef4444}.kpi-sub.warn{color:#f59e0b}
+
+/* ── Card ── */
+.card{background:#111320;border:1px solid #1e2235;border-radius:11px;padding:18px;margin-bottom:14px}
+.card-title{font-size:13px;font-weight:600;color:#fff;margin-bottom:14px;display:flex;align-items:center;gap:7px}
+
+/* ── Launch panel ── */
+.launch{background:linear-gradient(135deg,#111320,#161928);border:1px solid #2a2d4e;border-radius:11px;padding:16px;margin-bottom:14px}
+.launch-title{font-size:13px;font-weight:700;color:#fff;margin-bottom:12px;display:flex;align-items:center;gap:6px}
+.launch-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.form-sel,.form-inp{background:#0a0c14;border:1px solid #1e2235;border-radius:7px;padding:7px 10px;font-size:12px;color:#ddd;outline:none;transition:border-color .15s}
+.form-sel:focus,.form-inp:focus{border-color:#D97757}
+.form-inp{flex:1;min-width:160px}
+.form-sel option{background:#111320}
+.check-row{display:flex;align-items:center;gap:5px;font-size:12px;color:#888;cursor:pointer;user-select:none}
+.check-row input{accent-color:#D97757}
+.launch-btns{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+.progress-wrap{background:#0a0c14;border-radius:99px;height:4px;overflow:hidden;margin-bottom:7px}
+.progress-bar{height:100%;background:linear-gradient(90deg,#3b82f6,#D97757);border-radius:99px;width:0;transition:width .5s}
+.launch-status{font-size:11px;color:#666;min-height:16px}
+.launch-status.active{color:#3b82f6}
+.launch-status.done{color:#22c55e}
+.launch-status.err{color:#ef4444}
+
+/* ── Pipeline mini flow ── */
+.pipe-mini{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.pm-step{padding:5px 8px;border-radius:6px;font-size:9px;font-weight:700;text-align:center;min-width:60px;border:1.5px solid;cursor:default}
+.pm-idle{background:#161928;border-color:#1e2235;color:#444}
+.pm-running{background:rgba(59,130,246,.12);border-color:#3b82f6;color:#3b82f6;animation:pm-pulse 1.2s infinite}
+.pm-done{background:rgba(34,197,94,.1);border-color:#22c55e;color:#22c55e}
+.pm-error{background:rgba(239,68,68,.1);border-color:#ef4444;color:#ef4444}
+.pm-arrow{color:#2a2d3e;font-size:12px}
+@keyframes pm-pulse{0%,100%{opacity:1}50%{opacity:.5}}
+
+/* ── Agent Feed ── */
+.feed-wrap{background:#0a0c14;border:1px solid #1e2235;border-radius:11px;overflow:hidden}
+.feed-hdr{padding:10px 14px;border-bottom:1px solid #1e2235;display:flex;align-items:center;justify-content:space-between}
+.feed-hdr-l{font-size:12px;font-weight:600;color:#fff;display:flex;align-items:center;gap:6px}
+.feed-live{width:6px;height:6px;border-radius:50%;background:#22c55e;animation:feed-blink 1.5s infinite}
+@keyframes feed-blink{0%,100%{opacity:1}50%{opacity:.2}}
+.feed-msgs{height:280px;overflow-y:auto;padding:8px 12px;display:flex;flex-direction:column;gap:3px}
+.feed-msgs.tall{height:calc(100vh - 180px)}
+.feed-msg{display:flex;align-items:baseline;gap:6px;padding:3px 0;font-size:12px;animation:msg-in .2s ease-out}
+@keyframes msg-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.feed-ts{font-size:10px;color:#333;font-variant-numeric:tabular-nums;flex-shrink:0;width:62px}
+.feed-sender{font-weight:600;flex-shrink:0;white-space:nowrap}
+.feed-arrow{color:#333;flex-shrink:0}
+.feed-recv{font-weight:500;flex-shrink:0;white-space:nowrap}
+.feed-colon{color:#444;flex-shrink:0}
+.feed-text{color:#aaa;line-height:1.4}
+.feed-empty{color:#333;font-size:12px;padding:20px;text-align:center}
+
+/* ── Pipeline viz ── */
+.pipe-viz{display:flex;flex-direction:column;gap:0}
+.pipe-row{display:flex;align-items:center;gap:0}
+.pipe-node{display:flex;flex-direction:column;align-items:center;gap:3px;flex:1;min-width:0}
+.pipe-box{width:100%;max-width:110px;padding:9px 6px;border-radius:9px;border:2px solid;text-align:center;cursor:default;transition:all .3s;position:relative}
+.pipe-box-em{font-size:18px;margin-bottom:2px}
+.pipe-box-name{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+.pipe-box-msg{font-size:8px;margin-top:3px;opacity:.8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100px}
+.pipe-box-stat{font-size:8px;font-weight:600;margin-top:2px}
+.pb-idle{background:#111320;border-color:#1e2235;color:#444}
+.pb-running{background:rgba(59,130,246,.12);border-color:#3b82f6;color:#3b82f6;animation:pb-pulse 1s infinite;box-shadow:0 0 12px rgba(59,130,246,.3)}
+.pb-done{background:rgba(34,197,94,.08);border-color:#22c55e;color:#22c55e}
+.pb-error{background:rgba(239,68,68,.1);border-color:#ef4444;color:#ef4444}
+@keyframes pb-pulse{0%,100%{box-shadow:0 0 8px rgba(59,130,246,.3)}50%{box-shadow:0 0 18px rgba(59,130,246,.6)}}
+.pipe-connector{display:flex;align-items:center;justify-content:center;width:24px;flex-shrink:0;position:relative;overflow:hidden}
+.pipe-arr{color:#2a2d3e;font-size:14px;transition:color .3s;z-index:1}
+.pipe-arr.flowing{color:#3b82f6;animation:arr-flow .6s infinite}
+@keyframes arr-flow{0%,100%{opacity:.3}50%{opacity:1}}
+.pipe-row-conn{display:flex;justify-content:flex-end;padding-right:calc(50% - 55px);height:20px;align-items:center}
+.pipe-row-conn .down-arr{color:#2a2d3e;font-size:16px}
+.pipe-row-conn-l{display:flex;justify-content:flex-start;padding-left:calc(50% - 55px);height:20px;align-items:center}
+
+/* ── Tables ── */
+.tbl{width:100%;border-collapse:collapse}
+.tbl th{text-align:left;font-size:10px;color:#444;font-weight:700;padding:7px 10px;border-bottom:1px solid #1e2235;text-transform:uppercase;letter-spacing:.5px}
+.tbl td{padding:9px 10px;font-size:12px;border-bottom:1px solid #111320;vertical-align:top}
+.tbl tr:hover td{background:#111828}
+.tbl-clickable{cursor:pointer}
+.tbl-clickable td:first-child::before{content:'▶';margin-right:5px;font-size:9px;color:#444;transition:transform .2s;display:inline-block}
+.tbl-clickable.open td:first-child::before{transform:rotate(90deg)}
+
+/* ── Badge ── */
+.badge{display:inline-block;padding:2px 7px;border-radius:99px;font-size:10px;font-weight:700}
+.b-ok{background:rgba(34,197,94,.15);color:#22c55e}
+.b-err{background:rgba(239,68,68,.15);color:#ef4444}
+.b-run{background:rgba(59,130,246,.15);color:#3b82f6}
+.b-pend{background:rgba(107,114,128,.15);color:#6b7280}
+.b-pub{background:rgba(217,119,87,.15);color:#D97757}
+
+.pill{display:inline-block;padding:2px 6px;border-radius:99px;font-size:10px;font-weight:600}
+.p-yt{background:rgba(255,0,0,.12);color:#ff4444}
+.p-tt{background:rgba(255,0,80,.12);color:#ff0050}
+.p-ig{background:rgba(225,48,108,.12);color:#E1306C}
+.p-li{background:rgba(0,119,181,.12);color:#0077B5}
+.p-tw{background:rgba(29,161,242,.12);color:#1da1f2}
+
+/* ── Ideas ── */
+.idea-expand{background:#0d0f1c;border-top:1px solid #1e2235;padding:12px 14px;font-size:11px}
+.idea-expand-sec{margin-bottom:8px}
+.idea-expand-lbl{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:#444;margin-bottom:3px}
+.idea-expand-val{color:#bbb;line-height:1.5}
+.idea-tags{display:flex;gap:4px;flex-wrap:wrap}
+.idea-tag{background:#1e2235;color:#888;font-size:10px;padding:2px 7px;border-radius:99px}
+.script-block{background:#0a0c14;border:1px solid #1e2235;border-radius:7px;padding:10px;font-size:11px;color:#aaa;line-height:1.6;white-space:pre-wrap;max-height:160px;overflow-y:auto;margin-top:4px}
+
+/* ── Filter bar ── */
+.filters{display:flex;gap:8px;margin-bottom:14px;align-items:center;flex-wrap:wrap}
+.filter-chip{padding:4px 12px;border-radius:99px;font-size:11px;font-weight:600;border:1px solid #1e2235;background:#111320;color:#666;cursor:pointer;transition:all .15s}
+.filter-chip:hover{border-color:#444;color:#bbb}
+.filter-chip.active{background:#D97757;border-color:#D97757;color:#fff}
+
+/* ── Agents grid ── */
+.agents-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.ag-card{background:#111320;border:1px solid #1e2235;border-radius:11px;padding:13px;transition:border-color .15s}
+.ag-card:hover{border-color:#2a2d4e}
+.ag-hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px}
+.ag-name{font-size:12px;font-weight:700;color:#fff}
+.ag-model{font-size:10px;color:#444;margin-top:1px}
+.ag-stats{display:flex;gap:10px;margin-top:8px;padding-top:8px;border-top:1px solid #1e2235}
+.ag-s{text-align:center}.ag-sv{font-size:14px;font-weight:700;color:#fff}.ag-sl{font-size:9px;color:#444;text-transform:uppercase}
+
+/* ── Tests ── */
+.tests-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.test-card{background:#111320;border:1px solid #1e2235;border-radius:10px;padding:12px;display:flex;align-items:center;gap:10px}
+.test-em{font-size:20px;flex-shrink:0;width:28px;text-align:center}
+.test-info{flex:1;min-width:0}
+.test-name{font-size:12px;font-weight:700;color:#fff;margin-bottom:1px}
+.test-desc{font-size:10px;color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.test-result{font-size:10px;margin-top:3px;min-height:13px}
+.test-result.ok{color:#22c55e}
+.test-result.fail{color:#ef4444}
+.test-result.running{color:#3b82f6}
+
+/* ── Logs ── */
+.log-box{background:#060810;border:1px solid #1e2235;border-radius:10px;padding:12px;font-family:'Courier New',monospace;font-size:11px;height:420px;overflow-y:auto}
+.ll{padding:1px 0;line-height:1.7}
+.ll-info{color:#3b82f6}.ll-success{color:#22c55e}.ll-error{color:#ef4444}.ll-warn{color:#f59e0b}.ll-dim{color:#333}
+
+/* ── Settings ── */
+.set-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.set-card{background:#111320;border:1px solid #1e2235;border-radius:11px;padding:15px}
+.set-title{font-size:12px;font-weight:700;color:#fff;margin-bottom:11px}
+.fr{margin-bottom:10px}
+.fl{font-size:10px;color:#555;margin-bottom:3px;display:block}
+.fi{width:100%;background:#0a0c14;border:1px solid #1e2235;border-radius:7px;padding:7px 10px;font-size:12px;color:#ddd;outline:none}
+.fi:focus{border-color:#D97757}
+.tog-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid #111320}
+.tog-lbl{font-size:12px;color:#888}
+.tog{width:34px;height:18px;background:#1e2235;border-radius:99px;position:relative;cursor:pointer;transition:background .2s}
+.tog.on{background:#D97757}
+.tog::after{content:'';position:absolute;width:12px;height:12px;background:#fff;border-radius:50%;top:3px;left:3px;transition:left .2s}
+.tog.on::after{left:19px}
+
+/* ── Skeleton ── */
+.skel{background:linear-gradient(90deg,#161928 25%,#1e2235 50%,#161928 75%);background-size:200% 100%;animation:shimmer 1.4s infinite;border-radius:7px;height:20px}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:#0a0c14}
+::-webkit-scrollbar-thumb{background:#1e2235;border-radius:3px}
+
+/* ── Scheduler ── */
+.sched-slot{display:flex;align-items:center;gap:12px;padding:11px 14px;background:#0a0c14;border-radius:8px;margin-bottom:8px}
+.sched-time{font-size:22px;font-weight:800;color:#D97757;width:52px;flex-shrink:0}
+.sched-lbl{font-size:12px;color:#ddd}.sched-sub{font-size:10px;color:#444}
+.code-blk{background:#060810;border:1px solid #1e2235;border-radius:8px;padding:10px 14px;font-family:monospace;font-size:12px;color:#22c55e;margin-top:8px}
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="topbar-l">
+    <div class="logo">Content<span>Factory</span></div>
+    <div class="conn">
+      <div class="dot" id="connDot"></div>
+      <div class="conn-txt" id="connTxt">Подключение...</div>
+    </div>
+  </div>
+  <div class="topbar-r">
+    <div class="clock" id="clock"></div>
+  </div>
+</div>
+
+<div class="layout">
+
+<!-- SIDEBAR -->
+<div class="sidebar">
+  <div class="sl">Главное</div>
+  <div class="ni active" onclick="nav('dashboard',this)"><span class="ni-ic">📊</span> Дашборд</div>
+  <div class="ni" onclick="nav('feed',this)"><span class="ni-ic">💬</span> Лента агентов <span class="ni-badge" id="feedBadge" style="display:none">NEW</span></div>
+  <div class="ni" onclick="nav('pipeline',this)"><span class="ni-ic">⚡</span> Пайплайн</div>
+  <div class="ni" onclick="nav('ideas',this)"><span class="ni-ic">💡</span> Идеи</div>
+  <div class="ni" onclick="nav('agents',this)"><span class="ni-ic">🤖</span> Агенты</div>
+  <div class="sl">Мониторинг</div>
+  <div class="ni" onclick="nav('runs',this)"><span class="ni-ic">📋</span> История</div>
+  <div class="ni" onclick="nav('logs',this)"><span class="ni-ic">🖥</span> Логи</div>
+  <div class="ni" onclick="nav('tests',this)"><span class="ni-ic">🧪</span> Тесты</div>
+  <div class="sl">Система</div>
+  <div class="ni" onclick="nav('scheduler',this)"><span class="ni-ic">⏰</span> Расписание</div>
+  <div class="ni" onclick="nav('settings',this)"><span class="ni-ic">⚙️</span> Настройки</div>
+</div>
+
+<div class="main">
+
+<!-- ═══ DASHBOARD ═══ -->
+<div class="page active" id="page-dashboard">
+  <div class="pg-title">Дашборд</div>
+  <div class="pg-sub" id="lastRunSub">Последний запуск: —</div>
+  <div class="offline show" id="offlineBanner">⚠️ Нет подключения к серверу. Запустите: <code>py utils/api_server.py</code></div>
+
+  <div class="kpi-grid">
+    <div class="kpi"><div class="kpi-lbl">Видео сегодня</div><div class="kpi-val" id="k1">—</div><div class="kpi-sub" id="k1s">загрузка...</div></div>
+    <div class="kpi"><div class="kpi-lbl">Опубликовано всего</div><div class="kpi-val" id="k2">—</div><div class="kpi-sub" id="k2s">загрузка...</div></div>
+    <div class="kpi"><div class="kpi-lbl">Ошибок сегодня</div><div class="kpi-val" id="k3">—</div><div class="kpi-sub" id="k3s" class="kpi-sub">загрузка...</div></div>
+    <div class="kpi"><div class="kpi-lbl">Аккаунтов</div><div class="kpi-val" id="k4">—</div><div class="kpi-sub warn" id="k4s">загрузка...</div></div>
+  </div>
+
+  <!-- Launch Panel -->
+  <div class="launch">
+    <div class="launch-title">▶ Запустить пайплайн</div>
+    <div class="launch-row">
+      <select class="form-sel" id="lNiche">
+        <option value="психология">🧠 Психология</option>
+        <option value="бизнес">💼 Бизнес</option>
+        <option value="здоровье">💪 Здоровье</option>
+        <option value="технологии">💻 Технологии</option>
+        <option value="деньги">💰 Деньги</option>
+        <option value="саморазвитие">🚀 Саморазвитие</option>
+        <option value="мотивация">🔥 Мотивация</option>
+        <option value="продуктивность">⚡ Продуктивность</option>
+      </select>
+      <select class="form-sel" id="lPlatform">
+        <option value="youtube" selected>YouTube</option>
+        <option value="tiktok">TikTok</option>
+        <option value="instagram">Instagram</option>
+        <option value="linkedin">LinkedIn</option>
+        <option value="twitter">Twitter</option>
+      </select>
+      <label class="check-row"><input type="checkbox" id="lDryRun"> Dry Run</label>
+    </div>
+    <div class="launch-row">
+      <input class="form-inp" id="lCustomTopic" placeholder="Своя тема (опционально — пропустит Trend Scout)">
+    </div>
+    <div class="launch-btns">
+      <button class="btn btn-primary" id="btnRun" onclick="startRun()">▶ Создать видео</button>
+      <button class="btn btn-danger btn-sm" id="btnStop" onclick="stopRun()" disabled>⏹ Стоп</button>
+      <div style="font-size:11px;color:#444;margin-left:4px" id="runPid"></div>
+    </div>
+    <div class="progress-wrap"><div class="progress-bar" id="pBar"></div></div>
+    <div class="launch-status" id="runStatus">Готов к запуску</div>
+  </div>
+
+  <!-- Pipeline mini -->
+  <div class="card">
+    <div class="card-title">⚡ Текущий пайплайн</div>
+    <div class="pipe-mini" id="pipeMini"></div>
+  </div>
+
+  <!-- Agent Feed mini -->
+  <div class="feed-wrap" style="margin-bottom:14px">
+    <div class="feed-hdr">
+      <div class="feed-hdr-l"><div class="feed-live"></div> Лента агентов</div>
+      <button class="btn btn-ghost btn-sm" onclick="nav('feed',document.querySelector('.ni:nth-child(3)'))">Открыть полную →</button>
+    </div>
+    <div class="feed-msgs" id="feedMini"><div class="feed-empty">Сообщений пока нет. Запустите пайплайн.</div></div>
+  </div>
+
+  <!-- Recent runs -->
+  <div class="card">
+    <div class="card-title">📋 Последние запуски</div>
+    <table class="tbl">
+      <thead><tr><th>Тема</th><th>Ниша</th><th>Платформа</th><th>Статус</th><th>Дата</th></tr></thead>
+      <tbody id="recentRuns"><tr><td colspan="5" style="color:#333;text-align:center;padding:16px">Загрузка...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ═══ FEED ═══ -->
+<div class="page" id="page-feed">
+  <div class="pg-title">Лента агентов</div>
+  <div class="pg-sub">Живые сообщения от каждого агента в реальном времени</div>
+  <div class="feed-wrap">
+    <div class="feed-hdr">
+      <div class="feed-hdr-l"><div class="feed-live"></div> Agent Feed — SSE live</div>
+      <button class="btn btn-ghost btn-sm" onclick="clearFeed()">Очистить</button>
+    </div>
+    <div class="feed-msgs tall" id="feedFull"><div class="feed-empty">Сообщений пока нет. Запустите пайплайн.</div></div>
+  </div>
+</div>
+
+<!-- ═══ PIPELINE ═══ -->
+<div class="page" id="page-pipeline">
+  <div class="pg-title">Пайплайн</div>
+  <div class="pg-sub" id="pipeRunId">run_id: —</div>
+  <div class="card">
+    <div class="card-title">🔄 Визуализация в реальном времени</div>
+    <div id="pipeViz"></div>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <div class="card-title">📊 Детальный статус</div>
+    <div id="pipeDetail"></div>
+  </div>
+</div>
+
+<!-- ═══ IDEAS ═══ -->
+<div class="page" id="page-ideas">
+  <div class="pg-title">Идеи</div>
+  <div class="pg-sub">Все сгенерированные идеи из pipeline.db</div>
+  <div class="filters" id="ideasFilters">
+    <span style="font-size:11px;color:#555">Статус:</span>
+    <div class="filter-chip active" onclick="filterIdeas('',this)">Все</div>
+    <div class="filter-chip" onclick="filterIdeas('published',this)">Опубликовано</div>
+    <div class="filter-chip" onclick="filterIdeas('failed',this)">Ошибка</div>
+    <div class="filter-chip" onclick="filterIdeas('pending',this)">Ожидает</div>
+  </div>
+  <div class="card">
+    <table class="tbl" id="ideasTbl">
+      <thead><tr><th>Дата</th><th>Ниша</th><th>Тема</th><th>Крючок</th><th>Статус</th></tr></thead>
+      <tbody id="ideasBody"><tr><td colspan="5" style="color:#333;text-align:center;padding:20px">Загрузка...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ═══ AGENTS ═══ -->
+<div class="page" id="page-agents">
+  <div class="pg-title">Агенты</div>
+  <div class="pg-sub">Статистика и статус каждого агента пайплайна</div>
+  <div class="agents-grid" id="agGrid"><div class="skel" style="height:100px;grid-column:1/-1"></div></div>
+</div>
+
+<!-- ═══ RUNS ═══ -->
+<div class="page" id="page-runs">
+  <div class="pg-title">История запусков</div>
+  <div class="pg-sub">Все запуски пайплайна из pipeline.db</div>
+  <div class="card">
+    <table class="tbl">
+      <thead><tr><th>#</th><th>Тема</th><th>Ниша</th><th>Платформа</th><th>Статус</th><th>Дата</th></tr></thead>
+      <tbody id="allRuns"><tr><td colspan="6" style="color:#333;text-align:center;padding:20px">Загрузка...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ═══ LOGS ═══ -->
+<div class="page" id="page-logs">
+  <div class="pg-title">Логи</div>
+  <div class="pg-sub">Последние строки из logs/pipeline_*.log</div>
+  <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+    <select class="form-sel" id="logLines" onchange="loadLogs()">
+      <option value="50">50 строк</option><option value="100" selected>100 строк</option>
+      <option value="200">200 строк</option><option value="500">500 строк</option>
+    </select>
+    <button class="btn btn-ghost btn-sm" onclick="loadLogs()">↻ Обновить</button>
+    <label class="check-row"><input type="checkbox" id="logAutoScroll" checked> Авто-скролл</label>
+  </div>
+  <div class="log-box" id="logBox"><div class="ll ll-dim">Загрузка...</div></div>
+</div>
+
+<!-- ═══ TESTS ═══ -->
+<div class="page" id="page-tests">
+  <div class="pg-title">Тесты агентов</div>
+  <div class="pg-sub">Быстрые тесты с мок-данными — без реальных API-вызовов</div>
+  <div style="display:flex;gap:8px;margin-bottom:14px;align-items:center">
+    <button class="btn btn-primary" onclick="runAllTests()">⚡ Запустить все</button>
+    <div style="font-size:11px;color:#555" id="testSummary"></div>
+  </div>
+  <div class="tests-grid" id="testsGrid"></div>
+</div>
+
+<!-- ═══ SCHEDULER ═══ -->
+<div class="page" id="page-scheduler">
+  <div class="pg-title">Расписание</div>
+  <div class="pg-sub">Автоматический запуск 3 раза в день</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+    <div class="card">
+      <div class="card-title">⏰ Расписание запусков</div>
+      <div class="sched-slot"><div class="sched-time">09:00</div><div><div class="sched-lbl">Утренний запуск</div><div class="sched-sub">Контент для утренней аудитории</div></div></div>
+      <div class="sched-slot"><div class="sched-time">14:00</div><div><div class="sched-lbl">Дневной запуск</div><div class="sched-sub">Пиковое время просмотров</div></div></div>
+      <div class="sched-slot"><div class="sched-time">20:00</div><div><div class="sched-lbl">Вечерний запуск</div><div class="sched-sub">Максимальная активность</div></div></div>
+      <div class="sched-slot" style="border:1px solid #1e2235;border-radius:8px"><div class="sched-time" style="color:#3b82f6">21:00</div><div><div class="sched-lbl">Ежедневная сводка</div><div class="sched-sub">Telegram: статистика дня</div></div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">🚀 Запуск</div>
+      <div style="font-size:12px;color:#666;margin-bottom:10px">Запустите в терминале и оставьте работать в фоне:</div>
+      <div class="code-blk">py scheduler.py</div>
+      <div style="margin-top:14px;font-size:11px;color:#555">Настройка через .env:<br>
+        <code style="color:#888">SCHEDULER_NICHE=психология</code><br>
+        <code style="color:#888">SCHEDULER_NICHES=психология,бизнес</code><br>
+        <code style="color:#888">SCHEDULER_PLATFORM=tiktok</code>
+      </div>
+      <div style="margin-top:14px">
+        <div style="font-size:11px;color:#555;margin-bottom:6px">Multi-niche (параллельно):</div>
+        <div class="code-blk" style="color:#3b82f6">py main.py --niches "психология,бизнес,здоровье"</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ SETTINGS ═══ -->
+<div class="page" id="page-settings">
+  <div class="pg-title">Настройки</div>
+  <div class="pg-sub">Конфигурация API ключей и параметров</div>
+  <div class="set-grid">
+    <div class="set-card">
+      <div class="set-title">🔑 API Ключи</div>
+      <div class="fr"><label class="fl">GROQ_API_KEY</label><input class="fi" type="password" placeholder="gsk_..."></div>
+      <div class="fr"><label class="fl">GEMINI_API_KEY</label><input class="fi" type="password" placeholder="AIza..."></div>
+      <div class="fr"><label class="fl">ZERNIO_API_KEY</label><input class="fi" type="password" placeholder="sk_..."></div>
+      <div class="fr"><label class="fl">PEXELS_API_KEY</label><input class="fi" type="password" placeholder="..."></div>
+      <div class="fr"><label class="fl">TELEGRAM_BOT_TOKEN</label><input class="fi" type="password" placeholder="123456:ABC..."></div>
+      <div class="fr"><label class="fl">TELEGRAM_CHAT_ID</label><input class="fi" type="text" placeholder="-100..."></div>
+    </div>
+    <div class="set-card">
+      <div class="set-title">⚙️ Параметры</div>
+      <div class="fr"><label class="fl">Ниша по умолчанию</label><input class="fi" type="text" value="психология"></div>
+      <div class="fr"><label class="fl">Платформа по умолчанию</label>
+        <select class="fi"><option>tiktok</option><option>youtube</option><option>instagram</option><option>linkedin</option></select>
+      </div>
+      <div class="fr"><label class="fl">Запусков в день</label><input class="fi" type="number" value="3"></div>
+      <div style="margin-top:12px">
+        <div class="tog-row"><span class="tog-lbl">Dry Run режим</span><div class="tog" onclick="this.classList.toggle('on')"></div></div>
+        <div class="tog-row"><span class="tog-lbl">Telegram уведомления</span><div class="tog on" onclick="this.classList.toggle('on')"></div></div>
+        <div class="tog-row"><span class="tog-lbl">Safety Agent</span><div class="tog on" onclick="this.classList.toggle('on')"></div></div>
+        <div class="tog-row"><span class="tog-lbl">QA Agent</span><div class="tog on" onclick="this.classList.toggle('on')"></div></div>
+        <div class="tog-row"><span class="tog-lbl">Fact Checker</span><div class="tog on" onclick="this.classList.toggle('on')"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /main -->
+</div><!-- /layout -->
+
+<script>
+const API = 'http://localhost:5000/api';
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const EMOJI = {
+  trend_scout:'🔍', idea_generator:'💡', topic_filter:'✅', script_writer:'✍️',
+  fact_checker:'🔎', safety_agent:'🛡️', voice_agent:'🎙️', music_agent:'🎵',
+  subtitle_agent:'💬', visual_agent:'🎬', assembly_agent:'🎞️', thumbnail_agent:'🖼️',
+  qa_agent:'✔️', publisher_agent:'🚀', notify_agent:'📨', orchestrator:'🎯',
+};
+
+const ACOLOR = {
+  trend_scout:'#3b82f6', idea_generator:'#a855f7', topic_filter:'#22c55e',
+  script_writer:'#f59e0b', fact_checker:'#06b6d4', safety_agent:'#ef4444',
+  voice_agent:'#ec4899', music_agent:'#8b5cf6', subtitle_agent:'#14b8a6',
+  visual_agent:'#f97316', assembly_agent:'#64748b', thumbnail_agent:'#84cc16',
+  qa_agent:'#10b981', publisher_agent:'#D97757', notify_agent:'#38bdf8',
+  orchestrator:'#fff',
+};
+
+const PIPELINE_STEPS = [
+  'trend_scout','idea_generator','topic_filter','script_writer','fact_checker',
+  'safety_agent','voice_agent','music_agent','subtitle_agent','visual_agent',
+  'assembly_agent','thumbnail_agent','qa_agent','publisher_agent','notify_agent',
+];
+
+const PLATFORM_CLS = {youtube:'p-yt',tiktok:'p-tt',instagram:'p-ig',linkedin:'p-li',twitter:'p-tw'};
+
+const TEST_DESCS = {
+  trend_scout:'Парсинг Google Trends и Reddit',
+  idea_generator:'Генерация идей через Groq',
+  topic_filter:'Дедупликация + Gemini safety',
+  script_writer:'Сценарий PAS через Groq',
+  fact_checker:'valid=False для текста с ошибкой',
+  safety_agent:'Проверка политик платформ',
+  voice_agent:'Синтез голоса edge-tts',
+  music_agent:'Подбор трека по настроению',
+  visual_agent:'Клипы с Pexels',
+  qa_agent:'QA через ffprobe',
+  publisher_agent:'Публикация Zernio API',
+  notify_agent:'Telegram уведомления',
+};
+
+// ── State ─────────────────────────────────────────────────────────────────────
+
+let currentPage = 'dashboard';
+let isOnline = false;
+let feedMessages = [];       // все сообщения ленты
+let lastMsgTimestamp = '';   // для polling since=
+let sseSource = null;
+let currentPipeSteps = [];
+let lastAgentMessages = {};  // key → last message text
+let ideasData = [];
+let ideasFilter = '';
+let testResults = {};        // agent_key → {success,message,duration_ms,state}
+let runPolling = null;
+
+// ── SSE / Polling ─────────────────────────────────────────────────────────────
+
+function connectSSE() {
+  if (sseSource) { sseSource.close(); sseSource = null; }
+  try {
+    sseSource = new EventSource(API + '/stream');
+    sseSource.onmessage = onSSEMsg;
+    sseSource.onerror = () => {
+      if (sseSource) { sseSource.close(); sseSource = null; }
+      setTimeout(connectSSE, 3000);
+    };
+  } catch (e) {
+    setTimeout(connectSSE, 3000);
+  }
+}
+
+function onSSEMsg(evt) {
+  let data;
+  try { data = JSON.parse(evt.data); } catch { return; }
+  setOnline(true);
+
+  if (data.type === 'message') {
+    appendFeedMsg(data);
+  } else if (data.type === 'pipeline') {
+    onPipelineUpdate(data.data);
+  } else if (data.type === 'run_status') {
+    onRunStatus(data);
+  }
+}
+
+// ── Online/offline ────────────────────────────────────────────────────────────
+
+function setOnline(online) {
+  isOnline = online;
+  const dot = document.getElementById('connDot');
+  const txt = document.getElementById('connTxt');
+  const banners = document.querySelectorAll('.offline');
+  dot.className = 'dot' + (online ? '' : ' off');
+  txt.className = 'conn-txt' + (online ? '' : ' off');
+  txt.textContent = online ? 'Сервер подключён' : 'Нет подключения';
+  banners.forEach(b => online ? b.classList.remove('show') : b.classList.add('show'));
+}
+
+// ── Feed ──────────────────────────────────────────────────────────────────────
+
+function appendFeedMsg(d) {
+  // Deduplicate by id
+  if (feedMessages.find(m => m.id === d.id)) return;
+  feedMessages.push(d);
+  if (d.timestamp > lastMsgTimestamp) lastMsgTimestamp = d.timestamp;
+  lastAgentMessages[d.sender] = d.message;
+
+  const html = buildMsgHTML(d);
+  ['feedMini','feedFull'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    // Remove empty placeholder
+    const empty = el.querySelector('.feed-empty');
+    if (empty) empty.remove();
+    const div = document.createElement('div');
+    div.innerHTML = html;
+    el.appendChild(div.firstChild);
+    // Keep max 200 items in mini, unlimited in full
+    if (id === 'feedMini' && el.children.length > 30) el.firstChild.remove();
+    el.scrollTop = el.scrollHeight;
+  });
+
+  // Badge on sidebar if not on feed page
+  if (currentPage !== 'feed') {
+    const b = document.getElementById('feedBadge');
+    if (b) b.style.display = '';
+  }
+
+  // Update pipeline viz node messages
+  if (currentPage === 'pipeline') updatePipeVizMessages();
+}
+
+function buildMsgHTML(d) {
+  const ts = fmtTime(d.timestamp);
+  const sc = ACOLOR[d.sender] || '#888';
+  const se = EMOJI[d.sender] || '🤖';
+  const senderHtml = `<span class="feed-sender" style="color:${sc}">${se} ${esc(d.sender)}</span>`;
+  let receiverHtml = '';
+  if (d.receiver) {
+    const rc = ACOLOR[d.receiver] || '#888';
+    const re = EMOJI[d.receiver] || '🤖';
+    receiverHtml = `<span class="feed-arrow">→</span><span class="feed-recv" style="color:${rc}">${re} ${esc(d.receiver)}</span>`;
+  }
+  return `<div class="feed-msg">
+    <span class="feed-ts">${ts}</span>
+    ${senderHtml}${receiverHtml}
+    <span class="feed-colon">:</span>
+    <span class="feed-text">${esc(d.message)}</span>
+  </div>`;
+}
+
+function clearFeed() {
+  feedMessages = [];
+  ['feedMini','feedFull'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = '<div class="feed-empty">Очищено.</div>';
+  });
+}
+
+// ── Pipeline ──────────────────────────────────────────────────────────────────
+
+function onPipelineUpdate(data) {
+  if (!data || !data.steps) return;
+  currentPipeSteps = data.steps;
+
+  // Mini flow on dashboard
+  renderMiniFlow(data.steps);
+
+  // Detailed viz on pipeline page
+  if (currentPage === 'pipeline') {
+    renderPipeViz(data.steps);
+    renderPipeDetail(data.steps);
+    const el = document.getElementById('pipeRunId');
+    if (el) el.textContent = 'run_id: ' + (data.run_id || '—');
+  }
+
+  // Progress bar
+  updateProgressBar(data.steps);
+}
+
+function renderMiniFlow(steps) {
+  const el = document.getElementById('pipeMini');
+  if (!el) return;
+  let html = '';
+  steps.forEach((s, i) => {
+    html += `<div class="pm-step pm-${s.status}" title="${esc(s.label)}">${esc(s.label.replace(' ','\n'))}</div>`;
+    if (i < steps.length - 1) html += `<div class="pm-arrow">›</div>`;
+  });
+  el.innerHTML = html;
+}
+
+function renderPipeViz(steps) {
+  const el = document.getElementById('pipeViz');
+  if (!el) return;
+  const rows = [
+    ['trend_scout','idea_generator','topic_filter','script_writer','fact_checker'],
+    ['safety_agent','voice_agent','music_agent','subtitle_agent','visual_agent'],
+    ['assembly_agent','thumbnail_agent','qa_agent','publisher_agent','notify_agent'],
+  ];
+  const stepMap = {};
+  steps.forEach(s => stepMap[s.key] = s);
+
+  let html = '';
+  rows.forEach((row, ri) => {
+    html += '<div class="pipe-row">';
+    row.forEach((key, ci) => {
+      const s = stepMap[key] || {status:'idle', label: key};
+      const em = EMOJI[key] || '🤖';
+      const lastMsg = lastAgentMessages[key] || '';
+      const statusLabel = {idle:'Ожидание',running:'Выполняется...',done:'Готово',error:'Ошибка'}[s.status] || s.status;
+      const flowing = (s.status === 'running') ? ' flowing' : '';
+      html += `<div class="pipe-node">
+        <div class="pipe-box pb-${s.status}">
+          <div class="pipe-box-em">${em}</div>
+          <div class="pipe-box-name">${esc(s.label)}</div>
+          ${lastMsg ? `<div class="pipe-box-msg" title="${esc(lastMsg)}">${esc(lastMsg.slice(0,35))}${lastMsg.length>35?'…':''}</div>` : ''}
+          <div class="pipe-box-stat">${statusLabel}</div>
+        </div>
+      </div>`;
+      if (ci < row.length - 1) {
+        html += `<div class="pipe-connector"><span class="pipe-arr${flowing}">›</span></div>`;
+      }
+    });
+    html += '</div>';
+
+    // Connection arrow between rows
+    if (ri < rows.length - 1) {
+      const lastKey = row[row.length - 1];
+      const nextFirstKey = rows[ri + 1][0];
+      const lastS = stepMap[lastKey] || {};
+      const flowing = lastS.status === 'done' ? ' flowing' : '';
+      // Arrow pointing from end of row down and to start of next row
+      html += `<div style="display:flex;align-items:center;margin:4px 0">
+        <div style="flex:1"></div>
+        <div style="width:24px;text-align:center;color:${lastS.status==='done'?'#22c55e':'#2a2d3e'};font-size:14px">↓</div>
+        <div style="flex:4"></div>
+      </div>`;
+    }
+  });
+  el.innerHTML = html;
+}
+
+function updatePipeVizMessages() {
+  if (currentPage === 'pipeline') renderPipeViz(currentPipeSteps);
+}
+
+function renderPipeDetail(steps) {
+  const el = document.getElementById('pipeDetail');
+  if (!el) return;
+  const colors = {idle:'#333',running:'#3b82f6',done:'#22c55e',error:'#ef4444'};
+  const labels = {idle:'Ожидание',running:'Выполняется...',done:'Готово',error:'Ошибка'};
+  el.innerHTML = steps.map(s => {
+    const c = colors[s.status] || '#333';
+    const em = EMOJI[s.key] || '🤖';
+    const err = s.status === 'error' && s.error
+      ? `<span style="font-size:10px;color:#ef4444;margin-left:8px">${esc(s.error)}</span>` : '';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #111320">
+      <span style="font-size:16px;width:22px;text-align:center">${em}</span>
+      <div style="width:140px;font-size:12px;color:#ddd">${esc(s.label)}</div>
+      <div style="font-size:11px;color:${c}">${labels[s.status]||s.status}${err}</div>
+      ${s.updated_at ? `<div style="font-size:10px;color:#333;margin-left:auto">${fmtTime(s.updated_at)}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+// ── Run status & progress ─────────────────────────────────────────────────────
+
+function onRunStatus(data) {
+  const btnRun = document.getElementById('btnRun');
+  const btnStop = document.getElementById('btnStop');
+  const pidEl = document.getElementById('runPid');
+  const statusEl = document.getElementById('runStatus');
+
+  if (data.running) {
+    if (btnRun) btnRun.disabled = true;
+    if (btnStop) btnStop.disabled = false;
+    const meta = data.meta || {};
+    if (pidEl) pidEl.textContent = `PID: ${meta.pid || '?'}`;
+    if (statusEl) { statusEl.className = 'launch-status active'; statusEl.textContent = `Пайплайн запущен: ${meta.niche||'?'} / ${meta.platform||'?'}${meta.dry_run ? ' [dry-run]' : ''}`; }
+  } else {
+    if (btnRun) btnRun.disabled = false;
+    if (btnStop) btnStop.disabled = true;
+    if (pidEl) pidEl.textContent = '';
+    if (data.meta && statusEl && statusEl.classList.contains('active')) {
+      const code = data.exit_code;
+      statusEl.className = 'launch-status ' + (code === 0 ? 'done' : 'err');
+      statusEl.textContent = code === 0 ? '✓ Пайплайн завершён успешно' : `✗ Пайплайн завершился с ошибкой (код ${code})`;
+    }
+  }
+}
+
+function updateProgressBar(steps) {
+  const total = PIPELINE_STEPS.length;
+  const done = steps.filter(s => s.status === 'done').length;
+  const pct = Math.round(done / total * 100);
+  const bar = document.getElementById('pBar');
+  if (bar) bar.style.width = pct + '%';
+
+  const runningStep = steps.find(s => s.status === 'running');
+  const statusEl = document.getElementById('runStatus');
+  if (statusEl && runningStep && statusEl.classList.contains('active')) {
+    const em = EMOJI[runningStep.key] || '🤖';
+    statusEl.textContent = `${em} ${runningStep.label}: выполняется... (${done}/${total})`;
+  }
+}
+
+// ── Run actions ───────────────────────────────────────────────────────────────
+
+async function startRun() {
+  const btnRun = document.getElementById('btnRun');
+  const btnStop = document.getElementById('btnStop');
+  if (btnRun) btnRun.disabled = true;
+  showStatus('active', '⏳ Запускаю...');
+
+  const body = {
+    niche: document.getElementById('lNiche').value,
+    platform: document.getElementById('lPlatform').value,
+    dry_run: document.getElementById('lDryRun').checked,
+    custom_topic: document.getElementById('lCustomTopic').value.trim(),
+  };
+  try {
+    const r = await apiFetch('/run', {method:'POST', body: JSON.stringify(body)});
+    if (r.error) {
+      if (btnRun) btnRun.disabled = false;
+      showStatus('err', '✗ ' + r.error);
+    } else {
+      if (btnStop) btnStop.disabled = false;
+      showStatus('active', `▶ Запущен: PID ${r.pid} | ниша: ${body.custom_topic || body.niche} / ${body.platform}`);
+      document.getElementById('pBar').style.width = '0%';
+    }
+  } catch (e) {
+    if (btnRun) btnRun.disabled = false;
+    showStatus('err', '✗ ' + (e.message || 'Нет подключения к API серверу — запустите start.bat'));
+  }
+}
+
+async function stopRun() {
+  try {
+    const r = await apiFetch('/run/stop', {method:'POST'});
+    showStatus('', r.error || '⏹ Остановлен');
+  } catch { }
+}
+
+function showStatus(cls, msg) {
+  const el = document.getElementById('runStatus');
+  if (!el) return;
+  el.className = 'launch-status ' + cls;
+  el.textContent = msg;
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+
+function updateStats(s) {
+  set('k1', s.videos_today);
+  set('k2', s.videos_total);
+  set('k3', s.errors_today);
+  set('k4', s.accounts);
+  set('k1s', 'за сегодня');
+  set('k2s', 'с начала работы');
+  const k3el = document.getElementById('k3s');
+  if (k3el) { k3el.textContent = s.errors_today > 0 ? `⚠ ${s.errors_today} ошибок` : '✓ Всё чисто'; k3el.className = 'kpi-sub' + (s.errors_today > 0 ? ' down' : ''); }
+  set('k4s', s.accounts > 0 ? 'Zernio подключён' : 'Нет аккаунтов');
+  if (s.last_run) set('lastRunSub', 'Последний запуск: ' + fmtDate(s.last_run));
+}
+
+// ── Runs table ────────────────────────────────────────────────────────────────
+
+function renderRecentRuns(runs) {
+  const el = document.getElementById('recentRuns');
+  if (!el) return;
+  if (!runs.length) { el.innerHTML = '<tr><td colspan="5" style="color:#333;text-align:center;padding:16px">Нет запусков</td></tr>'; return; }
+  el.innerHTML = runs.slice(0, 6).map(r => `
+    <tr>
+      <td style="color:#ddd;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.topic||'—')}</td>
+      <td style="color:#555">${esc(r.niche||'—')}</td>
+      <td><span class="pill ${PLATFORM_CLS[r.platform]||''}">${esc(r.platform||'—')}</span></td>
+      <td><span class="badge ${r.status==='success'?'b-ok':'b-err'}">${r.status==='success'?'✓ OK':'✗ Ошибка'}</span></td>
+      <td style="color:#444;font-size:11px">${fmtDate(r.date)}</td>
+    </tr>`).join('');
+}
+
+function renderAllRuns(runs) {
+  const el = document.getElementById('allRuns');
+  if (!el) return;
+  if (!runs.length) { el.innerHTML = '<tr><td colspan="6" style="color:#333;text-align:center;padding:16px">Нет запусков</td></tr>'; return; }
+  el.innerHTML = runs.map(r => `
+    <tr>
+      <td style="color:#444">#${r.id}</td>
+      <td style="color:#ddd" title="${esc(r.run_id)}">${esc(r.topic||'—')}</td>
+      <td style="color:#555">${esc(r.niche||'—')}</td>
+      <td><span class="pill ${PLATFORM_CLS[r.platform]||''}">${esc(r.platform||'—')}</span></td>
+      <td><span class="badge ${r.status==='success'?'b-ok':'b-err'}">${r.status==='success'?'✓ OK':'✗ Ошибка'}</span></td>
+      <td style="color:#444;font-size:11px">${fmtDate(r.date)}</td>
+    </tr>`).join('');
+}
+
+// ── Agents ────────────────────────────────────────────────────────────────────
+
+function renderAgents(agents) {
+  const el = document.getElementById('agGrid');
+  if (!el) return;
+  if (!agents.length) { el.innerHTML = '<div style="color:#444;grid-column:1/-1;padding:20px">Запусков ещё не было</div>'; return; }
+  el.innerHTML = agents.map(a => `
+    <div class="ag-card">
+      <div class="ag-hdr">
+        <div><div class="ag-name">${EMOJI[a.key]||'🤖'} ${esc(a.name)}</div><div class="ag-model">${esc(a.model)}</div></div>
+        <span class="badge ${a.errors>0?'b-err':'b-ok'}">${a.errors>0?a.errors+' ошибок':'OK'}</span>
+      </div>
+      <div style="font-size:10px;color:#333;margin-top:2px">${esc(a.layer)}</div>
+      <div class="ag-stats">
+        <div class="ag-s"><div class="ag-sv">${a.runs}</div><div class="ag-sl">Запусков</div></div>
+        <div class="ag-s"><div class="ag-sv">${a.errors}</div><div class="ag-sl">Ошибок</div></div>
+        <div class="ag-s"><div class="ag-sv">${a.success_rate}%</div><div class="ag-sl">Успех</div></div>
+      </div>
+    </div>`).join('');
+}
+
+// ── Logs ──────────────────────────────────────────────────────────────────────
+
+function renderLogs(lines) {
+  const el = document.getElementById('logBox');
+  if (!el) return;
+  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  if (!lines.length) { el.innerHTML = '<div class="ll ll-dim">Логов нет</div>'; return; }
+  el.innerHTML = lines.map(l => `<div class="ll ll-${l.level}">${esc(l.text)}</div>`).join('');
+  const autoScroll = document.getElementById('logAutoScroll');
+  if (atBottom || (autoScroll && autoScroll.checked)) el.scrollTop = el.scrollHeight;
+}
+
+async function loadLogs() {
+  const n = document.getElementById('logLines')?.value || 100;
+  try {
+    const logs = await apiFetch(`/logs?lines=${n}`);
+    renderLogs(logs);
+  } catch {}
+}
+
+// ── Ideas ─────────────────────────────────────────────────────────────────────
+
+async function loadIdeas() {
+  try {
+    const data = await apiFetch('/ideas?limit=200');
+    ideasData = data;
+    renderIdeas();
+  } catch {}
+}
+
+function filterIdeas(status, chipEl) {
+  ideasFilter = status;
+  document.querySelectorAll('#ideasFilters .filter-chip').forEach(c => c.classList.remove('active'));
+  if (chipEl) chipEl.classList.add('active');
+  renderIdeas();
+}
+
+function renderIdeas() {
+  const el = document.getElementById('ideasBody');
+  if (!el) return;
+  let data = ideasFilter ? ideasData.filter(d => d.status === ideasFilter) : ideasData;
+  if (!data.length) { el.innerHTML = '<tr><td colspan="5" style="color:#333;text-align:center;padding:20px">Нет идей</td></tr>'; return; }
+  el.innerHTML = data.map((d, i) => {
+    const statusBadge = {published:'<span class="badge b-pub">Опубликовано</span>',failed:'<span class="badge b-err">Ошибка</span>',pending:'<span class="badge b-pend">Ожидает</span>'}[d.status] || '';
+    return `<tr class="tbl-clickable" id="irow-${i}" onclick="toggleIdea(${i})">
+      <td style="color:#444;font-size:11px;white-space:nowrap">${fmtDate(d.date)}</td>
+      <td style="color:#555">${esc(d.niche||'—')}</td>
+      <td style="color:#ddd;font-weight:500">${esc(d.title||'—')}</td>
+      <td style="color:#888;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(d.hook||'')}">${esc((d.hook||'—').slice(0,60))}${(d.hook||'').length>60?'…':''}</td>
+      <td>${statusBadge}</td>
+    </tr>
+    <tr id="iexp-${i}" style="display:none">
+      <td colspan="5" style="padding:0">
+        <div class="idea-expand">
+          ${d.angle ? `<div class="idea-expand-sec"><div class="idea-expand-lbl">Угол подачи</div><div class="idea-expand-val">${esc(d.angle)}</div></div>` : ''}
+          ${d.hashtags?.length ? `<div class="idea-expand-sec"><div class="idea-expand-lbl">Хэштеги</div><div class="idea-tags">${d.hashtags.map(h=>`<span class="idea-tag">#${esc(h)}</span>`).join('')}</div></div>` : ''}
+          ${d.script ? `<div class="idea-expand-sec"><div class="idea-expand-lbl">Сценарий</div><pre class="script-block">${esc(d.script.full_script||'')}</pre></div>` : '<div style="color:#444;font-size:11px">Сценарий не найден</div>'}
+          <div style="font-size:10px;color:#333;margin-top:6px">run_id: ${esc(d.run_id||'—')}</div>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function toggleIdea(i) {
+  const row = document.getElementById('irow-' + i);
+  const exp = document.getElementById('iexp-' + i);
+  if (!exp) return;
+  const open = exp.style.display !== 'none';
+  exp.style.display = open ? 'none' : 'table-row';
+  if (row) row.classList.toggle('open', !open);
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+function initTests() {
+  const el = document.getElementById('testsGrid');
+  if (!el || el.children.length > 0) return;
+  const agents = Object.keys(TEST_DESCS);
+  el.innerHTML = agents.map(key => `
+    <div class="test-card" id="tc-${key}">
+      <div class="test-em">${EMOJI[key]||'🤖'}</div>
+      <div class="test-info">
+        <div class="test-name">${key.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}</div>
+        <div class="test-desc">${esc(TEST_DESCS[key]||'')}</div>
+        <div class="test-result" id="tr-${key}"></div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="runTest('${key}')">▶ Тест</button>
+    </div>`).join('');
+}
+
+async function runTest(key) {
+  const el = document.getElementById('tr-' + key);
+  if (el) { el.className = 'test-result running'; el.textContent = '⟳ Запуск...'; }
+  try {
+    const r = await apiFetch('/test/' + key, {method:'POST'});
+    testResults[key] = r;
+    if (el) {
+      el.className = 'test-result ' + (r.success ? 'ok' : 'fail');
+      el.textContent = (r.success ? '✅ OK' : '❌ FAIL') + ` (${r.duration_ms}ms) — ${r.message}`;
+    }
+  } catch (e) {
+    testResults[key] = {success:false,message:String(e),duration_ms:0};
+    if (el) { el.className = 'test-result fail'; el.textContent = '❌ Сервер недоступен'; }
+  }
+  updateTestSummary();
+}
+
+async function runAllTests() {
+  initTests();
+  const keys = Object.keys(TEST_DESCS);
+  set('testSummary', 'Запускаю...');
+  for (const key of keys) {
+    await runTest(key);
+    await new Promise(r => setTimeout(r, 100));
+  }
+  updateTestSummary();
+}
+
+function updateTestSummary() {
+  const all = Object.values(testResults);
+  if (!all.length) return;
+  const ok = all.filter(r => r.success).length;
+  const el = document.getElementById('testSummary');
+  if (el) el.textContent = `${ok}/${all.length} прошли`;
+}
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+
+function nav(id, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.ni').forEach(n => n.classList.remove('active'));
+  const page = document.getElementById('page-' + id);
+  if (page) page.classList.add('active');
+  if (el) el.classList.add('active');
+  currentPage = id;
+
+  // Clear feed badge
+  if (id === 'feed') {
+    const b = document.getElementById('feedBadge');
+    if (b) b.style.display = 'none';
+  }
+
+  // Page-specific loads
+  if (id === 'agents') loadAgents();
+  if (id === 'runs') loadRuns();
+  if (id === 'logs') loadLogs();
+  if (id === 'ideas') loadIdeas();
+  if (id === 'tests') initTests();
+  if (id === 'pipeline' && currentPipeSteps.length) {
+    renderPipeViz(currentPipeSteps);
+    renderPipeDetail(currentPipeSteps);
+  }
+  // Re-render feed full with existing messages
+  if (id === 'feed') {
+    const el = document.getElementById('feedFull');
+    if (el && feedMessages.length) {
+      el.innerHTML = '';
+      feedMessages.slice(-100).forEach(m => {
+        const div = document.createElement('div');
+        div.innerHTML = buildMsgHTML(m);
+        el.appendChild(div.firstChild);
+      });
+      el.scrollTop = el.scrollHeight;
+    }
+  }
+}
+
+// ── Data loaders ──────────────────────────────────────────────────────────────
+
+async function loadAgents() {
+  try {
+    const data = await apiFetch('/agents');
+    renderAgents(data);
+  } catch {}
+}
+
+async function loadRuns() {
+  try {
+    const data = await apiFetch('/runs');
+    renderAllRuns(data);
+  } catch {}
+}
+
+// ── Periodic refresh ──────────────────────────────────────────────────────────
+
+async function refresh() {
+  try {
+    const [stats, runs] = await Promise.all([apiFetch('/stats'), apiFetch('/runs')]);
+    setOnline(true);
+    updateStats(stats);
+    renderRecentRuns(runs);
+    if (currentPage === 'runs') renderAllRuns(runs);
+    if (currentPage === 'agents') loadAgents();
+    if (currentPage === 'logs') loadLogs();
+  } catch {
+    setOnline(false);
+  }
+}
+
+// ── API ───────────────────────────────────────────────────────────────────────
+
+async function apiFetch(path, opts = {}) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 5000);
+  const headers = {'Content-Type': 'application/json', ...(opts.headers||{})};
+  try {
+    const r = await fetch(API + path, {...opts, headers, signal: ctrl.signal});
+    clearTimeout(t);
+    const json = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const err = new Error(json.error || 'HTTP ' + r.status);
+      err.data = json;
+      throw err;
+    }
+    return json;
+  } catch (e) {
+    clearTimeout(t);
+    throw e;
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso), now = new Date();
+    const diff = Math.floor((now - d) / 60000);
+    if (diff < 1) return 'только что';
+    if (diff < 60) return diff + ' мин. назад';
+    if (diff < 1440) return Math.floor(diff/60) + ' ч. назад';
+    return d.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+  } catch { return iso; }
+}
+
+function fmtTime(iso) {
+  if (!iso) return '—';
+  try { return new Date(iso).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
+  catch { return iso.slice(11,19)||iso; }
+}
+
+function set(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = val;
+}
+
+function updateClock() {
+  set('clock', new Date().toLocaleTimeString('ru-RU'));
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+setInterval(updateClock, 1000);
+updateClock();
+
+// SSE connection
+connectSSE();
+
+// Periodic refresh for stats/runs (SSE handles pipeline/messages)
+setInterval(refresh, 5000);
+refresh();
+</script>
+</body>
+</html>

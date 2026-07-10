@@ -1,0 +1,189 @@
+2026-07-06 13:51:34,470 [INFO] orchestrator: === Запуск пайплайна run_id=20260706_105134_психология ===
+2026-07-06 13:51:34,482 [INFO] orchestrator: [trend_scout] Попытка 1/3
+2026-07-06 13:51:40,795 [INFO] agents.trend_scout: Google Trends (geo=RU): найдено 5 запросов по 'психология'
+2026-07-06 13:51:42,557 [INFO] agents.trend_scout: Ниша 'психология' не найдена в YouTube Trending — пропускаем
+2026-07-06 13:51:43,891 [INFO] agents.trend_scout: Google News RSS: найдено 10 статей по 'психология'
+2026-07-06 13:51:44,878 [INFO] agents.trend_scout: Habr RSS: найдено 5 статей по 'психология'
+2026-07-06 13:51:46,586 [INFO] agents.trend_scout: vc.ru RSS: найдено 0 статей по 'психология'
+2026-07-06 13:51:46,587 [INFO] agents.trend_scout: Trend Scout: итого 5 тем для ниши 'психология'
+2026-07-06 13:51:46,587 [INFO] orchestrator: Тренды: 5 тем
+2026-07-06 13:51:46,613 [INFO] orchestrator: [idea_generator] Попытка 1/3
+2026-07-06 13:51:46,626 [INFO] agents.idea_generator: Отправляю 5 тем в Groq для генерации идей
+2026-07-06 13:51:49,784 [INFO] httpx: HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-06 13:51:49,822 [INFO] agents.idea_generator: Idea Generator вернул 3 идей
+2026-07-06 13:51:49,822 [INFO] orchestrator: Идеи: 3 вариантов
+2026-07-06 13:51:49,835 [INFO] orchestrator: [topic_filter] Попытка 1/3
+2026-07-06 13:51:53,459 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-06 13:51:54,065 [INFO] google_genai.models: AFC is enabled with max remote calls: 10.
+2026-07-06 13:51:54,596 [INFO] httpx: HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-06 13:51:54,598 [WARNING] utils.providers: Provider 'gemini' выключен до конца процесса: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.
+2026-07-06 13:51:54,598 [WARNING] agents.topic_filter: Gemini 429 — переключаемся на Cerebras для safety-check
+2026-07-06 13:51:57,043 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-06 13:51:57,066 [INFO] agents.topic_filter: Topic Filter: входило 3 -> dedup 3 -> niche 3 -> safety 3
+2026-07-06 13:51:57,066 [INFO] orchestrator: После фильтрации: 3 идей
+2026-07-06 13:51:57,078 [INFO] orchestrator: Генерирую сценарий для идеи: 'Психология паники'
+2026-07-06 13:51:57,136 [INFO] agents.research_agent: Research Agent: исследую «Психология паники»
+2026-07-06 13:52:00,914 [INFO] httpx: HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-06 13:52:02,279 [INFO] httpx: HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-06 13:52:02,295 [INFO] agents.research_agent: Wikipedia: 4 фактов для «Психология паники»
+2026-07-06 13:52:03,085 [WARNING] agents.research_agent: Semantic Scholar: rate limit (429) — пропускаем
+2026-07-06 13:52:04,364 [INFO] primp: response: https://ru.wikipedia.org/w/api.php?action=opensearch&profile=fuzzy&limit=1&search=%D0%9F%D1%81%D0%B8%D1%85%D0%BE%D0%BB%D0%BE%D0%B3%D0%B8%D1%8F%20%D0%BF%D0%B0%D0%BD%D0%B8%D0%BA%D0%B8%20%D0%B8%D1%81%D1%81%D0%BB%D0%B5%D0%B4%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5%20%D1%81%D1%82%D0%B0%D1%82%D0%B8%D1%81%D1%82%D0%B8%D0%BA%D0%B0%20%D0%B4%D0%B0%D0%BD%D0%BD%D1%8B%D0%B5%202026 200
+2026-07-06 13:52:04,480 [INFO] primp: response: https://grokipedia.com/api/typeahead?query=%D0%9F%D1%81%D0%B8%D1%85%D0%BE%D0%BB%D0%BE%D0%B3%D0%B8%D1%8F+%D0%BF%D0%B0%D0%BD%D0%B8%D0%BA%D0%B8+%D0%B8%D1%81%D1%81%D0%BB%D0%B5%D0%B4%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5+%D1%81%D1%82%D0%B0%D1%82%D0%B8%D1%81%D1%82%D0%B8%D0%BA%D0%B0+%D0%B4%D0%B0%D0%BD%D0%BD%D1%8B%D0%B5+2026&limit=1 200
+2026-07-06 13:52:05,801 [INFO] primp: response: https://search.brave.com/search?q=%D0%9F%D1%81%D0%B8%D1%85%D0%BE%D0%BB%D0%BE%D0%B3%D0%B8%D1%8F+%D0%BF%D0%B0%D0%BD%D0%B8%D0%BA%D0%B8+%D0%B8%D1%81%D1%81%D0%BB%D0%B5%D0%B4%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5+%D1%81%D1%82%D0%B0%D1%82%D0%B8%D1%81%D1%82%D0%B8%D0%BA%D0%B0+%D0%B4%D0%B0%D0%BD%D0%BD%D1%8B%D0%B5+2026&source=web 200
+2026-07-06 13:52:05,879 [INFO] agents.research_agent: Web search via DuckDuckGo: 6 результатов для «Психология паники исследование статистика данные 2026»
+2026-07-06 13:52:06,464 [INFO] httpx: HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-06 13:52:06,499 [INFO] agents.research_agent: Web search total: 7 фактов для «Психология паники» через DuckDuckGo
+2026-07-06 13:52:07,556 [INFO] agents.research_agent: Google News: 3 новостей для «Психология паники»
+2026-07-06 13:52:07,558 [INFO] agents.research_agent: Research Agent: Собрано 14 фактов по теме «Психология паники» из 3 источников: Wikipedia, Web (DuckDuckGo), Google News
+2026-07-06 13:52:07,580 [INFO] orchestrator: [script_writer] Попытка 1/3
+2026-07-06 13:52:07,584 [INFO] agents.script_writer: Script Writer: target=60с → диапазон 140-160 слов
+2026-07-06 13:52:08,410 [INFO] httpx: HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-06 13:52:09,718 [INFO] httpx: HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-06 13:52:10,686 [INFO] httpx: HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-06 13:52:11,286 [INFO] httpx: HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-06 13:52:11,310 [INFO] orchestrator: [fact_checker] Попытка 1/3
+2026-07-06 13:52:11,316 [INFO] agents.fact_checker: Fact Checker: проверяю сценарий (891 символов)
+2026-07-06 13:52:11,410 [INFO] httpx: HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 429 Too Many Requests"
+2026-07-06 13:52:11,411 [WARNING] utils.llm_client: Groq (fact_checker) ошибка: Error code: 429 - {'error': {'message': 'Rate limit reached for model `llama-3.3-70b-versatile` in organization `org_01kr9fpzpye0f81md87dgamtdh` service tier `on_demand` on tokens per minute (TPM): Li — переключаюсь на Cerebras
+2026-07-06 13:52:11,995 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-06 13:52:11,997 [INFO] agents.fact_checker: Fact Checker: сценарий прошёл проверку
+2026-07-06 13:52:12,031 [INFO] orchestrator: Идея прошла fact-check: 'Психология паники'
+2026-07-06 13:52:12,538 [INFO] httpx: HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-06 13:52:12,550 [INFO] agents.script_writer: Hook A/B: выбран вариант 1 из 3 — 90% людей тратят деньги на панику
+2026-07-06 13:52:12,561 [INFO] orchestrator: [safety_agent] Попытка 1/3
+2026-07-06 13:52:12,565 [INFO] agents.safety_agent: GEMINI_API_KEY не задан — пропускаю Gemini
+2026-07-06 13:52:15,336 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-06 13:52:15,337 [WARNING] agents.safety_agent: Cerebras ошибка: 'NoneType' object has no attribute 'strip' — переключаюсь на Groq
+2026-07-06 13:52:15,948 [INFO] httpx: HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-06 13:52:15,949 [INFO] agents.safety_agent: Safety OK (Groq) 'Психология паники' / tiktok
+2026-07-06 13:52:15,982 [INFO] orchestrator: [voice_agent] Попытка 1/3
+2026-07-06 13:52:15,982 [INFO] orchestrator: [visual_agent] Попытка 1/3
+2026-07-06 13:52:15,991 [INFO] agents.voice_agent: Voice Agent: DASHSCOPE_API_KEY не задан — пропускаю CosyVoice
+2026-07-06 13:52:15,991 [INFO] agents.voice_agent: Voice Agent: Yandex SpeechKit выключен (budget mode или нет ключа) — пропускаю
+2026-07-06 13:52:15,991 [INFO] agents.voice_agent: Voice Agent: edge-tts (voice=ru-RU-SvetlanaNeural, rate=+0%)
+2026-07-06 13:52:15,993 [INFO] agents.visual_agent: Pexels: генерирую 25 запросов по сценарию...
+2026-07-06 13:52:16,123 [INFO] httpx: HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-06 13:52:16,159 [INFO] agents.music_agent: Определено настроение: dramatic
+2026-07-06 13:52:16,159 [INFO] agents.music_agent: Трек из локальной папки: dramatic_cinematic_01.mp3
+2026-07-06 13:52:16,159 [INFO] orchestrator: Музыка: source=local mood=dramatic
+2026-07-06 13:52:16,251 [INFO] httpx: HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 429 Too Many Requests"
+2026-07-06 13:52:16,251 [WARNING] utils.llm_client: Groq (visual_agent) ошибка: Error code: 429 - {'error': {'message': 'Rate limit reached for model `llama-3.3-70b-versatile` in organization `org_01kr9fpzpye0f81md87dgamtdh` service tier `on_demand` on tokens per minute (TPM): Li — переключаюсь на Cerebras
+2026-07-06 13:52:17,903 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-06 13:52:17,904 [ERROR] orchestrator: [visual_agent] Ошибка (попытка 1): 'NoneType' object has no attribute 'strip'
+2026-07-06 13:52:22,905 [INFO] orchestrator: [visual_agent] Попытка 2/3
+2026-07-06 13:52:22,906 [INFO] agents.visual_agent: Pexels: генерирую 25 запросов по сценарию...
+2026-07-06 13:52:23,720 [INFO] httpx: HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-06 13:52:23,754 [INFO] agents.visual_agent: Pexels запросы: ['Person thinking daylight portrait', 'Human face emotion bright', 'Calm person outdoor', 'Focused mind outdoor', 'Thinking person sunlight', 'Entrepreneur bright office', 'Success daylight', 'Professional growth outdoor', 'Fitness workout bright', 'Healthy lifestyle outdoor', 'Wellness nature sunlight', 'Worried person daylight', 'Person reflecting outdoor sunlight', 'Focused person bright', 'Happy person shopping mall', 'Modern retail store', 'People interacting daylight', 'Bright office meeting', 'Teamwork in sunlight', 'Bright city park', 'Outdoor nature walk', 'Person meditating outdoor', 'Calm person in nature', 'Bright sunlight background', 'Bright office workspace']
+2026-07-06 13:52:24,619 [INFO] agents.visual_agent: [Person thinking daylight portrait] Скачиваю клип 3796263 (11 сек)...
+2026-07-06 13:52:26,848 [INFO] agents.visual_agent: [Human face emotion bright] Скачиваю клип 8627835 (17 сек)...
+2026-07-06 13:52:28,975 [INFO] agents.visual_agent: [Calm person outdoor] Скачиваю клип 9034636 (10 сек)...
+2026-07-06 13:52:30,635 [INFO] agents.visual_agent: [Focused mind outdoor] Скачиваю клип 9034625 (10 сек)...
+2026-07-06 13:52:33,399 [INFO] agents.visual_agent: [Entrepreneur bright office] Скачиваю клип 12910143 (10 сек)...
+2026-07-06 13:52:35,397 [INFO] agents.visual_agent: [Success daylight] Скачиваю клип 8345155 (15 сек)...
+2026-07-06 13:52:37,838 [INFO] agents.visual_agent: [Fitness workout bright] Скачиваю клип 34449249 (15 сек)...
+2026-07-06 13:52:40,977 [INFO] agents.visual_agent: [Wellness nature sunlight] Скачиваю клип 38060008 (11 сек)...
+2026-07-06 13:52:45,589 [INFO] agents.voice_agent: Voice Agent: edge-tts ✓ → D:\Projects\content-factory\output\audio\20260706_135215_tiktok.mp3
+2026-07-06 13:52:45,953 [INFO] agents.visual_agent: [Person reflecting outdoor sunlight] Скачиваю клип 5981556 (12 сек)...
+2026-07-06 13:52:48,077 [INFO] agents.visual_agent: [Focused person bright] Скачиваю клип 6324045 (18 сек)...
+2026-07-06 13:52:49,543 [INFO] agents.visual_agent: [Happy person shopping mall] Скачиваю клип 7316976 (13 сек)...
+2026-07-06 13:52:52,408 [INFO] agents.visual_agent: [People interacting daylight] Скачиваю клип 35948776 (9 сек)...
+2026-07-06 13:52:55,276 [INFO] agents.visual_agent: [Teamwork in sunlight] Скачиваю клип 9517853 (5 сек)...
+2026-07-06 13:52:57,263 [INFO] agents.visual_agent: [Bright city park] Скачиваю клип 28291308 (10 сек)...
+2026-07-06 13:52:59,975 [INFO] agents.visual_agent: [Outdoor nature walk] Скачиваю клип 34299476 (16 сек)...
+2026-07-06 13:53:02,485 [INFO] agents.visual_agent: [Person meditating outdoor] Скачиваю клип 9034025 (10 сек)...
+2026-07-06 13:53:05,017 [INFO] agents.visual_agent: [Calm person in nature] Скачиваю клип 35732922 (21 сек)...
+2026-07-06 13:53:08,237 [INFO] agents.visual_agent: [Bright sunlight background] Скачиваю клип 29579799 (15 сек)...
+2026-07-06 13:53:14,014 [INFO] httpx: HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-06 13:53:18,618 [INFO] agents.subtitle_agent: Загружаю Whisper base (первый раз)...
+2026-07-06 13:53:19,463 [INFO] agents.subtitle_agent: Транскрибирую аудио: 20260706_135215_tiktok.mp3
+2026-07-06 13:53:29,462 [INFO] agents.visual_agent: get_photos: 12 фото из pexels
+2026-07-06 13:53:29,462 [INFO] orchestrator: Photos pool: 12 шт (source=pexels)
+2026-07-06 13:53:34,486 [INFO] orchestrator: Субтитры: 101 сегментов
+2026-07-06 13:53:34,504 [INFO] agents.entity_visuals: Entity Visuals: классиков не найдено
+2026-07-06 13:53:34,505 [INFO] agents.counter_overlay: Counter Overlay: найдено 3 счётчиков
+2026-07-06 13:53:34,505 [INFO] orchestrator: Counter overlays: 3 найдено
+2026-07-06 13:53:34,513 [INFO] orchestrator: [assembly_agent] Попытка 1/3
+2026-07-06 13:53:34,572 [INFO] agents.assembly_agent: Монтаж 25 клипов + burst x5 + 7 photo weave + hook overlay + 3 counters (Ken Burns + crossfade) → 1080x1920
+2026-07-06 13:53:43,350 [INFO] agents.assembly_agent: Beat-sync: выровнено 42/42 границ к ударам
+2026-07-06 13:53:44,664 [INFO] agents.assembly_agent: Hook overlay (big text) → slot 0, dur=1.28s
+2026-07-06 13:53:45,971 [INFO] agents.assembly_agent: End-card → slot 42, dur=2.20s
+2026-07-06 13:53:47,152 [INFO] agents.assembly_agent: Photo burst slot=21 @ 42.4s (5 фото)
+2026-07-06 13:53:50,757 [INFO] agents.assembly_agent: Photo weave: 7/43 слотов под фото
+2026-07-06 13:53:50,768 [INFO] agents.assembly_agent: Counter overlays: 3 drawtext фильтров добавлено
+2026-07-06 13:53:50,770 [INFO] agents.assembly_agent: Sound design: 15 SFX events
+2026-07-06 13:55:50,358 [INFO] orchestrator: Видео собрано: D:\Projects\content-factory\output\video\20260706_135334_tiktok.mp4
+2026-07-06 13:55:51,997 [WARNING] agents.thumbnail_agent: Pixazo API ошибка: HTTPSConnectionPool(host='api.pixazo.com', port=443): Max retries exceeded with url: /v1/generate (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1028)'))) — используем Pillow
+2026-07-06 13:55:52,126 [INFO] orchestrator: Thumbnail: D:\Projects\content-factory\output\thumbnails\20260706_135552_thumb_Психология_паники.jpg (source=pillow_ab)
+2026-07-06 13:55:53,161 [WARNING] agents.quality_scorer: Frame extract 82.82s failed: Command '['C:\\Users\\maxlu\\AppData\\Local\\Microsoft\\WinGet\\Links\\ffmpeg.EXE', '-y', '-ss', '82.82', '-i', 'D:\\Projects\\content-factory\\output\\video\\20260706_135334_tiktok.mp4', '-vframes', '1', '-q:v', '3', 'C:\\Users\\maxlu\\AppData\\Local\\Temp\\qs_frames_u72w4hdq\\frame_4.jpg']' returned non-zero exit status 4294967274.
+2026-07-06 13:55:54,987 [INFO] httpx: HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-06 13:55:55,001 [INFO] agents.quality_scorer: Quality Scorer: оценка через Groq meta-llama/llama-4-scout-17b-16e-instruct
+2026-07-06 13:55:55,004 [INFO] agents.quality_scorer: Quality Scorer: score=7/10 verdict=warning — Видео имеет хороший hook и композицию, но есть проблемы с визуальным разнообразием и читаемостью субтитров. Первый кадр 
+2026-07-06 13:55:55,016 [INFO] orchestrator: [qa_agent] Попытка 1/3
+2026-07-06 13:55:55,087 [INFO] agents.qa_agent: QA approved: 20260706_135334_tiktok.mp4 (1080x1920, 84.8 сек, платформа=tiktok)
+2026-07-06 13:55:55,098 [INFO] orchestrator: [publisher_agent] Попытка 1/3
+2026-07-06 13:55:55,099 [INFO] orchestrator: [publisher] DRY RUN — публикация пропущена
+2026-07-06 13:55:55,099 [INFO] orchestrator: Опубликовано: post_id=dry-run-000
+2026-07-06 13:55:55,121 [INFO] agents.topic_filter: Тема отмечена как опубликованная: 'психология это'
+2026-07-06 13:55:55,404 [INFO] httpx: HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-06 13:55:55,422 [INFO] agents.comment_writer: Comment Writer: 105 симв — Кто ещё понял, что трата денег на панику — пустая трата, ког
+2026-07-06 13:55:56,484 [INFO] orchestrator: === Пайплайн завершён успешно ===
+2026-07-06 14:26:29,200 [INFO] orchestrator: === Story-пайплайн run_id=20260706_112629_story_тёмное фэнтези ===
+2026-07-06 14:26:29,213 [INFO] orchestrator: [story_world] Попытка 1/3
+2026-07-06 14:26:29,240 [INFO] orchestrator: [story_episode] Попытка 1/3
+2026-07-06 14:26:35,029 [INFO] httpx: HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-06 14:26:35,076 [INFO] agents.story_agent: Story Agent: эпизод 1 «Тень Эреба. Эпизод 1: Пробуждение» — 71 слов, 10 сцен
+2026-07-06 14:26:35,086 [INFO] orchestrator: [safety_agent] Попытка 1/3
+2026-07-06 14:26:36,886 [INFO] google_genai.models: AFC is enabled with max remote calls: 10.
+2026-07-06 14:26:39,489 [INFO] httpx: HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-06 14:26:39,513 [WARNING] utils.providers: Provider 'gemini' выключен до конца процесса: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.
+2026-07-06 14:26:39,513 [WARNING] agents.safety_agent: Gemini 429/quota — переключаюсь на Cerebras
+2026-07-06 14:26:44,725 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-06 14:26:44,731 [INFO] agents.safety_agent: Safety OK (Cerebras) 'Тень Эреба. Эпизод 1: Пробуждение' / tiktok
+2026-07-06 14:26:44,758 [INFO] orchestrator: [voice_agent] Попытка 1/3
+2026-07-06 14:26:44,761 [INFO] agents.voice_agent: Voice Agent: DASHSCOPE_API_KEY не задан — пропускаю CosyVoice
+2026-07-06 14:26:44,763 [INFO] agents.voice_agent: Voice Agent: Yandex SpeechKit выключен (budget mode или нет ключа) — пропускаю
+2026-07-06 14:26:44,763 [INFO] agents.voice_agent: Voice Agent: edge-tts (voice=ru-RU-DmitryNeural, rate=+0%)
+2026-07-06 14:26:45,029 [INFO] httpx: HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-06 14:26:45,066 [INFO] agents.music_agent: Определено настроение: dramatic
+2026-07-06 14:26:45,067 [INFO] agents.music_agent: Трек из локальной папки: dramatic_cinematic_01.mp3
+2026-07-06 14:26:45,067 [INFO] orchestrator: Музыка: source=local mood=dramatic
+2026-07-06 14:26:45,670 [WARNING] agents.image_agent: Image Agent: попытка 1/3 ошибка: 429 Client Error: Too Many Requests for url: https://image.pollinations.ai/prompt/close-up%20of%20a%20young%20man%27s%20face%20with%20piercing%20emerald%20green%20eyes%2C%20scanning%20the%20darkness%2C%20with%20a%20mix%20of%20fear%20and%20determination%20on%20his%20face%2C%20lit%20by%20a%20faint%2C%20flickering%20candlelight%2C%20dark%20fantasy%20digital%20painting%2C%20muted%20dark%20blue%20and%20crimson%20palette%2C%20dramatic%20rim%20lighting%2C%20cinematic%20composition%2C%20highly%20detailed?width=1080&height=1920&seed=90622&model=flux&nologo=true&enhance=false
+2026-07-06 14:26:46,041 [INFO] agents.image_agent: Image Agent: сгенерировано (49 КБ) → scene_19cebc56c35ad1ef.jpg
+2026-07-06 14:26:46,588 [WARNING] agents.image_agent: Image Agent: попытка 1/3 ошибка: 429 Client Error: Too Many Requests for url: https://image.pollinations.ai/prompt/a%20wide%20shot%20of%20the%20deserted%20street%2C%20with%20the%20street%20lamps%20flickering%20in%20unison%2C%20casting%20an%20ominous%20glow%2C%20as%20if%20warning%20of%20an%20impending%20danger%2C%20with%20a%20dark%2C%20foreboding%20sky%20in%20the%20background%2C%20dark%20fantasy%20digital%20painting%2C%20muted%20dark%20blue%20and%20crimson%20palette%2C%20dramatic%20rim%20lighting%2C%20cinematic%20composition%2C%20highly%20detailed?width=1080&height=1920&seed=90622&model=flux&nologo=true&enhance=false
+2026-07-06 14:26:54,197 [WARNING] agents.image_agent: Image Agent: попытка 2/3 ошибка: 429 Client Error: Too Many Requests for url: https://image.pollinations.ai/prompt/close-up%20of%20a%20young%20man%27s%20face%20with%20piercing%20emerald%20green%20eyes%2C%20scanning%20the%20darkness%2C%20with%20a%20mix%20of%20fear%20and%20determination%20on%20his%20face%2C%20lit%20by%20a%20faint%2C%20flickering%20candlelight%2C%20dark%20fantasy%20digital%20painting%2C%20muted%20dark%20blue%20and%20crimson%20palette%2C%20dramatic%20rim%20lighting%2C%20cinematic%20composition%2C%20highly%20detailed?width=1080&height=1920&seed=90622&model=flux&nologo=true&enhance=false
+2026-07-06 14:26:56,894 [WARNING] agents.image_agent: Image Agent: попытка 2/3 ошибка: 429 Client Error: Too Many Requests for url: https://image.pollinations.ai/prompt/a%20wide%20shot%20of%20the%20deserted%20street%2C%20with%20the%20street%20lamps%20flickering%20in%20unison%2C%20casting%20an%20ominous%20glow%2C%20as%20if%20warning%20of%20an%20impending%20danger%2C%20with%20a%20dark%2C%20foreboding%20sky%20in%20the%20background%2C%20dark%20fantasy%20digital%20painting%2C%20muted%20dark%20blue%20and%20crimson%20palette%2C%20dramatic%20rim%20lighting%2C%20cinematic%20composition%2C%20highly%20detailed?width=1080&height=1920&seed=90622&model=flux&nologo=true&enhance=false
+2026-07-06 14:26:58,172 [INFO] agents.voice_agent: Voice Agent: edge-tts ✓ → D:\Projects\content-factory\output\audio\20260706_142644_tiktok.mp3
+2026-07-06 14:27:11,444 [INFO] agents.image_agent: Image Agent: сгенерировано (36 КБ) → scene_88528b4515ccbde2.jpg
+2026-07-06 14:27:14,833 [WARNING] agents.image_agent: Image Agent: попытка 3/3 ошибка: 429 Client Error: Too Many Requests for url: https://image.pollinations.ai/prompt/a%20wide%20shot%20of%20the%20deserted%20street%2C%20with%20the%20street%20lamps%20flickering%20in%20unison%2C%20casting%20an%20ominous%20glow%2C%20as%20if%20warning%20of%20an%20impending%20danger%2C%20with%20a%20dark%2C%20foreboding%20sky%20in%20the%20background%2C%20dark%20fantasy%20digital%20painting%2C%20muted%20dark%20blue%20and%20crimson%20palette%2C%20dramatic%20rim%20lighting%2C%20cinematic%20composition%2C%20highly%20detailed?width=1080&height=1920&seed=90622&model=flux&nologo=true&enhance=false
+2026-07-06 14:27:15,424 [WARNING] agents.image_agent: Image Agent: попытка 1/3 ошибка: 429 Client Error: Too Many Requests for url: https://image.pollinations.ai/prompt/a%20young%20man%20in%20his%20mid-20s%20with%20short%2C%20jet%20black%20hair%2C%20piercing%20emerald%20green%20eyes%2C%20strong%20jawline%2C%20black%20leather%20jacket%20with%20silver%20studs%2C%20walking%20quickly%20down%20the%20street%2C%20looking%20over%20his%20shoulder%2C%20as%20if%20being%20pursued%2C%20with%20a%20sense%20of%20urgency%20and%20fear%20in%20his%20movements%2C%20dark%20fantasy%20digital%20painting%2C%20muted%20dark%20blue%20and%20crimson%20palette%2C%20dramatic%20rim%20lighting%2C%20cinematic%20composition%2C%20highly%20detailed?width=1080&height=1920&seed=90622&model=flux&nologo=true&enhance=false
+2026-07-06 14:27:24,332 [WARNING] agents.image_agent: Image Agent: попытка 2/3 ошибка: 429 Client Error: Too Many Requests for url: https://image.pollinations.ai/prompt/a%20young%20man%20in%20his%20mid-20s%20with%20short%2C%20jet%20black%20hair%2C%20piercing%20emerald%20green%20eyes%2C%20strong%20jawline%2C%20black%20leather%20jacket%20with%20silver%20studs%2C%20walking%20quickly%20down%20the%20street%2C%20looking%20over%20his%20shoulder%2C%20as%20if%20being%20pursued%2C%20with%20a%20sense%20of%20urgency%20and%20fear%20in%20his%20movements%2C%20dark%20fantasy%20digital%20painting%2C%20muted%20dark%20blue%20and%20crimson%20palette%2C%20dramatic%20rim%20lighting%2C%20cinematic%20composition%2C%20highly%20detailed?width=1080&height=1920&seed=90622&model=flux&nologo=true&enhance=false
+2026-07-06 14:27:31,178 [INFO] agents.image_agent: Image Agent: сгенерировано (50 КБ) → scene_abf8ef06a154de48.jpg
+2026-07-06 14:27:32,110 [WARNING] agents.image_agent: Image Agent: попытка 1/3 ошибка: 429 Client Error: Too Many Requests for url: https://image.pollinations.ai/prompt/a%20young%20man%20in%20his%20mid-20s%20with%20short%2C%20jet%20black%20hair%2C%20piercing%20emerald%20green%20eyes%2C%20strong%20jawline%2C%20black%20leather%20jacket%20with%20silver%20studs%2C%20standing%20in%20front%20of%20a%20ancient%20stone%20wall%2C%20with%20a%20cryptic%20message%20etched%20into%20it%3A%20%27%D0%AD%D1%80%D0%B5%D0%B1%20%D0%BF%D0%B0%D0%B4%D0%B5%D1%82%2C%20%D0%BA%D0%BE%D0%B3%D0%B4%D0%B0%20%D1%82%D1%8C%D0%BC%D0%B0%20%D1%81%D1%82%D0%B0%D0%BD%D0%B5%D1%82%20%D1%81%D0%B2%D0%B5%D1%82%D0%BE%D0%BC%27%2C%20lit%20by%20a%20faint%2C%20flickering%20torch%20in%20the%20distance%2C%20dark%20fantasy%20digital%20painting%2C%20muted%20dark%20blue%20and%20crimson%20palette%2C%20dramatic%20rim%20lighting%2C%20cinematic%20composition%2C%20highly%20detailed?width=1080&height=1920&seed=90622&model=flux&nologo=true&enhance=false
+2026-07-06 14:27:40,658 [WARNING] agents.image_agent: Image Agent: попытка 2/3 ошибка: 429 Client Error: Too Many Requests for url: https://image.pollinations.ai/prompt/a%20young%20man%20in%20his%20mid-20s%20with%20short%2C%20jet%20black%20hair%2C%20piercing%20emerald%20green%20eyes%2C%20strong%20jawline%2C%20black%20leather%20jacket%20with%20silver%20studs%2C%20standing%20in%20front%20of%20a%20ancient%20stone%20wall%2C%20with%20a%20cryptic%20message%20etched%20into%20it%3A%20%27%D0%AD%D1%80%D0%B5%D0%B1%20%D0%BF%D0%B0%D0%B4%D0%B5%D1%82%2C%20%D0%BA%D0%BE%D0%B3%D0%B4%D0%B0%20%D1%82%D1%8C%D0%BC%D0%B0%20%D1%81%D1%82%D0%B0%D0%BD%D0%B5%D1%82%20%D1%81%D0%B2%D0%B5%D1%82%D0%BE%D0%BC%27%2C%20lit%20by%20a%20faint%2C%20flickering%20torch%20in%20the%20distance%2C%20dark%20fantasy%20digital%20painting%2C%20muted%20dark%20blue%20and%20crimson%20palette%2C%20dramatic%20rim%20lighting%2C%20cinematic%20composition%2C%20highly%20detailed?width=1080&height=1920&seed=90622&model=flux&nologo=true&enhance=false
+2026-07-06 14:27:41,001 [WARNING] agents.image_agent: Image Agent: попытка 3/3 ошибка: 429 Client Error: Too Many Requests for url: https://image.pollinations.ai/prompt/a%20young%20man%20in%20his%20mid-20s%20with%20short%2C%20jet%20black%20hair%2C%20piercing%20emerald%20green%20eyes%2C%20strong%20jawline%2C%20black%20leather%20jacket%20with%20silver%20studs%2C%20walking%20quickly%20down%20the%20street%2C%20looking%20over%20his%20shoulder%2C%20as%20if%20being%20pursued%2C%20with%20a%20sense%20of%20urgency%20and%20fear%20in%20his%20movements%2C%20dark%20fantasy%20digital%20painting%2C%20muted%20dark%20blue%20and%20crimson%20palette%2C%20dramatic%20rim%20lighting%2C%20cinematic%20composition%2C%20highly%20detailed?width=1080&height=1920&seed=90622&model=flux&nologo=true&enhance=false
+2026-07-06 14:27:56,400 [INFO] agents.image_agent: Image Agent: сгенерировано (32 КБ) → scene_c4b6dc702a74c35e.jpg
+2026-07-06 14:27:57,394 [WARNING] agents.image_agent: Image Agent: попытка 3/3 ошибка: 429 Client Error: Too Many Requests for url: https://image.pollinations.ai/prompt/a%20young%20man%20in%20his%20mid-20s%20with%20short%2C%20jet%20black%20hair%2C%20piercing%20emerald%20green%20eyes%2C%20strong%20jawline%2C%20black%20leather%20jacket%20with%20silver%20studs%2C%20standing%20in%20front%20of%20a%20ancient%20stone%20wall%2C%20with%20a%20cryptic%20message%20etched%20into%20it%3A%20%27%D0%AD%D1%80%D0%B5%D0%B1%20%D0%BF%D0%B0%D0%B4%D0%B5%D1%82%2C%20%D0%BA%D0%BE%D0%B3%D0%B4%D0%B0%20%D1%82%D1%8C%D0%BC%D0%B0%20%D1%81%D1%82%D0%B0%D0%BD%D0%B5%D1%82%20%D1%81%D0%B2%D0%B5%D1%82%D0%BE%D0%BC%27%2C%20lit%20by%20a%20faint%2C%20flickering%20torch%20in%20the%20distance%2C%20dark%20fantasy%20digital%20painting%2C%20muted%20dark%20blue%20and%20crimson%20palette%2C%20dramatic%20rim%20lighting%2C%20cinematic%20composition%2C%20highly%20detailed?width=1080&height=1920&seed=90622&model=flux&nologo=true&enhance=false
+2026-07-06 14:28:01,414 [WARNING] agents.image_agent: Image Agent: попытка 1/3 ошибка: 429 Client Error: Too Many Requests for url: https://image.pollinations.ai/prompt/a%20young%20man%20in%20his%20mid-20s%20with%20short%2C%20jet%20black%20hair%2C%20piercing%20emerald%20green%20eyes%2C%20strong%20jawline%2C%20black%20leather%20jacket%20with%20silver%20studs%2C%20standing%20in%20the%20middle%20of%20the%20deserted%20street%2C%20looking%20up%20at%20the%20dark%20sky%2C%20with%20a%20look%20of%20determination%20and%20curiosity%20on%20his%20face%2C%20as%20if%20trying%20to%20unravel%20a%20mystery%2C%20dark%20fantasy%20digital%20painting%2C%20muted%20dark%20blue%20and%20crimson%20palette%2C%20dramatic%20rim%20lighting%2C%20cinematic%20composition%2C%20highly%20detailed?width=1080&height=1920&seed=90622&model=flux&nologo=true&enhance=false
+2026-07-06 14:28:10,969 [WARNING] agents.image_agent: Image Agent: попытка 2/3 ошибка: 429 Client Error: Too Many Requests for url: https://image.pollinations.ai/prompt/a%20young%20man%20in%20his%20mid-20s%20with%20short%2C%20jet%20black%20hair%2C%20piercing%20emerald%20green%20eyes%2C%20strong%20jawline%2C%20black%20leather%20jacket%20with%20silver%20studs%2C%20standing%20in%20the%20middle%20of%20the%20deserted%20street%2C%20looking%20up%20at%20the%20dark%20sky%2C%20with%20a%20look%20of%20determination%20and%20curiosity%20on%20his%20face%2C%20as%20if%20trying%20to%20unravel%20a%20mystery%2C%20dark%20fantasy%20digital%20painting%2C%20muted%20dark%20blue%20and%20crimson%20palette%2C%20dramatic%20rim%20lighting%2C%20cinematic%20composition%2C%20highly%20detailed?width=1080&height=1920&seed=90622&model=flux&nologo=true&enhance=false
+2026-07-06 14:28:19,622 [INFO] agents.image_agent: Image Agent: сгенерировано (101 КБ) → scene_d0e4f2ebb7979c88.jpg
+2026-07-06 14:28:27,603 [WARNING] agents.image_agent: Image Agent: попытка 3/3 ошибка: 429 Client Error: Too Many Requests for url: https://image.pollinations.ai/prompt/a%20young%20man%20in%20his%20mid-20s%20with%20short%2C%20jet%20black%20hair%2C%20piercing%20emerald%20green%20eyes%2C%20strong%20jawline%2C%20black%20leather%20jacket%20with%20silver%20studs%2C%20standing%20in%20the%20middle%20of%20the%20deserted%20street%2C%20looking%20up%20at%20the%20dark%20sky%2C%20with%20a%20look%20of%20determination%20and%20curiosity%20on%20his%20face%2C%20as%20if%20trying%20to%20unravel%20a%20mystery%2C%20dark%20fantasy%20digital%20painting%2C%20muted%20dark%20blue%20and%20crimson%20palette%2C%20dramatic%20rim%20lighting%2C%20cinematic%20composition%2C%20highly%20detailed?width=1080&height=1920&seed=90622&model=flux&nologo=true&enhance=false
+2026-07-06 14:28:51,210 [INFO] agents.image_agent: Image Agent: сгенерировано (35 КБ) → scene_2ae8417d3bad1c3d.jpg
+2026-07-06 14:28:51,212 [INFO] agents.image_agent: Image Agent: 6/10 сцен готово
+2026-07-06 14:28:55,016 [INFO] agents.subtitle_agent: Загружаю Whisper base (первый раз)...
+2026-07-06 14:28:55,849 [INFO] agents.subtitle_agent: Транскрибирую аудио: 20260706_142644_tiktok.mp3
+2026-07-06 14:29:05,016 [INFO] orchestrator: Субтитры: 54 сегментов
+2026-07-06 14:29:05,018 [INFO] orchestrator: [assembly_agent] Попытка 1/3
+2026-07-06 14:29:05,079 [INFO] agents.assembly_agent: Монтаж 6 клипов + hook overlay (Ken Burns + crossfade) → 1080x1920
+2026-07-06 14:29:09,323 [INFO] agents.assembly_agent: Beat-sync: выровнено 20/20 границ к ударам
+2026-07-06 14:29:10,370 [INFO] agents.assembly_agent: Hook overlay (big text) → slot 0, dur=1.28s
+2026-07-06 14:29:11,662 [INFO] agents.assembly_agent: End-card → slot 20, dur=2.15s
+2026-07-06 14:29:18,886 [INFO] agents.assembly_agent: Sound design: 5 SFX events
+2026-07-06 14:29:54,012 [INFO] httpx: HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-06 14:29:54,013 [INFO] agents.quality_scorer: Quality Scorer: оценка через Groq meta-llama/llama-4-scout-17b-16e-instruct
+2026-07-06 14:29:54,015 [INFO] agents.quality_scorer: Quality Scorer: score=7/10 verdict=warning — Видео имеет хороший визуальный стиль, соответствующий теме, и эффективно использует контрастные цвета. Однако, для повыш
+2026-07-06 14:29:54,049 [INFO] orchestrator: [qa_agent] Попытка 1/3
+2026-07-06 14:29:54,114 [INFO] agents.qa_agent: QA approved: 20260706_142905_tiktok.mp4 (1080x1920, 40.5 сек, платформа=tiktok)
+2026-07-06 14:29:54,114 [INFO] orchestrator: [publisher_agent] Попытка 1/3
+2026-07-06 14:29:54,114 [INFO] orchestrator: [publisher] DRY RUN — публикация пропущена
+2026-07-06 14:29:54,137 [INFO] agents.story_agent: Story Agent: эпизод 1 сохранён в лор
+2026-07-06 14:29:59,640 [INFO] orchestrator: === Story-эпизод завершён успешно ===

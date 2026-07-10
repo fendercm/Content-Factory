@@ -1,0 +1,790 @@
+2026-05-23 16:25:24,672 [INFO] orchestrator: === Запуск пайплайна run_id=20260523_132524_психология ===
+2026-05-23 16:25:24,699 [INFO] orchestrator: [trend_scout] Попытка 1/3
+2026-05-23 16:25:28,909 [INFO] agents.trend_scout: Google Trends (geo=RU): найдено 5 запросов по 'психология'
+2026-05-23 16:25:29,740 [INFO] agents.trend_scout: YouTube Trending (region=RU, cat=26): найдено 1 релевантных видео
+2026-05-23 16:25:31,320 [INFO] agents.trend_scout: Google News RSS: найдено 10 статей по 'психология'
+2026-05-23 16:25:32,282 [INFO] agents.trend_scout: Habr RSS: найдено 5 статей по 'психология'
+2026-05-23 16:25:33,808 [INFO] agents.trend_scout: vc.ru RSS: найдено 0 статей по 'психология'
+2026-05-23 16:25:33,808 [INFO] agents.trend_scout: Trend Scout: итого 5 тем для ниши 'психология'
+2026-05-23 16:25:33,813 [INFO] orchestrator: Тренды: 5 тем
+2026-05-23 16:25:33,819 [INFO] orchestrator: [idea_generator] Попытка 1/3
+2026-05-23 16:25:33,825 [INFO] agents.idea_generator: Отправляю 5 тем в Groq для генерации идей
+2026-05-23 16:25:40,425 [INFO] agents.idea_generator: Idea Generator вернул 3 идей
+2026-05-23 16:25:40,430 [INFO] orchestrator: Идеи: 3 вариантов
+2026-05-23 16:25:40,435 [INFO] orchestrator: [topic_filter] Попытка 1/3
+2026-05-23 16:25:41,824 [INFO] agents.topic_filter: Дубль (30 дней): 'Как преодолеть трудности: Психология препятствий и сила воли.' — пропускаем
+2026-05-23 16:25:41,824 [INFO] agents.topic_filter: Дубль (30 дней): 'психология это' — пропускаем
+2026-05-23 16:25:48,036 [WARNING] agents.topic_filter: Niche-check ошибка: Request timed out. — считаем всё релевантным
+2026-05-23 16:25:48,698 [INFO] google_genai.models: AFC is enabled with max remote calls: 10.
+2026-05-23 16:25:49,491 [INFO] httpx: HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-05-23 16:25:49,492 [WARNING] agents.topic_filter: Gemini 429 — переключаемся на Cerebras для safety-check
+2026-05-23 16:25:50,364 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-23 16:25:50,372 [INFO] agents.topic_filter: Unsafe (Cerebras): 'Как вылечить рак с помощью натуропатии?' — МЕДИЦИНСКИЕ СОВЕТЫ
+2026-05-23 16:25:50,372 [INFO] agents.topic_filter: Unsafe (Cerebras): 'Путин и Зеленский: что происходит в Украине?' — ПОЛИТИКА
+2026-05-23 16:25:50,372 [INFO] agents.topic_filter: Unsafe (Cerebras): 'Секс и отношения: как сохранить любовь?' — 18+ / ЖЁСТКИЙ КОНТЕНТ
+2026-05-23 16:25:50,372 [INFO] agents.topic_filter: Unsafe (Cerebras): 'Как вылечить депрессию с помощью йоги?' — МЕДИЦИНСКИЕ СОВЕТЫ
+2026-05-23 16:25:50,372 [INFO] agents.topic_filter: Topic Filter: входило 3 -> dedup 1 -> niche 1 -> safety 1
+2026-05-23 16:25:50,398 [INFO] orchestrator: После фильтрации: 1 идей
+2026-05-23 16:25:50,405 [INFO] orchestrator: Генерирую сценарий для идеи: 'Зачем мы даём имена роботам?'
+2026-05-23 16:25:50,419 [INFO] agents.research_agent: Research Agent: исследую «Зачем мы даём имена роботам?»
+2026-05-23 16:26:03,224 [INFO] agents.research_agent: Wikipedia: 9 фактов для «Зачем мы даём имена роботам?»
+2026-05-23 16:26:04,108 [WARNING] agents.research_agent: Semantic Scholar: rate limit (429) — пропускаем
+2026-05-23 16:26:05,040 [INFO] agents.research_agent: Google News: 3 новостей для «Зачем мы даём имена роботам?»
+2026-05-23 16:26:05,042 [INFO] agents.research_agent: Research Agent: Собрано 11 фактов по теме «Зачем мы даём имена роботам?» из 2 источников: Wikipedia, Google News
+2026-05-23 16:26:05,076 [INFO] orchestrator: [script_writer] Попытка 1/3
+2026-05-23 16:26:11,624 [INFO] orchestrator: [fact_checker] Попытка 1/3
+2026-05-23 16:26:11,633 [INFO] agents.fact_checker: Fact Checker: проверяю сценарий (713 символов)
+2026-05-23 16:26:12,176 [INFO] agents.fact_checker: Fact Checker: сценарий прошёл проверку
+2026-05-23 16:26:12,206 [INFO] orchestrator: Идея прошла fact-check: 'Зачем мы даём имена роботам?'
+2026-05-23 16:26:12,206 [INFO] orchestrator: [safety_agent] Попытка 1/3
+2026-05-23 16:26:12,874 [INFO] google_genai.models: AFC is enabled with max remote calls: 10.
+2026-05-23 16:26:13,774 [INFO] httpx: HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-05-23 16:26:13,775 [WARNING] agents.safety_agent: Gemini 429/quota — переключаюсь на Cerebras
+2026-05-23 16:26:14,418 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-23 16:26:14,419 [INFO] agents.safety_agent: Safety OK (Cerebras) 'Зачем мы даём имена роботам?' / youtube
+2026-05-23 16:26:14,443 [INFO] orchestrator: [voice_agent] Попытка 1/3
+2026-05-23 16:26:14,451 [INFO] agents.voice_agent: Voice Agent: ElevenLabs (voice=Rachel)
+2026-05-23 16:26:15,369 [WARNING] agents.voice_agent: Voice Agent: ElevenLabs лимит исчерпан, используем Yandex
+2026-05-23 16:26:15,371 [INFO] agents.voice_agent: Voice Agent: Yandex SpeechKit (voice=alena)
+2026-05-23 16:26:20,701 [INFO] agents.voice_agent: Voice Agent: Yandex ✓ → D:\Projects\content-factory\output\audio\20260523_162614_youtube.mp3
+2026-05-23 16:26:20,709 [INFO] orchestrator: [visual_agent] Попытка 1/3
+2026-05-23 16:26:22,492 [WARNING] agents.visual_agent: Kling: 404 — эндпоинт не найден (проверьте KIE_API_KEY и URL)
+2026-05-23 16:26:22,494 [WARNING] agents.visual_agent: Kling: эндпоинт недоступен — прекращаем попытки, переходим на Pexels
+2026-05-23 16:26:22,494 [WARNING] agents.visual_agent: Kling вернул 0 клипов — переключаюсь на Pexels
+2026-05-23 16:27:00,311 [INFO] agents.music_agent: Определено настроение: calm
+2026-05-23 16:27:00,312 [INFO] agents.music_agent: Трек из локальной папки: calm_ambient_01.mp3
+2026-05-23 16:27:00,312 [INFO] orchestrator: Музыка: source=local mood=calm
+2026-05-23 16:27:15,272 [INFO] orchestrator: Субтитры: 80 сегментов
+2026-05-23 16:27:15,358 [INFO] agents.entity_visuals: Wikipedia: фото Юнг, Карл Густав уже в кеше
+2026-05-23 16:27:15,359 [INFO] agents.entity_visuals: Entity Visuals: 1 overlay-вставок (тайминги: Whisper word-level)
+2026-05-23 16:27:34,528 [INFO] agents.visual_agent: get_photos: 11 фото из pexels
+2026-05-23 16:27:34,529 [INFO] orchestrator: Photos pool: 11 шт (source=pexels)
+2026-05-23 16:27:34,558 [INFO] orchestrator: [assembly_agent] Попытка 1/3
+2026-05-23 16:27:35,704 [INFO] agents.assembly_agent: Photo overlay slot=16 for 'Юнг' @ 33.0s
+2026-05-23 16:27:37,208 [INFO] agents.assembly_agent: Photo burst slot=11 @ 22.8s (5 фото)
+2026-05-23 16:27:40,304 [INFO] agents.assembly_agent: Photo weave: 6/23 слотов под фото
+2026-05-23 16:28:24,998 [INFO] orchestrator: Видео собрано: D:\Projects\content-factory\output\video\20260523_162734_youtube.mp4
+2026-05-23 16:28:33,193 [INFO] agents.thumbnail_agent: Thumbnail via YandexART: D:\Projects\content-factory\output\thumbnails\20260523_162825_Зачем_мы_даём_имена_роботам_.jpg
+2026-05-23 16:28:33,197 [INFO] orchestrator: Thumbnail: D:\Projects\content-factory\output\thumbnails\20260523_162825_Зачем_мы_даём_имена_роботам_.jpg (source=yandex_art)
+2026-05-23 16:28:33,197 [INFO] orchestrator: [qa_agent] Попытка 1/3
+2026-05-23 16:28:33,328 [INFO] agents.qa_agent: QA approved: 20260523_162734_youtube.mp4 (1080x1920, 45.7 сек, платформа=youtube)
+2026-05-23 16:28:33,337 [INFO] orchestrator: [publisher_agent] Попытка 1/3
+2026-05-23 16:28:33,339 [INFO] orchestrator: [publisher] DRY RUN — публикация пропущена
+2026-05-23 16:28:33,342 [INFO] orchestrator: Опубликовано: post_id=dry-run-000
+2026-05-23 16:28:33,350 [INFO] agents.topic_filter: Тема отмечена как опубликованная: 'Психологи объяснили, почему люди дают имена машинам и роботам-пылесосам'
+2026-05-23 16:28:34,759 [INFO] orchestrator: === Пайплайн завершён успешно ===
+2026-05-23 16:28:37,108 [INFO] orchestrator: === Запуск пайплайна run_id=20260523_132837_бизнес ===
+2026-05-23 16:28:37,115 [INFO] orchestrator: [trend_scout] Попытка 1/3
+2026-05-23 16:28:41,638 [INFO] agents.trend_scout: Google Trends (geo=RU): найдено 5 запросов по 'бизнес'
+2026-05-23 16:28:42,479 [INFO] agents.trend_scout: YouTube Trending (region=RU, cat=22): найдено 2 релевантных видео
+2026-05-23 16:28:44,089 [INFO] agents.trend_scout: Google News RSS: найдено 10 статей по 'бизнес'
+2026-05-23 16:28:45,212 [INFO] agents.trend_scout: Habr RSS: найдено 5 статей по 'бизнес'
+2026-05-23 16:28:46,357 [INFO] agents.trend_scout: vc.ru RSS: найдено 0 статей по 'бизнес'
+2026-05-23 16:28:46,357 [INFO] agents.trend_scout: Trend Scout: итого 5 тем для ниши 'бизнес'
+2026-05-23 16:28:46,361 [INFO] orchestrator: Тренды: 5 тем
+2026-05-23 16:28:46,366 [INFO] orchestrator: [idea_generator] Попытка 1/3
+2026-05-23 16:28:46,374 [INFO] agents.idea_generator: Отправляю 5 тем в Groq для генерации идей
+2026-05-23 16:28:53,123 [INFO] agents.idea_generator: Idea Generator вернул 3 идей
+2026-05-23 16:28:53,150 [INFO] orchestrator: Идеи: 3 вариантов
+2026-05-23 16:28:53,157 [INFO] orchestrator: [topic_filter] Попытка 1/3
+2026-05-23 16:28:56,305 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-23 16:28:56,962 [INFO] google_genai.models: AFC is enabled with max remote calls: 10.
+2026-05-23 16:28:57,687 [INFO] httpx: HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-05-23 16:28:57,688 [WARNING] agents.topic_filter: Gemini 429 — переключаемся на Cerebras для safety-check
+2026-05-23 16:28:58,199 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-23 16:28:58,202 [INFO] agents.topic_filter: Unsafe (Cerebras): 'Как привлечь инвестиции в свой проект' — Идея попала в категорию МЕДИЦИНСКИЕ СОВЕТЫ, поскольку предполагает инвест-советы с конкретными активами
+2026-05-23 16:28:58,202 [INFO] agents.topic_filter: Topic Filter: входило 3 -> dedup 3 -> niche 3 -> safety 2
+2026-05-23 16:28:58,207 [INFO] orchestrator: После фильтрации: 2 идей
+2026-05-23 16:28:58,212 [INFO] orchestrator: Генерирую сценарий для идеи: 'Как начать свой онлайн-бизнес с нуля'
+2026-05-23 16:28:58,234 [INFO] agents.research_agent: Research Agent: исследую «Как начать свой онлайн-бизнес с нуля»
+2026-05-23 16:29:11,206 [INFO] agents.research_agent: Wikipedia: 4 фактов для «Как начать свой онлайн-бизнес с нуля»
+2026-05-23 16:29:12,457 [WARNING] agents.research_agent: Semantic Scholar: rate limit (429) — пропускаем
+2026-05-23 16:29:14,277 [INFO] primp: response: https://ru.wikipedia.org/w/api.php?action=opensearch&profile=fuzzy&limit=1&search=%D0%9A%D0%B0%D0%BA%20%D0%BD%D0%B0%D1%87%D0%B0%D1%82%D1%8C%20%D1%81%D0%B2%D0%BE%D0%B9%20%D0%BE%D0%BD%D0%BB%D0%B0%D0%B9%D0%BD-%D0%B1%D0%B8%D0%B7%D0%BD%D0%B5%D1%81%20%D1%81%20%D0%BD%D1%83%D0%BB%D1%8F%20%D0%B8%D1%81%D1%81%D0%BB%D0%B5%D0%B4%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5%20%D1%81%D1%82%D0%B0%D1%82%D0%B8%D1%81%D1%82%D0%B8%D0%BA%D0%B0%20%D0%B4%D0%B0%D0%BD%D0%BD%D1%8B%D0%B5 200
+2026-05-23 16:29:14,277 [INFO] primp: response: https://grokipedia.com/api/typeahead?query=%D0%9A%D0%B0%D0%BA+%D0%BD%D0%B0%D1%87%D0%B0%D1%82%D1%8C+%D1%81%D0%B2%D0%BE%D0%B9+%D0%BE%D0%BD%D0%BB%D0%B0%D0%B9%D0%BD-%D0%B1%D0%B8%D0%B7%D0%BD%D0%B5%D1%81+%D1%81+%D0%BD%D1%83%D0%BB%D1%8F+%D0%B8%D1%81%D1%81%D0%BB%D0%B5%D0%B4%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5+%D1%81%D1%82%D0%B0%D1%82%D0%B8%D1%81%D1%82%D0%B8%D0%BA%D0%B0+%D0%B4%D0%B0%D0%BD%D0%BD%D1%8B%D0%B5&limit=1 200
+2026-05-23 16:29:14,978 [INFO] primp: response: https://yandex.ru/search/site/?text=%D0%9A%D0%B0%D0%BA%20%D0%BD%D0%B0%D1%87%D0%B0%D1%82%D1%8C%20%D1%81%D0%B2%D0%BE%D0%B9%20%D0%BE%D0%BD%D0%BB%D0%B0%D0%B9%D0%BD-%D0%B1%D0%B8%D0%B7%D0%BD%D0%B5%D1%81%20%D1%81%20%D0%BD%D1%83%D0%BB%D1%8F%20%D0%B8%D1%81%D1%81%D0%BB%D0%B5%D0%B4%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5%20%D1%81%D1%82%D0%B0%D1%82%D0%B8%D1%81%D1%82%D0%B8%D0%BA%D0%B0%20%D0%B4%D0%B0%D0%BD%D0%BD%D1%8B%D0%B5&web=1&searchid=8211334&rdrnd=616627&lr=39&redircnt=1779542953.1 200
+2026-05-23 16:29:15,017 [INFO] agents.research_agent: Web search via DuckDuckGo: 6 результатов для «Как начать свой онлайн-бизнес с нуля исследование статистика данные»
+2026-05-23 16:29:16,587 [INFO] primp: response: https://ru.wikipedia.org/w/api.php?action=opensearch&profile=fuzzy&limit=1&search=%D0%9A%D0%B0%D0%BA%20%D0%BD%D0%B0%D1%87%D0%B0%D1%82%D1%8C%20%D1%81%D0%B2%D0%BE%D0%B9%20%D0%BE%D0%BD%D0%BB%D0%B0%D0%B9%D0%BD-%D0%B1%D0%B8%D0%B7%D0%BD%D0%B5%D1%81%20%D1%81%20%D0%BD%D1%83%D0%BB%D1%8F%202024%20%D0%BF%D1%80%D0%BE%D1%86%D0%B5%D0%BD%D1%82%D1%8B%20%D1%80%D0%B5%D0%B7%D1%83%D0%BB%D1%8C%D1%82%D0%B0%D1%82%D1%8B 200
+2026-05-23 16:29:17,349 [INFO] primp: response: https://grokipedia.com/api/typeahead?query=%D0%9A%D0%B0%D0%BA+%D0%BD%D0%B0%D1%87%D0%B0%D1%82%D1%8C+%D1%81%D0%B2%D0%BE%D0%B9+%D0%BE%D0%BD%D0%BB%D0%B0%D0%B9%D0%BD-%D0%B1%D0%B8%D0%B7%D0%BD%D0%B5%D1%81+%D1%81+%D0%BD%D1%83%D0%BB%D1%8F+2024+%D0%BF%D1%80%D0%BE%D1%86%D0%B5%D0%BD%D1%82%D1%8B+%D1%80%D0%B5%D0%B7%D1%83%D0%BB%D1%8C%D1%82%D0%B0%D1%82%D1%8B&limit=1 200
+2026-05-23 16:29:18,784 [INFO] primp: response: https://search.brave.com/search?q=%D0%9A%D0%B0%D0%BA+%D0%BD%D0%B0%D1%87%D0%B0%D1%82%D1%8C+%D1%81%D0%B2%D0%BE%D0%B9+%D0%BE%D0%BD%D0%BB%D0%B0%D0%B9%D0%BD-%D0%B1%D0%B8%D0%B7%D0%BD%D0%B5%D1%81+%D1%81+%D0%BD%D1%83%D0%BB%D1%8F+2024+%D0%BF%D1%80%D0%BE%D1%86%D0%B5%D0%BD%D1%82%D1%8B+%D1%80%D0%B5%D0%B7%D1%83%D0%BB%D1%8C%D1%82%D0%B0%D1%82%D1%8B&source=web 200
+2026-05-23 16:29:18,956 [INFO] agents.research_agent: Web search via DuckDuckGo: 6 результатов для «Как начать свой онлайн-бизнес с нуля 2024 проценты результаты»
+2026-05-23 16:29:20,508 [INFO] agents.research_agent: Web search total: 2 фактов для «Как начать свой онлайн-бизнес с нуля» через DuckDuckGo
+2026-05-23 16:29:21,675 [INFO] agents.research_agent: Google News: 3 новостей для «Как начать свой онлайн-бизнес с нуля»
+2026-05-23 16:29:21,677 [INFO] agents.research_agent: Research Agent: Собрано 9 фактов по теме «Как начать свой онлайн-бизнес с нуля» из 3 источников: Wikipedia, Web (DuckDuckGo), Google News
+2026-05-23 16:29:21,712 [INFO] orchestrator: [script_writer] Попытка 1/3
+2026-05-23 16:29:25,930 [INFO] orchestrator: [fact_checker] Попытка 1/3
+2026-05-23 16:29:25,939 [INFO] agents.fact_checker: Fact Checker: проверяю сценарий (619 символов)
+2026-05-23 16:29:26,470 [INFO] agents.fact_checker: Fact Checker: сценарий прошёл проверку
+2026-05-23 16:29:26,478 [INFO] orchestrator: Идея прошла fact-check: 'Как начать свой онлайн-бизнес с нуля'
+2026-05-23 16:29:26,478 [INFO] orchestrator: [safety_agent] Попытка 1/3
+2026-05-23 16:29:27,102 [INFO] google_genai.models: AFC is enabled with max remote calls: 10.
+2026-05-23 16:29:28,101 [INFO] httpx: HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-05-23 16:29:28,103 [WARNING] agents.safety_agent: Gemini 429/quota — переключаюсь на Cerebras
+2026-05-23 16:29:28,818 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-23 16:29:28,819 [INFO] agents.safety_agent: Safety OK (Cerebras) 'Как начать свой онлайн-бизнес с нуля' / youtube
+2026-05-23 16:29:28,851 [INFO] orchestrator: [voice_agent] Попытка 1/3
+2026-05-23 16:29:28,858 [INFO] agents.voice_agent: Voice Agent: ElevenLabs (voice=Rachel)
+2026-05-23 16:29:29,535 [WARNING] agents.voice_agent: Voice Agent: ElevenLabs лимит исчерпан, используем Yandex
+2026-05-23 16:29:29,536 [INFO] agents.voice_agent: Voice Agent: Yandex SpeechKit (voice=alena)
+2026-05-23 16:29:33,532 [INFO] agents.voice_agent: Voice Agent: Yandex ✓ → D:\Projects\content-factory\output\audio\20260523_162928_youtube.mp3
+2026-05-23 16:29:33,541 [INFO] orchestrator: [visual_agent] Попытка 1/3
+2026-05-23 16:29:35,684 [WARNING] agents.visual_agent: Kling: 404 — эндпоинт не найден (проверьте KIE_API_KEY и URL)
+2026-05-23 16:29:35,687 [WARNING] agents.visual_agent: Kling: эндпоинт недоступен — прекращаем попытки, переходим на Pexels
+2026-05-23 16:29:35,687 [WARNING] agents.visual_agent: Kling вернул 0 клипов — переключаюсь на Pexels
+2026-05-23 16:30:12,066 [INFO] agents.music_agent: Определено настроение: upbeat
+2026-05-23 16:30:12,067 [INFO] agents.music_agent: Трек из локальной папки: upbeat_energetic_01.mp3
+2026-05-23 16:30:12,067 [INFO] orchestrator: Музыка: source=local mood=upbeat
+2026-05-23 16:30:25,217 [INFO] orchestrator: Субтитры: 71 сегментов
+2026-05-23 16:30:25,276 [INFO] agents.entity_visuals: Entity Visuals: классиков не найдено
+2026-05-23 16:30:43,568 [INFO] agents.visual_agent: get_photos: 12 фото из pexels
+2026-05-23 16:30:43,568 [INFO] orchestrator: Photos pool: 12 шт (source=pexels)
+2026-05-23 16:30:43,573 [INFO] orchestrator: [assembly_agent] Попытка 1/3
+2026-05-23 16:30:44,781 [INFO] agents.assembly_agent: Photo burst slot=10 @ 19.9s (5 фото)
+2026-05-23 16:30:48,376 [INFO] agents.assembly_agent: Photo weave: 7/20 слотов под фото
+2026-05-23 16:31:21,734 [INFO] orchestrator: Видео собрано: D:\Projects\content-factory\output\video\20260523_163043_youtube.mp4
+2026-05-23 16:31:29,733 [INFO] agents.thumbnail_agent: Thumbnail via YandexART: D:\Projects\content-factory\output\thumbnails\20260523_163121_Как_начать_свой_онлайн-бизнес_с_нуля.jpg
+2026-05-23 16:31:29,738 [INFO] orchestrator: Thumbnail: D:\Projects\content-factory\output\thumbnails\20260523_163121_Как_начать_свой_онлайн-бизнес_с_нуля.jpg (source=yandex_art)
+2026-05-23 16:31:29,738 [INFO] orchestrator: [qa_agent] Попытка 1/3
+2026-05-23 16:31:29,833 [INFO] agents.qa_agent: QA approved: 20260523_163043_youtube.mp4 (1080x1920, 39.9 сек, платформа=youtube)
+2026-05-23 16:31:29,844 [INFO] orchestrator: [publisher_agent] Попытка 1/3
+2026-05-23 16:31:29,848 [INFO] orchestrator: [publisher] DRY RUN — публикация пропущена
+2026-05-23 16:31:29,851 [INFO] orchestrator: Опубликовано: post_id=dry-run-000
+2026-05-23 16:31:29,862 [INFO] agents.topic_filter: Тема отмечена как опубликованная: 'бизнес онлайн'
+2026-05-23 16:31:31,110 [INFO] orchestrator: === Пайплайн завершён успешно ===
+2026-05-23 16:31:32,714 [INFO] orchestrator: === Запуск пайплайна run_id=20260523_133132_наука ===
+2026-05-23 16:31:32,741 [INFO] orchestrator: [trend_scout] Попытка 1/3
+2026-05-23 16:31:36,528 [WARNING] agents.trend_scout: Google Trends: rate limit (429) — Google временно блокирует запросы с этого IP
+2026-05-23 16:31:39,728 [INFO] agents.trend_scout: Google Trends (geo=global): найдено 5 запросов по 'наука'
+2026-05-23 16:31:40,451 [WARNING] agents.trend_scout: YouTube Trending (region=RU) HTTP ошибка: 404 Client Error: Not Found for url: https://www.googleapis.com/youtube/v3/videos?part=snippet%2Cstatistics&chart=mostPopular&maxResults=50&videoCategoryId=27&regionCode=RU&key=AIzaSyBjBYKNCI_1aJvjxY-ndS_F3yLLN-xuNqo
+2026-05-23 16:31:41,072 [WARNING] agents.trend_scout: YouTube Trending (region=US) HTTP ошибка: 404 Client Error: Not Found for url: https://www.googleapis.com/youtube/v3/videos?part=snippet%2Cstatistics&chart=mostPopular&maxResults=50&videoCategoryId=27&regionCode=US&key=AIzaSyBjBYKNCI_1aJvjxY-ndS_F3yLLN-xuNqo
+2026-05-23 16:31:41,675 [WARNING] agents.trend_scout: YouTube Trending (region=) HTTP ошибка: 404 Client Error: Not Found for url: https://www.googleapis.com/youtube/v3/videos?part=snippet%2Cstatistics&chart=mostPopular&maxResults=50&videoCategoryId=27&key=AIzaSyBjBYKNCI_1aJvjxY-ndS_F3yLLN-xuNqo
+2026-05-23 16:31:41,677 [INFO] agents.trend_scout: Ниша 'наука' не найдена в YouTube Trending — пропускаем
+2026-05-23 16:32:02,791 [INFO] agents.trend_scout: Google News RSS: найдено 0 статей по 'наука'
+2026-05-23 16:32:03,894 [INFO] agents.trend_scout: Habr RSS: найдено 5 статей по 'наука'
+2026-05-23 16:32:05,307 [INFO] agents.trend_scout: vc.ru RSS: найдено 0 статей по 'наука'
+2026-05-23 16:32:05,307 [INFO] agents.trend_scout: Trend Scout: итого 5 тем для ниши 'наука'
+2026-05-23 16:32:05,334 [INFO] orchestrator: Тренды: 5 тем
+2026-05-23 16:32:05,341 [INFO] orchestrator: [idea_generator] Попытка 1/3
+2026-05-23 16:32:05,347 [INFO] agents.idea_generator: Отправляю 5 тем в Groq для генерации идей
+2026-05-23 16:32:27,707 [WARNING] utils.llm_client: Yandex (idea_generator) ошибка: HTTPSConnectionPool(host='llm.api.cloud.yandex.net', port=443): Max retries exceeded with url: /foundationModels/v1/completion (Caused by ConnectTimeoutError(<urllib3.connection.HTTPSConnection object at 0x00000263651B6990>, 'Connection to llm.api.cloud.yandex.net timed out. (connect timeout=60)')) — переключаюсь на Groq
+2026-05-23 16:32:30,695 [INFO] httpx: HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-23 16:32:30,713 [INFO] agents.idea_generator: Idea Generator вернул 3 идей
+2026-05-23 16:32:30,717 [INFO] orchestrator: Идеи: 3 вариантов
+2026-05-23 16:32:30,722 [INFO] orchestrator: [topic_filter] Попытка 1/3
+2026-05-23 16:32:33,840 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-23 16:32:34,489 [INFO] google_genai.models: AFC is enabled with max remote calls: 10.
+2026-05-23 16:32:35,380 [INFO] httpx: HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-05-23 16:32:35,381 [WARNING] agents.topic_filter: Gemini 429 — переключаемся на Cerebras для safety-check
+2026-05-23 16:32:35,814 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-23 16:32:35,815 [INFO] agents.topic_filter: Topic Filter: входило 3 -> dedup 3 -> niche 3 -> safety 3
+2026-05-23 16:32:35,822 [INFO] orchestrator: После фильтрации: 3 идей
+2026-05-23 16:32:35,834 [INFO] orchestrator: Генерирую сценарий для идеи: 'Наука вокруг нас'
+2026-05-23 16:32:35,847 [INFO] agents.research_agent: Research Agent: исследую «Наука вокруг нас»
+2026-05-23 16:33:11,108 [WARNING] utils.llm_client: Yandex (research_agent) ошибка: HTTPSConnectionPool(host='llm.api.cloud.yandex.net', port=443): Max retries exceeded with url: /foundationModels/v1/completion (Caused by ConnectTimeoutError(<urllib3.connection.HTTPSConnection object at 0x0000026367FC6850>, 'Connection to llm.api.cloud.yandex.net timed out. (connect timeout=60)')) — переключаюсь на Groq
+2026-05-23 16:33:16,334 [WARNING] agents.research_agent: LLM fact extraction ошибка: Request timed out.
+2026-05-23 16:33:16,335 [INFO] agents.research_agent: Wikipedia: 5 фактов для «Наука вокруг нас»
+2026-05-23 16:33:17,596 [WARNING] agents.research_agent: Semantic Scholar: rate limit (429) — пропускаем
+2026-05-23 16:33:27,615 [WARNING] agents.research_agent: Google News ошибка: HTTPSConnectionPool(host='news.google.com', port=443): Max retries exceeded with url: /rss/search?q=%D0%9D%D0%B0%D1%83%D0%BA%D0%B0%20%D0%B2%D0%BE%D0%BA%D1%80%D1%83%D0%B3%20%D0%BD%D0%B0%D1%81&hl=ru&gl=RU&ceid=RU:ru (Caused by ConnectTimeoutError(<urllib3.connection.HTTPSConnection object at 0x0000026368249590>, 'Connection to news.google.com timed out. (connect timeout=10)'))
+2026-05-23 16:33:27,616 [INFO] agents.research_agent: Research Agent: Собрано 5 фактов по теме «Наука вокруг нас» из 1 источников: Wikipedia
+2026-05-23 16:33:27,649 [INFO] orchestrator: [script_writer] Попытка 1/3
+2026-05-23 16:33:51,353 [WARNING] utils.llm_client: Yandex (script_writer) ошибка: HTTPSConnectionPool(host='llm.api.cloud.yandex.net', port=443): Max retries exceeded with url: /foundationModels/v1/completion (Caused by ConnectTimeoutError(<urllib3.connection.HTTPSConnection object at 0x0000026368249810>, 'Connection to llm.api.cloud.yandex.net timed out. (connect timeout=60)')) — переключаюсь на Groq
+2026-05-23 16:33:52,628 [INFO] httpx: HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-23 16:33:52,661 [INFO] orchestrator: [fact_checker] Попытка 1/3
+2026-05-23 16:33:52,666 [INFO] agents.fact_checker: Fact Checker: проверяю сценарий (589 символов)
+2026-05-23 16:33:53,243 [INFO] agents.fact_checker: Fact Checker: сценарий прошёл проверку
+2026-05-23 16:33:53,274 [INFO] orchestrator: Идея прошла fact-check: 'Наука вокруг нас'
+2026-05-23 16:33:53,275 [INFO] orchestrator: [safety_agent] Попытка 1/3
+2026-05-23 16:33:53,932 [INFO] google_genai.models: AFC is enabled with max remote calls: 10.
+2026-05-23 16:33:54,918 [INFO] httpx: HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-05-23 16:33:54,919 [WARNING] agents.safety_agent: Gemini 429/quota — переключаюсь на Cerebras
+2026-05-23 16:33:55,627 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-23 16:33:55,628 [INFO] agents.safety_agent: Safety OK (Cerebras) 'Наука вокруг нас' / youtube
+2026-05-23 16:33:55,662 [INFO] orchestrator: [voice_agent] Попытка 1/3
+2026-05-23 16:33:55,668 [INFO] agents.voice_agent: Voice Agent: ElevenLabs (voice=Rachel)
+2026-05-23 16:33:56,314 [WARNING] agents.voice_agent: Voice Agent: ElevenLabs лимит исчерпан, используем Yandex
+2026-05-23 16:33:56,316 [INFO] agents.voice_agent: Voice Agent: Yandex SpeechKit (voice=alena)
+2026-05-23 16:34:00,948 [INFO] agents.voice_agent: Voice Agent: Yandex ✓ → D:\Projects\content-factory\output\audio\20260523_163355_youtube.mp3
+2026-05-23 16:34:00,979 [INFO] orchestrator: [visual_agent] Попытка 1/3
+2026-05-23 16:34:02,954 [WARNING] agents.visual_agent: Kling: 404 — эндпоинт не найден (проверьте KIE_API_KEY и URL)
+2026-05-23 16:34:02,956 [WARNING] agents.visual_agent: Kling: эндпоинт недоступен — прекращаем попытки, переходим на Pexels
+2026-05-23 16:34:02,956 [WARNING] agents.visual_agent: Kling вернул 0 клипов — переключаюсь на Pexels
+2026-05-23 16:34:43,500 [INFO] agents.music_agent: Определено настроение: dramatic
+2026-05-23 16:34:43,501 [INFO] agents.music_agent: Трек из локальной папки: dramatic_cinematic_01.mp3
+2026-05-23 16:34:43,501 [INFO] orchestrator: Музыка: source=local mood=dramatic
+2026-05-23 16:34:58,394 [INFO] orchestrator: Субтитры: 68 сегментов
+2026-05-23 16:34:58,857 [INFO] agents.entity_visuals: Wikipedia: фото Эйнштейн, Альберт уже в кеше
+2026-05-23 16:34:58,857 [INFO] agents.entity_visuals: Entity Visuals: 1 overlay-вставок (тайминги: Whisper word-level)
+2026-05-23 16:35:17,294 [INFO] agents.visual_agent: Photo dedup/filter: 12 → 11
+2026-05-23 16:35:17,295 [INFO] agents.visual_agent: get_photos: 11 фото из pexels
+2026-05-23 16:35:17,295 [INFO] orchestrator: Photos pool: 11 шт (source=pexels)
+2026-05-23 16:35:17,322 [INFO] orchestrator: [assembly_agent] Попытка 1/3
+2026-05-23 16:35:18,239 [INFO] agents.assembly_agent: Photo overlay slot=13 for 'Эйнштейн' @ 25.5s
+2026-05-23 16:35:19,676 [INFO] agents.assembly_agent: Photo burst slot=10 @ 19.4s (5 фото)
+2026-05-23 16:35:22,575 [INFO] agents.assembly_agent: Photo weave: 6/20 слотов под фото
+2026-05-23 16:35:53,924 [INFO] orchestrator: Видео собрано: D:\Projects\content-factory\output\video\20260523_163517_youtube.mp4
+2026-05-23 16:36:01,895 [INFO] agents.thumbnail_agent: Thumbnail via YandexART: D:\Projects\content-factory\output\thumbnails\20260523_163553_Наука_вокруг_нас.jpg
+2026-05-23 16:36:01,897 [INFO] orchestrator: Thumbnail: D:\Projects\content-factory\output\thumbnails\20260523_163553_Наука_вокруг_нас.jpg (source=yandex_art)
+2026-05-23 16:36:01,897 [INFO] orchestrator: [qa_agent] Попытка 1/3
+2026-05-23 16:36:01,979 [INFO] agents.qa_agent: QA approved: 20260523_163517_youtube.mp4 (1080x1920, 38.7 сек, платформа=youtube)
+2026-05-23 16:36:01,988 [INFO] orchestrator: [publisher_agent] Попытка 1/3
+2026-05-23 16:36:01,991 [INFO] orchestrator: [publisher] DRY RUN — публикация пропущена
+2026-05-23 16:36:01,994 [INFO] orchestrator: Опубликовано: post_id=dry-run-000
+2026-05-23 16:36:02,001 [INFO] agents.topic_filter: Тема отмечена как опубликованная: 'наука это'
+2026-05-23 16:36:03,217 [INFO] orchestrator: === Пайплайн завершён успешно ===
+2026-05-23 16:36:05,250 [INFO] orchestrator: === Запуск пайплайна run_id=20260523_133605_здоровье ===
+2026-05-23 16:36:05,257 [INFO] orchestrator: [trend_scout] Попытка 1/3
+2026-05-23 16:36:11,834 [INFO] agents.trend_scout: Google Trends (geo=RU): найдено 5 запросов по 'здоровье'
+2026-05-23 16:36:14,312 [INFO] agents.trend_scout: Ниша 'здоровье' не найдена в YouTube Trending — пропускаем
+2026-05-23 16:36:15,788 [INFO] agents.trend_scout: Google News RSS: найдено 10 статей по 'здоровье'
+2026-05-23 16:36:16,914 [INFO] agents.trend_scout: Habr RSS: найдено 5 статей по 'здоровье'
+2026-05-23 16:36:18,050 [INFO] agents.trend_scout: vc.ru RSS: найдено 0 статей по 'здоровье'
+2026-05-23 16:36:18,050 [INFO] agents.trend_scout: Trend Scout: итого 5 тем для ниши 'здоровье'
+2026-05-23 16:36:18,054 [INFO] orchestrator: Тренды: 5 тем
+2026-05-23 16:36:18,059 [INFO] orchestrator: [idea_generator] Попытка 1/3
+2026-05-23 16:36:18,066 [INFO] agents.idea_generator: Отправляю 5 тем в Groq для генерации идей
+2026-05-23 16:36:24,370 [INFO] agents.idea_generator: Idea Generator вернул 3 идей
+2026-05-23 16:36:24,397 [INFO] orchestrator: Идеи: 3 вариантов
+2026-05-23 16:36:24,402 [INFO] orchestrator: [topic_filter] Попытка 1/3
+2026-05-23 16:36:27,975 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-23 16:36:28,614 [INFO] google_genai.models: AFC is enabled with max remote calls: 10.
+2026-05-23 16:36:29,403 [INFO] httpx: HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-05-23 16:36:29,404 [WARNING] agents.topic_filter: Gemini 429 — переключаемся на Cerebras для safety-check
+2026-05-23 16:36:29,922 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-23 16:36:29,923 [INFO] agents.topic_filter: Unsafe (Cerebras): 'Почему попытки «омолодиться» могут быть опасны' — МЕДИЦИНСКИЕ СОВЕТЫ: рекомендации по омоложению
+2026-05-23 16:36:29,923 [INFO] agents.topic_filter: Topic Filter: входило 3 -> dedup 3 -> niche 3 -> safety 2
+2026-05-23 16:36:29,947 [INFO] orchestrator: После фильтрации: 2 идей
+2026-05-23 16:36:29,953 [INFO] orchestrator: Генерирую сценарий для идеи: '5 привычек для укрепления здоровья'
+2026-05-23 16:36:30,007 [INFO] agents.research_agent: Research Agent: исследую «5 привычек для укрепления здоровья»
+2026-05-23 16:36:42,721 [INFO] agents.research_agent: Wikipedia: 5 фактов для «5 привычек для укрепления здоровья»
+2026-05-23 16:36:43,546 [WARNING] agents.research_agent: Semantic Scholar: rate limit (429) — пропускаем
+2026-05-23 16:36:44,938 [INFO] agents.research_agent: Google News: 3 новостей для «5 привычек для укрепления здоровья»
+2026-05-23 16:36:44,940 [INFO] agents.research_agent: Research Agent: Собрано 8 фактов по теме «5 привычек для укрепления здоровья» из 2 источников: Wikipedia, Google News
+2026-05-23 16:36:44,972 [INFO] orchestrator: [script_writer] Попытка 1/3
+2026-05-23 16:36:51,559 [INFO] orchestrator: [fact_checker] Попытка 1/3
+2026-05-23 16:36:51,566 [INFO] agents.fact_checker: Fact Checker: проверяю сценарий (686 символов)
+2026-05-23 16:36:52,246 [INFO] agents.fact_checker: Fact Checker: сценарий прошёл проверку
+2026-05-23 16:36:52,277 [INFO] orchestrator: Идея прошла fact-check: '5 привычек для укрепления здоровья'
+2026-05-23 16:36:52,277 [INFO] orchestrator: [safety_agent] Попытка 1/3
+2026-05-23 16:36:52,921 [INFO] google_genai.models: AFC is enabled with max remote calls: 10.
+2026-05-23 16:36:53,780 [INFO] httpx: HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-05-23 16:36:53,782 [WARNING] agents.safety_agent: Gemini 429/quota — переключаюсь на Cerebras
+2026-05-23 16:36:54,702 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-23 16:36:54,703 [INFO] agents.safety_agent: Safety OK (Cerebras) '5 привычек для укрепления здоровья' / youtube
+2026-05-23 16:36:54,735 [INFO] orchestrator: [voice_agent] Попытка 1/3
+2026-05-23 16:36:54,741 [INFO] agents.voice_agent: Voice Agent: ElevenLabs (voice=Rachel)
+2026-05-23 16:36:55,573 [WARNING] agents.voice_agent: Voice Agent: ElevenLabs лимит исчерпан, используем Yandex
+2026-05-23 16:36:55,575 [INFO] agents.voice_agent: Voice Agent: Yandex SpeechKit (voice=alena)
+2026-05-23 16:37:00,854 [INFO] agents.voice_agent: Voice Agent: Yandex ✓ → D:\Projects\content-factory\output\audio\20260523_163654_youtube.mp3
+2026-05-23 16:37:00,867 [INFO] orchestrator: [visual_agent] Попытка 1/3
+2026-05-23 16:37:03,613 [WARNING] agents.visual_agent: Kling: 404 — эндпоинт не найден (проверьте KIE_API_KEY и URL)
+2026-05-23 16:37:03,615 [WARNING] agents.visual_agent: Kling: эндпоинт недоступен — прекращаем попытки, переходим на Pexels
+2026-05-23 16:37:03,616 [WARNING] agents.visual_agent: Kling вернул 0 клипов — переключаюсь на Pexels
+2026-05-23 16:37:42,592 [INFO] agents.music_agent: Определено настроение: calm
+2026-05-23 16:37:42,593 [INFO] agents.music_agent: Трек из локальной папки: calm_ambient_01.mp3
+2026-05-23 16:37:42,593 [INFO] orchestrator: Музыка: source=local mood=calm
+2026-05-23 16:37:56,033 [INFO] orchestrator: Субтитры: 75 сегментов
+2026-05-23 16:37:56,089 [INFO] agents.entity_visuals: Entity Visuals: классиков не найдено
+2026-05-23 16:38:13,369 [INFO] agents.visual_agent: Photo dedup/filter: 12 → 10
+2026-05-23 16:38:13,370 [INFO] agents.visual_agent: get_photos: 10 фото из pexels
+2026-05-23 16:38:13,370 [INFO] orchestrator: Photos pool: 10 шт (source=pexels)
+2026-05-23 16:38:13,377 [INFO] orchestrator: [assembly_agent] Попытка 1/3
+2026-05-23 16:38:14,945 [INFO] agents.assembly_agent: Photo burst slot=11 @ 22.3s (5 фото)
+2026-05-23 16:38:17,551 [INFO] agents.assembly_agent: Photo weave: 5/23 слотов под фото
+2026-05-23 16:39:17,291 [INFO] orchestrator: Видео собрано: D:\Projects\content-factory\output\video\20260523_163813_youtube.mp4
+2026-05-23 16:39:25,503 [INFO] agents.thumbnail_agent: Thumbnail via YandexART: D:\Projects\content-factory\output\thumbnails\20260523_163917_5_привычек_для_укрепления_здоровья.jpg
+2026-05-23 16:39:25,507 [INFO] orchestrator: Thumbnail: D:\Projects\content-factory\output\thumbnails\20260523_163917_5_привычек_для_укрепления_здоровья.jpg (source=yandex_art)
+2026-05-23 16:39:25,507 [INFO] orchestrator: [qa_agent] Попытка 1/3
+2026-05-23 16:39:25,630 [INFO] agents.qa_agent: QA approved: 20260523_163813_youtube.mp4 (1080x1920, 44.7 сек, платформа=youtube)
+2026-05-23 16:39:25,638 [INFO] orchestrator: [publisher_agent] Попытка 1/3
+2026-05-23 16:39:25,641 [INFO] orchestrator: [publisher] DRY RUN — публикация пропущена
+2026-05-23 16:39:25,644 [INFO] orchestrator: Опубликовано: post_id=dry-run-000
+2026-05-23 16:39:25,653 [INFO] agents.topic_filter: Тема отмечена как опубликованная: 'на здоровье'
+2026-05-23 16:39:27,144 [INFO] orchestrator: === Пайплайн завершён успешно ===
+2026-05-23 16:39:29,193 [INFO] orchestrator: === Запуск пайплайна run_id=20260523_133929_психология ===
+2026-05-23 16:39:29,199 [INFO] orchestrator: [trend_scout] Попытка 1/3
+2026-05-23 16:39:33,099 [INFO] agents.trend_scout: Google Trends (geo=RU): найдено 5 запросов по 'психология'
+2026-05-23 16:39:33,895 [INFO] agents.trend_scout: YouTube Trending (region=RU, cat=26): найдено 1 релевантных видео
+2026-05-23 16:39:35,304 [INFO] agents.trend_scout: Google News RSS: найдено 10 статей по 'психология'
+2026-05-23 16:39:36,186 [INFO] agents.trend_scout: Habr RSS: найдено 5 статей по 'психология'
+2026-05-23 16:39:37,398 [INFO] agents.trend_scout: vc.ru RSS: найдено 0 статей по 'психология'
+2026-05-23 16:39:37,399 [INFO] agents.trend_scout: Trend Scout: итого 5 тем для ниши 'психология'
+2026-05-23 16:39:37,402 [INFO] orchestrator: Тренды: 5 тем
+2026-05-23 16:39:37,407 [INFO] orchestrator: [idea_generator] Попытка 1/3
+2026-05-23 16:39:37,414 [INFO] agents.idea_generator: Отправляю 5 тем в Groq для генерации идей
+2026-05-23 16:39:44,029 [INFO] agents.idea_generator: Idea Generator вернул 3 идей
+2026-05-23 16:39:44,032 [INFO] orchestrator: Идеи: 3 вариантов
+2026-05-23 16:39:44,037 [INFO] orchestrator: [topic_filter] Попытка 1/3
+2026-05-23 16:39:45,122 [INFO] agents.topic_filter: Дубль (30 дней): 'Как преодолеть трудности: Психология препятствий и сила воли.' — пропускаем
+2026-05-23 16:39:45,122 [INFO] agents.topic_filter: Дубль (30 дней): 'Психологи объяснили, почему люди дают имена машинам и роботам-пылесосам' — пропускаем
+2026-05-23 16:39:45,122 [INFO] agents.topic_filter: Дубль (30 дней): 'психология это' — пропускаем
+2026-05-23 16:39:45,123 [INFO] agents.topic_filter: Все темы уже публиковались за последние 30 дней
+2026-05-23 16:39:45,123 [ERROR] orchestrator: [topic_filter] Ошибка (попытка 1): Все темы отфильтрованы (дубли или unsafe) — нечего публиковать
+2026-05-23 16:39:50,127 [INFO] orchestrator: [topic_filter] Попытка 2/3
+2026-05-23 16:39:50,157 [INFO] agents.topic_filter: Дубль (30 дней): 'Как преодолеть трудности: Психология препятствий и сила воли.' — пропускаем
+2026-05-23 16:39:50,158 [INFO] agents.topic_filter: Дубль (30 дней): 'Психологи объяснили, почему люди дают имена машинам и роботам-пылесосам' — пропускаем
+2026-05-23 16:39:50,158 [INFO] agents.topic_filter: Дубль (30 дней): 'психология это' — пропускаем
+2026-05-23 16:39:50,158 [INFO] agents.topic_filter: Все темы уже публиковались за последние 30 дней
+2026-05-23 16:39:50,158 [ERROR] orchestrator: [topic_filter] Ошибка (попытка 2): Все темы отфильтрованы (дубли или unsafe) — нечего публиковать
+2026-05-23 16:39:55,163 [INFO] orchestrator: [topic_filter] Попытка 3/3
+2026-05-23 16:39:55,192 [INFO] agents.topic_filter: Дубль (30 дней): 'Как преодолеть трудности: Психология препятствий и сила воли.' — пропускаем
+2026-05-23 16:39:55,192 [INFO] agents.topic_filter: Дубль (30 дней): 'Психологи объяснили, почему люди дают имена машинам и роботам-пылесосам' — пропускаем
+2026-05-23 16:39:55,193 [INFO] agents.topic_filter: Дубль (30 дней): 'психология это' — пропускаем
+2026-05-23 16:39:55,193 [INFO] agents.topic_filter: Все темы уже публиковались за последние 30 дней
+2026-05-23 16:39:55,193 [ERROR] orchestrator: [topic_filter] Ошибка (попытка 3): Все темы отфильтрованы (дубли или unsafe) — нечего публиковать
+2026-05-23 16:39:55,958 [INFO] agents.notify_agent: Telegram: отправлено (message_id=43)
+2026-05-23 16:39:55,990 [CRITICAL] orchestrator: Пайплайн упал: Шаг 'topic_filter' провалился после 3 попыток
+Traceback (most recent call last):
+  File "D:\Projects\content-factory\main.py", line 160, in _run_with_retry
+    result = fn(*args, **kwargs)
+  File "D:\Projects\content-factory\main.py", line 207, in step_topic_filter
+    raise ValueError("Все темы отфильтрованы (дубли или unsafe) — нечего публиковать")
+ValueError: Все темы отфильтрованы (дубли или unsafe) — нечего публиковать
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "D:\Projects\content-factory\main.py", line 478, in run_pipeline
+    filtered = retry("topic_filter", step_topic_filter, ideas, platform, niche)
+  File "D:\Projects\content-factory\main.py", line 450, in retry
+    return _run_with_retry(name, fn, conn, run_id, None, *args, **kwargs)
+  File "D:\Projects\content-factory\main.py", line 180, in _run_with_retry
+    raise RuntimeError(f"Шаг '{step_name}' провалился после {MAX_RETRIES} попыток") from last_error
+RuntimeError: Шаг 'topic_filter' провалился после 3 попыток
+
+2026-05-23 16:39:57,360 [INFO] orchestrator: === Запуск пайплайна run_id=20260523_133957_бизнес ===
+2026-05-23 16:39:57,365 [INFO] orchestrator: [trend_scout] Попытка 1/3
+2026-05-23 16:40:02,404 [INFO] agents.trend_scout: Google Trends (geo=RU): найдено 5 запросов по 'бизнес'
+2026-05-23 16:40:03,250 [INFO] agents.trend_scout: YouTube Trending (region=RU, cat=22): найдено 2 релевантных видео
+2026-05-23 16:40:04,630 [INFO] agents.trend_scout: Google News RSS: найдено 10 статей по 'бизнес'
+2026-05-23 16:40:05,793 [INFO] agents.trend_scout: Habr RSS: найдено 5 статей по 'бизнес'
+2026-05-23 16:40:06,872 [INFO] agents.trend_scout: vc.ru RSS: найдено 0 статей по 'бизнес'
+2026-05-23 16:40:06,872 [INFO] agents.trend_scout: Trend Scout: итого 5 тем для ниши 'бизнес'
+2026-05-23 16:40:06,876 [INFO] orchestrator: Тренды: 5 тем
+2026-05-23 16:40:06,882 [INFO] orchestrator: [idea_generator] Попытка 1/3
+2026-05-23 16:40:06,888 [INFO] agents.idea_generator: Отправляю 5 тем в Groq для генерации идей
+2026-05-23 16:40:13,016 [INFO] agents.idea_generator: Idea Generator вернул 3 идей
+2026-05-23 16:40:13,020 [INFO] orchestrator: Идеи: 3 вариантов
+2026-05-23 16:40:13,024 [INFO] orchestrator: [topic_filter] Попытка 1/3
+2026-05-23 16:40:14,090 [INFO] agents.topic_filter: Дубль (30 дней): 'бизнес онлайн' — пропускаем
+2026-05-23 16:40:15,819 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-23 16:40:15,826 [INFO] agents.topic_filter: Нерелевантно нише 'бизнес': 'Как IT-сектору выжить в условиях санкций' — пропускаем
+2026-05-23 16:40:16,656 [INFO] google_genai.models: AFC is enabled with max remote calls: 10.
+2026-05-23 16:40:17,365 [INFO] httpx: HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-05-23 16:40:17,366 [WARNING] agents.topic_filter: Gemini 429 — переключаемся на Cerebras для safety-check
+2026-05-23 16:40:17,892 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-23 16:40:17,894 [INFO] agents.topic_filter: Unsafe (Cerebras): 'Лечение рака: новые методы и перспективы' — МЕДИЦИНСКИЕ СОВЕТЫ: лечение конкретных болезней
+2026-05-23 16:40:17,894 [INFO] agents.topic_filter: Unsafe (Cerebras): 'Путин и Зеленский: геополитика и конфликты' — ПОЛИТИКА: геополитические конфликты
+2026-05-23 16:40:17,894 [INFO] agents.topic_filter: Unsafe (Cerebras): 'Секс и отношения: советы для пар' — 18+ / ЖЁСТКИЙ КОНТЕНТ: секс
+2026-05-23 16:40:17,894 [INFO] agents.topic_filter: Unsafe (Cerebras): 'Вылечить депрессию: эффективные методы' — МЕДИЦИНСКИЕ СОВЕТЫ: лечение конкретных болезней
+2026-05-23 16:40:17,894 [INFO] agents.topic_filter: Topic Filter: входило 3 -> dedup 1 -> niche 1 -> safety 1
+2026-05-23 16:40:17,898 [INFO] orchestrator: После фильтрации: 1 идей
+2026-05-23 16:40:17,903 [INFO] orchestrator: Генерирую сценарий для идеи: '5 ошибок малого бизнеса, которых можно избежать'
+2026-05-23 16:40:17,925 [INFO] agents.research_agent: Research Agent: исследую «5 ошибок малого бизнеса, которых можно избежать»
+2026-05-23 16:40:30,831 [INFO] agents.research_agent: Wikipedia: 6 фактов для «5 ошибок малого бизнеса, которых можно избежать»
+2026-05-23 16:40:31,707 [WARNING] agents.research_agent: Semantic Scholar: rate limit (429) — пропускаем
+2026-05-23 16:40:41,722 [WARNING] agents.research_agent: Google News ошибка: HTTPSConnectionPool(host='news.google.com', port=443): Max retries exceeded with url: /rss/search?q=5%20%D0%BE%D1%88%D0%B8%D0%B1%D0%BE%D0%BA%20%D0%BC%D0%B0%D0%BB%D0%BE%D0%B3%D0%BE%20%D0%B1%D0%B8%D0%B7%D0%BD%D0%B5%D1%81%D0%B0%2C%20%D0%BA%D0%BE%D1%82%D0%BE%D1%80%D1%8B%D1%85%20%D0%BC%D0%BE%D0%B6%D0%BD%D0%BE%20%D0%B8%D0%B7%D0%B1%D0%B5%D0%B6%D0%B0%D1%82%D1%8C&hl=ru&gl=RU&ceid=RU:ru (Caused by ConnectTimeoutError(<urllib3.connection.HTTPSConnection object at 0x0000025155BB34D0>, 'Connection to news.google.com timed out. (connect timeout=10)'))
+2026-05-23 16:40:41,722 [INFO] agents.research_agent: Research Agent: Собрано 6 фактов по теме «5 ошибок малого бизнеса, которых можно избежать» из 1 источников: Wikipedia
+2026-05-23 16:40:41,732 [INFO] orchestrator: [script_writer] Попытка 1/3
+2026-05-23 16:40:51,487 [INFO] orchestrator: [fact_checker] Попытка 1/3
+2026-05-23 16:40:51,492 [INFO] agents.fact_checker: Fact Checker: проверяю сценарий (634 символов)
+2026-05-23 16:40:52,052 [INFO] agents.fact_checker: Fact Checker: сценарий прошёл проверку
+2026-05-23 16:40:52,059 [INFO] orchestrator: Идея прошла fact-check: '5 ошибок малого бизнеса, которых можно избежать'
+2026-05-23 16:40:52,059 [INFO] orchestrator: [safety_agent] Попытка 1/3
+2026-05-23 16:40:52,817 [INFO] google_genai.models: AFC is enabled with max remote calls: 10.
+2026-05-23 16:40:53,485 [INFO] httpx: HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-05-23 16:40:53,487 [WARNING] agents.safety_agent: Gemini 429/quota — переключаюсь на Cerebras
+2026-05-23 16:40:54,202 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-23 16:40:54,202 [INFO] agents.safety_agent: Safety OK (Cerebras) '5 ошибок малого бизнеса, которых можно избежать' / youtube
+2026-05-23 16:40:54,232 [INFO] orchestrator: [voice_agent] Попытка 1/3
+2026-05-23 16:40:54,239 [INFO] agents.voice_agent: Voice Agent: ElevenLabs (voice=Rachel)
+2026-05-23 16:40:54,999 [WARNING] agents.voice_agent: Voice Agent: ElevenLabs лимит исчерпан, используем Yandex
+2026-05-23 16:40:55,002 [INFO] agents.voice_agent: Voice Agent: Yandex SpeechKit (voice=alena)
+2026-05-23 16:40:59,101 [INFO] agents.voice_agent: Voice Agent: Yandex ✓ → D:\Projects\content-factory\output\audio\20260523_164054_youtube.mp3
+2026-05-23 16:40:59,133 [INFO] orchestrator: [visual_agent] Попытка 1/3
+2026-05-23 16:41:01,566 [WARNING] agents.visual_agent: Kling: 404 — эндпоинт не найден (проверьте KIE_API_KEY и URL)
+2026-05-23 16:41:01,568 [WARNING] agents.visual_agent: Kling: эндпоинт недоступен — прекращаем попытки, переходим на Pexels
+2026-05-23 16:41:01,569 [WARNING] agents.visual_agent: Kling вернул 0 клипов — переключаюсь на Pexels
+2026-05-23 16:41:57,038 [WARNING] utils.llm_client: Yandex (music_agent) ошибка: HTTPSConnectionPool(host='llm.api.cloud.yandex.net', port=443): Max retries exceeded with url: /foundationModels/v1/completion (Caused by ConnectTimeoutError(<urllib3.connection.HTTPSConnection object at 0x0000025155BB1BD0>, 'Connection to llm.api.cloud.yandex.net timed out. (connect timeout=60)')) — переключаюсь на Groq
+2026-05-23 16:41:58,059 [INFO] httpx: HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-23 16:41:58,092 [INFO] agents.music_agent: Определено настроение: dramatic
+2026-05-23 16:41:58,092 [INFO] agents.music_agent: Трек из локальной папки: dramatic_cinematic_01.mp3
+2026-05-23 16:41:58,092 [INFO] orchestrator: Музыка: source=local mood=dramatic
+2026-05-23 16:42:11,730 [INFO] orchestrator: Субтитры: 70 сегментов
+2026-05-23 16:42:11,786 [INFO] agents.entity_visuals: Entity Visuals: классиков не найдено
+2026-05-23 16:42:29,672 [INFO] agents.visual_agent: get_photos: 12 фото из pexels
+2026-05-23 16:42:29,672 [INFO] orchestrator: Photos pool: 12 шт (source=pexels)
+2026-05-23 16:42:29,676 [INFO] orchestrator: [assembly_agent] Попытка 1/3
+2026-05-23 16:42:30,947 [INFO] agents.assembly_agent: Photo burst slot=10 @ 21.0s (5 фото)
+2026-05-23 16:42:34,866 [INFO] agents.assembly_agent: Photo weave: 7/21 слотов под фото
+2026-05-23 16:43:11,002 [INFO] orchestrator: Видео собрано: D:\Projects\content-factory\output\video\20260523_164229_youtube.mp4
+2026-05-23 16:43:19,064 [INFO] agents.thumbnail_agent: Thumbnail via YandexART: D:\Projects\content-factory\output\thumbnails\20260523_164311_5_ошибок_малого_бизнеса__которых_можно_и.jpg
+2026-05-23 16:43:19,066 [INFO] orchestrator: Thumbnail: D:\Projects\content-factory\output\thumbnails\20260523_164311_5_ошибок_малого_бизнеса__которых_можно_и.jpg (source=yandex_art)
+2026-05-23 16:43:19,066 [INFO] orchestrator: [qa_agent] Попытка 1/3
+2026-05-23 16:43:19,147 [INFO] agents.qa_agent: QA approved: 20260523_164229_youtube.mp4 (1080x1920, 42.0 сек, платформа=youtube)
+2026-05-23 16:43:19,154 [INFO] orchestrator: [publisher_agent] Попытка 1/3
+2026-05-23 16:43:19,156 [INFO] orchestrator: [publisher] DRY RUN — публикация пропущена
+2026-05-23 16:43:19,159 [INFO] orchestrator: Опубликовано: post_id=dry-run-000
+2026-05-23 16:43:19,165 [INFO] agents.topic_filter: Тема отмечена как опубликованная: 'Малый бизнес в Ульяновске терпит убытки'
+2026-05-23 16:43:20,359 [INFO] orchestrator: === Пайплайн завершён успешно ===
+2026-05-23 16:43:21,858 [INFO] orchestrator: === Запуск пайплайна run_id=20260523_134321_наука ===
+2026-05-23 16:43:21,885 [INFO] orchestrator: [trend_scout] Попытка 1/3
+2026-05-23 16:43:25,371 [INFO] agents.trend_scout: Google Trends (geo=RU): найдено 5 запросов по 'наука'
+2026-05-23 16:43:26,059 [WARNING] agents.trend_scout: YouTube Trending (region=RU) HTTP ошибка: 404 Client Error: Not Found for url: https://www.googleapis.com/youtube/v3/videos?part=snippet%2Cstatistics&chart=mostPopular&maxResults=50&videoCategoryId=27&regionCode=RU&key=AIzaSyBjBYKNCI_1aJvjxY-ndS_F3yLLN-xuNqo
+2026-05-23 16:43:26,819 [WARNING] agents.trend_scout: YouTube Trending (region=US) HTTP ошибка: 404 Client Error: Not Found for url: https://www.googleapis.com/youtube/v3/videos?part=snippet%2Cstatistics&chart=mostPopular&maxResults=50&videoCategoryId=27&regionCode=US&key=AIzaSyBjBYKNCI_1aJvjxY-ndS_F3yLLN-xuNqo
+2026-05-23 16:43:27,502 [WARNING] agents.trend_scout: YouTube Trending (region=) HTTP ошибка: 404 Client Error: Not Found for url: https://www.googleapis.com/youtube/v3/videos?part=snippet%2Cstatistics&chart=mostPopular&maxResults=50&videoCategoryId=27&key=AIzaSyBjBYKNCI_1aJvjxY-ndS_F3yLLN-xuNqo
+2026-05-23 16:43:27,505 [INFO] agents.trend_scout: Ниша 'наука' не найдена в YouTube Trending — пропускаем
+2026-05-23 16:43:29,080 [INFO] agents.trend_scout: Google News RSS: найдено 10 статей по 'наука'
+2026-05-23 16:43:29,854 [INFO] agents.trend_scout: Habr RSS: найдено 5 статей по 'наука'
+2026-05-23 16:43:30,962 [INFO] agents.trend_scout: vc.ru RSS: найдено 0 статей по 'наука'
+2026-05-23 16:43:30,962 [INFO] agents.trend_scout: Trend Scout: итого 5 тем для ниши 'наука'
+2026-05-23 16:43:30,989 [INFO] orchestrator: Тренды: 5 тем
+2026-05-23 16:43:30,995 [INFO] orchestrator: [idea_generator] Попытка 1/3
+2026-05-23 16:43:31,001 [INFO] agents.idea_generator: Отправляю 5 тем в Groq для генерации идей
+2026-05-23 16:43:37,390 [INFO] agents.idea_generator: Idea Generator вернул 3 идей
+2026-05-23 16:43:37,394 [INFO] orchestrator: Идеи: 3 вариантов
+2026-05-23 16:43:37,399 [INFO] orchestrator: [topic_filter] Попытка 1/3
+2026-05-23 16:43:38,777 [INFO] agents.topic_filter: Дубль (30 дней): 'наука это' — пропускаем
+2026-05-23 16:43:40,471 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-23 16:43:41,110 [INFO] google_genai.models: AFC is enabled with max remote calls: 10.
+2026-05-23 16:43:41,806 [INFO] httpx: HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-05-23 16:43:41,807 [WARNING] agents.topic_filter: Gemini 429 — переключаемся на Cerebras для safety-check
+2026-05-23 16:43:42,306 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-23 16:43:42,329 [INFO] agents.topic_filter: Topic Filter: входило 3 -> dedup 2 -> niche 2 -> safety 2
+2026-05-23 16:43:42,334 [INFO] orchestrator: После фильтрации: 2 идей
+2026-05-23 16:43:42,346 [INFO] orchestrator: Генерирую сценарий для идеи: 'Форум инноваций: что обсуждают учёные на научных мероприятиях?'
+2026-05-23 16:43:42,357 [INFO] agents.research_agent: Research Agent: исследую «Форум инноваций: что обсуждают учёные на научных мероприятиях?»
+2026-05-23 16:43:53,234 [INFO] agents.research_agent: Wikipedia: 6 фактов для «Форум инноваций: что обсуждают учёные на научных мероприятиях?»
+2026-05-23 16:43:54,027 [WARNING] agents.research_agent: Semantic Scholar: rate limit (429) — пропускаем
+2026-05-23 16:43:55,185 [INFO] agents.research_agent: Google News: 3 новостей для «Форум инноваций: что обсуждают учёные на научных мероприятиях?»
+2026-05-23 16:43:55,187 [INFO] agents.research_agent: Research Agent: Собрано 9 фактов по теме «Форум инноваций: что обсуждают учёные на научных мероприятиях?» из 2 источников: Wikipedia, Google News
+2026-05-23 16:43:55,219 [INFO] orchestrator: [script_writer] Попытка 1/3
+2026-05-23 16:44:00,232 [INFO] orchestrator: [fact_checker] Попытка 1/3
+2026-05-23 16:44:00,237 [INFO] agents.fact_checker: Fact Checker: проверяю сценарий (730 символов)
+2026-05-23 16:44:00,810 [INFO] agents.fact_checker: Fact Checker: сценарий прошёл проверку
+2026-05-23 16:44:00,842 [INFO] orchestrator: Идея прошла fact-check: 'Форум инноваций: что обсуждают учёные на научных мероприятиях?'
+2026-05-23 16:44:00,842 [INFO] orchestrator: [safety_agent] Попытка 1/3
+2026-05-23 16:44:01,457 [INFO] google_genai.models: AFC is enabled with max remote calls: 10.
+2026-05-23 16:44:02,152 [INFO] httpx: HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-05-23 16:44:02,153 [WARNING] agents.safety_agent: Gemini 429/quota — переключаюсь на Cerebras
+2026-05-23 16:44:02,925 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-23 16:44:02,926 [INFO] agents.safety_agent: Safety OK (Cerebras) 'Форум инноваций: что обсуждают учёные на научных мероприятиях?' / youtube
+2026-05-23 16:44:02,957 [INFO] orchestrator: [voice_agent] Попытка 1/3
+2026-05-23 16:44:02,963 [INFO] agents.voice_agent: Voice Agent: ElevenLabs (voice=Rachel)
+2026-05-23 16:44:03,780 [WARNING] agents.voice_agent: Voice Agent: ElevenLabs лимит исчерпан, используем Yandex
+2026-05-23 16:44:03,781 [INFO] agents.voice_agent: Voice Agent: Yandex SpeechKit (voice=alena)
+2026-05-23 16:44:10,223 [INFO] agents.voice_agent: Voice Agent: Yandex ✓ → D:\Projects\content-factory\output\audio\20260523_164402_youtube.mp3
+2026-05-23 16:44:10,233 [INFO] orchestrator: [visual_agent] Попытка 1/3
+2026-05-23 16:44:12,345 [WARNING] agents.visual_agent: Kling: 404 — эндпоинт не найден (проверьте KIE_API_KEY и URL)
+2026-05-23 16:44:12,364 [WARNING] agents.visual_agent: Kling: эндпоинт недоступен — прекращаем попытки, переходим на Pexels
+2026-05-23 16:44:12,364 [WARNING] agents.visual_agent: Kling вернул 0 клипов — переключаюсь на Pexels
+2026-05-23 16:44:46,397 [INFO] agents.music_agent: Определено настроение: upbeat
+2026-05-23 16:44:46,397 [INFO] agents.music_agent: Трек из локальной папки: upbeat_energetic_01.mp3
+2026-05-23 16:44:46,397 [INFO] orchestrator: Музыка: source=local mood=upbeat
+2026-05-23 16:44:59,201 [INFO] orchestrator: Субтитры: 82 сегментов
+2026-05-23 16:44:59,254 [INFO] agents.entity_visuals: Wikipedia: фото Эйнштейн, Альберт уже в кеше
+2026-05-23 16:44:59,255 [INFO] agents.entity_visuals: Entity Visuals: 1 overlay-вставок (тайминги: Whisper word-level)
+2026-05-23 16:45:17,281 [INFO] agents.visual_agent: Photo dedup/filter: 12 → 9
+2026-05-23 16:45:17,281 [INFO] agents.visual_agent: get_photos: 9 фото из pexels
+2026-05-23 16:45:17,281 [INFO] orchestrator: Photos pool: 9 шт (source=pexels)
+2026-05-23 16:45:17,287 [INFO] orchestrator: [assembly_agent] Попытка 1/3
+2026-05-23 16:45:18,117 [INFO] agents.assembly_agent: Photo overlay slot=20 for 'Эйнштейн' @ 39.6s
+2026-05-23 16:45:19,580 [INFO] agents.assembly_agent: Photo burst slot=12 @ 24.7s (5 фото)
+2026-05-23 16:45:21,728 [INFO] agents.assembly_agent: Photo weave: 4/25 слотов под фото
+2026-05-23 16:46:30,712 [INFO] orchestrator: Видео собрано: D:\Projects\content-factory\output\video\20260523_164517_youtube.mp4
+2026-05-23 16:46:39,194 [INFO] agents.thumbnail_agent: Thumbnail via YandexART: D:\Projects\content-factory\output\thumbnails\20260523_164630_Форум_инноваций__что_обсуждают_учёные_на.jpg
+2026-05-23 16:46:39,199 [INFO] orchestrator: Thumbnail: D:\Projects\content-factory\output\thumbnails\20260523_164630_Форум_инноваций__что_обсуждают_учёные_на.jpg (source=yandex_art)
+2026-05-23 16:46:39,199 [INFO] orchestrator: [qa_agent] Попытка 1/3
+2026-05-23 16:46:39,347 [INFO] agents.qa_agent: QA approved: 20260523_164517_youtube.mp4 (1080x1920, 49.4 сек, платформа=youtube)
+2026-05-23 16:46:39,355 [INFO] orchestrator: [publisher_agent] Попытка 1/3
+2026-05-23 16:46:39,357 [INFO] orchestrator: [publisher] DRY RUN — публикация пропущена
+2026-05-23 16:46:39,359 [INFO] orchestrator: Опубликовано: post_id=dry-run-000
+2026-05-23 16:46:39,366 [INFO] agents.topic_filter: Тема отмечена как опубликованная: 'В Сеченовском Университете прошел форум «Вузовская наука. Инновации-2026»: о чем говорили ученые'
+2026-05-23 16:46:56,175 [INFO] orchestrator: === Пайплайн завершён успешно ===
+2026-05-23 16:46:58,866 [INFO] orchestrator: === Запуск пайплайна run_id=20260523_134658_здоровье ===
+2026-05-23 16:46:58,874 [INFO] orchestrator: [trend_scout] Попытка 1/3
+2026-05-23 16:47:03,259 [INFO] agents.trend_scout: Google Trends (geo=RU): найдено 5 запросов по 'здоровье'
+2026-05-23 16:47:05,590 [INFO] agents.trend_scout: Ниша 'здоровье' не найдена в YouTube Trending — пропускаем
+2026-05-23 16:47:07,018 [INFO] agents.trend_scout: Google News RSS: найдено 10 статей по 'здоровье'
+2026-05-23 16:47:08,082 [INFO] agents.trend_scout: Habr RSS: найдено 5 статей по 'здоровье'
+2026-05-23 16:47:09,116 [INFO] agents.trend_scout: vc.ru RSS: найдено 0 статей по 'здоровье'
+2026-05-23 16:47:09,117 [INFO] agents.trend_scout: Trend Scout: итого 5 тем для ниши 'здоровье'
+2026-05-23 16:47:09,120 [INFO] orchestrator: Тренды: 5 тем
+2026-05-23 16:47:09,125 [INFO] orchestrator: [idea_generator] Попытка 1/3
+2026-05-23 16:47:09,131 [INFO] agents.idea_generator: Отправляю 5 тем в Groq для генерации идей
+2026-05-23 16:47:16,257 [INFO] agents.idea_generator: Idea Generator вернул 3 идей
+2026-05-23 16:47:16,283 [INFO] orchestrator: Идеи: 3 вариантов
+2026-05-23 16:47:16,289 [INFO] orchestrator: [topic_filter] Попытка 1/3
+2026-05-23 16:47:17,457 [INFO] agents.topic_filter: Дубль (30 дней): 'на здоровье' — пропускаем
+2026-05-23 16:47:19,325 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-23 16:47:19,932 [INFO] google_genai.models: AFC is enabled with max remote calls: 10.
+2026-05-23 16:47:20,760 [INFO] httpx: HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-05-23 16:47:20,761 [WARNING] agents.topic_filter: Gemini 429 — переключаемся на Cerebras для safety-check
+2026-05-23 16:47:21,187 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-23 16:47:21,188 [INFO] agents.topic_filter: Unsafe (Cerebras): 'Почему омоложение может быть опасным и как избежать рисков' — Медические советы
+2026-05-23 16:47:21,188 [INFO] agents.topic_filter: Topic Filter: входило 3 -> dedup 2 -> niche 2 -> safety 1
+2026-05-23 16:47:21,217 [INFO] orchestrator: После фильтрации: 1 идей
+2026-05-23 16:47:21,229 [INFO] orchestrator: Генерирую сценарий для идеи: 'Сибирское здоровье: мифы и реальность'
+2026-05-23 16:47:21,240 [INFO] agents.research_agent: Research Agent: исследую «Сибирское здоровье: мифы и реальность»
+2026-05-23 16:47:33,558 [INFO] agents.research_agent: Wikipedia: 6 фактов для «Сибирское здоровье: мифы и реальность»
+2026-05-23 16:47:34,728 [WARNING] agents.research_agent: Semantic Scholar: rate limit (429) — пропускаем
+2026-05-23 16:47:36,106 [INFO] agents.research_agent: Google News: 3 новостей для «Сибирское здоровье: мифы и реальность»
+2026-05-23 16:47:36,108 [INFO] agents.research_agent: Research Agent: Собрано 9 фактов по теме «Сибирское здоровье: мифы и реальность» из 2 источников: Wikipedia, Google News
+2026-05-23 16:47:36,117 [INFO] orchestrator: [script_writer] Попытка 1/3
+2026-05-23 16:47:40,723 [INFO] orchestrator: [fact_checker] Попытка 1/3
+2026-05-23 16:47:40,729 [INFO] agents.fact_checker: Fact Checker: проверяю сценарий (711 символов)
+2026-05-23 16:47:41,284 [INFO] agents.fact_checker: Fact Checker: сценарий прошёл проверку
+2026-05-23 16:47:41,293 [INFO] orchestrator: Идея прошла fact-check: 'Сибирское здоровье: мифы и реальность'
+2026-05-23 16:47:41,293 [INFO] orchestrator: [safety_agent] Попытка 1/3
+2026-05-23 16:47:41,914 [INFO] google_genai.models: AFC is enabled with max remote calls: 10.
+2026-05-23 16:47:42,691 [INFO] httpx: HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-05-23 16:47:42,693 [WARNING] agents.safety_agent: Gemini 429/quota — переключаюсь на Cerebras
+2026-05-23 16:47:43,488 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-23 16:47:43,489 [INFO] agents.safety_agent: Safety OK (Cerebras) 'Сибирское здоровье: мифы и реальность' / youtube
+2026-05-23 16:47:43,497 [INFO] orchestrator: [voice_agent] Попытка 1/3
+2026-05-23 16:47:43,504 [INFO] agents.voice_agent: Voice Agent: ElevenLabs (voice=Rachel)
+2026-05-23 16:47:44,410 [WARNING] agents.voice_agent: Voice Agent: ElevenLabs лимит исчерпан, используем Yandex
+2026-05-23 16:47:44,413 [INFO] agents.voice_agent: Voice Agent: Yandex SpeechKit (voice=alena)
+2026-05-23 16:47:50,572 [INFO] agents.voice_agent: Voice Agent: Yandex ✓ → D:\Projects\content-factory\output\audio\20260523_164743_youtube.mp3
+2026-05-23 16:47:50,581 [INFO] orchestrator: [visual_agent] Попытка 1/3
+2026-05-23 16:48:13,095 [WARNING] agents.visual_agent: Kling: запуск генерации ошибка: HTTPSConnectionPool(host='api.kie.ai', port=443): Max retries exceeded with url: /api/v1/kling/v2-1/text-to-video (Caused by ConnectTimeoutError(<urllib3.connection.HTTPSConnection object at 0x00000233DDD225D0>, 'Connection to api.kie.ai timed out. (connect timeout=30)'))
+2026-05-23 16:48:13,095 [WARNING] agents.visual_agent: Kling: не удалось сгенерировать клип для 'strong man workout'
+2026-05-23 16:48:13,895 [WARNING] agents.visual_agent: Kling: 404 — эндпоинт не найден (проверьте KIE_API_KEY и URL)
+2026-05-23 16:48:13,897 [WARNING] agents.visual_agent: Kling: эндпоинт недоступен — прекращаем попытки, переходим на Pexels
+2026-05-23 16:48:13,897 [WARNING] agents.visual_agent: Kling вернул 0 клипов — переключаюсь на Pexels
+2026-05-23 16:48:49,878 [INFO] agents.music_agent: Определено настроение: calm
+2026-05-23 16:48:49,900 [INFO] agents.music_agent: Трек из локальной папки: calm_piano_02.mp3
+2026-05-23 16:48:49,901 [INFO] orchestrator: Музыка: source=local mood=calm
+2026-05-23 16:49:03,251 [INFO] orchestrator: Субтитры: 78 сегментов
+2026-05-23 16:49:05,460 [INFO] agents.entity_visuals: Wikipedia: скачано фото Аристотель → wiki_Aristotle.jpg
+2026-05-23 16:49:05,461 [INFO] agents.entity_visuals: Entity Visuals: 1 overlay-вставок (тайминги: Whisper word-level)
+2026-05-23 16:49:25,141 [INFO] agents.visual_agent: Photo dedup/filter: 12 → 11
+2026-05-23 16:49:25,141 [INFO] agents.visual_agent: get_photos: 11 фото из pexels
+2026-05-23 16:49:25,141 [INFO] orchestrator: Photos pool: 11 шт (source=pexels)
+2026-05-23 16:49:25,146 [INFO] orchestrator: [assembly_agent] Попытка 1/3
+2026-05-23 16:49:26,106 [INFO] agents.assembly_agent: Photo overlay slot=19 for 'Аристотель' @ 37.0s
+2026-05-23 16:49:27,341 [INFO] agents.assembly_agent: Photo burst slot=12 @ 23.1s (5 фото)
+2026-05-23 16:49:30,307 [INFO] agents.assembly_agent: Photo weave: 6/24 слотов под фото
+2026-05-23 16:50:26,395 [INFO] orchestrator: Видео собрано: D:\Projects\content-factory\output\video\20260523_164925_youtube.mp4
+2026-05-23 16:50:34,572 [INFO] agents.thumbnail_agent: Thumbnail via YandexART: D:\Projects\content-factory\output\thumbnails\20260523_165026_Сибирское_здоровье__мифы_и_реальность.jpg
+2026-05-23 16:50:34,576 [INFO] orchestrator: Thumbnail: D:\Projects\content-factory\output\thumbnails\20260523_165026_Сибирское_здоровье__мифы_и_реальность.jpg (source=yandex_art)
+2026-05-23 16:50:34,576 [INFO] orchestrator: [qa_agent] Попытка 1/3
+2026-05-23 16:50:34,677 [INFO] agents.qa_agent: QA approved: 20260523_164925_youtube.mp4 (1080x1920, 46.2 сек, платформа=youtube)
+2026-05-23 16:50:34,685 [INFO] orchestrator: [publisher_agent] Попытка 1/3
+2026-05-23 16:50:34,688 [INFO] orchestrator: [publisher] DRY RUN — публикация пропущена
+2026-05-23 16:50:34,690 [INFO] orchestrator: Опубликовано: post_id=dry-run-000
+2026-05-23 16:50:34,700 [INFO] agents.topic_filter: Тема отмечена как опубликованная: 'сибирское здоровье'
+2026-05-23 16:50:39,923 [INFO] orchestrator: === Пайплайн завершён успешно ===
+2026-05-23 16:50:42,155 [INFO] orchestrator: === Запуск пайплайна run_id=20260523_135042_психология ===
+2026-05-23 16:50:42,162 [INFO] orchestrator: [trend_scout] Попытка 1/3
+2026-05-23 16:50:45,934 [INFO] agents.trend_scout: Google Trends (geo=RU): найдено 5 запросов по 'психология'
+2026-05-23 16:50:46,838 [INFO] agents.trend_scout: YouTube Trending (region=RU, cat=26): найдено 1 релевантных видео
+2026-05-23 16:50:48,126 [INFO] agents.trend_scout: Google News RSS: найдено 10 статей по 'психология'
+2026-05-23 16:50:49,126 [INFO] agents.trend_scout: Habr RSS: найдено 5 статей по 'психология'
+2026-05-23 16:50:50,239 [INFO] agents.trend_scout: vc.ru RSS: найдено 0 статей по 'психология'
+2026-05-23 16:50:50,240 [INFO] agents.trend_scout: Trend Scout: итого 5 тем для ниши 'психология'
+2026-05-23 16:50:50,244 [INFO] orchestrator: Тренды: 5 тем
+2026-05-23 16:50:50,249 [INFO] orchestrator: [idea_generator] Попытка 1/3
+2026-05-23 16:50:50,254 [INFO] agents.idea_generator: Отправляю 5 тем в Groq для генерации идей
+2026-05-23 16:50:55,986 [INFO] agents.idea_generator: Idea Generator вернул 3 идей
+2026-05-23 16:50:55,994 [INFO] orchestrator: Идеи: 3 вариантов
+2026-05-23 16:50:55,999 [INFO] orchestrator: [topic_filter] Попытка 1/3
+2026-05-23 16:50:57,052 [INFO] agents.topic_filter: Дубль (30 дней): 'Как преодолеть трудности: Психология препятствий и сила воли.' — пропускаем
+2026-05-23 16:50:57,052 [INFO] agents.topic_filter: Дубль (30 дней): 'Психологи объяснили, почему люди дают имена машинам и роботам-пылесосам' — пропускаем
+2026-05-23 16:50:57,053 [INFO] agents.topic_filter: Дубль (30 дней): 'психология это' — пропускаем
+2026-05-23 16:50:57,053 [INFO] agents.topic_filter: Все темы уже публиковались за последние 30 дней
+2026-05-23 16:50:57,053 [ERROR] orchestrator: [topic_filter] Ошибка (попытка 1): Все темы отфильтрованы (дубли или unsafe) — нечего публиковать
+2026-05-23 16:51:02,058 [INFO] orchestrator: [topic_filter] Попытка 2/3
+2026-05-23 16:51:02,087 [INFO] agents.topic_filter: Дубль (30 дней): 'Как преодолеть трудности: Психология препятствий и сила воли.' — пропускаем
+2026-05-23 16:51:02,087 [INFO] agents.topic_filter: Дубль (30 дней): 'Психологи объяснили, почему люди дают имена машинам и роботам-пылесосам' — пропускаем
+2026-05-23 16:51:02,087 [INFO] agents.topic_filter: Дубль (30 дней): 'психология это' — пропускаем
+2026-05-23 16:51:02,087 [INFO] agents.topic_filter: Все темы уже публиковались за последние 30 дней
+2026-05-23 16:51:02,087 [ERROR] orchestrator: [topic_filter] Ошибка (попытка 2): Все темы отфильтрованы (дубли или unsafe) — нечего публиковать
+2026-05-23 16:51:07,092 [INFO] orchestrator: [topic_filter] Попытка 3/3
+2026-05-23 16:51:07,100 [INFO] agents.topic_filter: Дубль (30 дней): 'Как преодолеть трудности: Психология препятствий и сила воли.' — пропускаем
+2026-05-23 16:51:07,100 [INFO] agents.topic_filter: Дубль (30 дней): 'Психологи объяснили, почему люди дают имена машинам и роботам-пылесосам' — пропускаем
+2026-05-23 16:51:07,100 [INFO] agents.topic_filter: Дубль (30 дней): 'психология это' — пропускаем
+2026-05-23 16:51:07,100 [INFO] agents.topic_filter: Все темы уже публиковались за последние 30 дней
+2026-05-23 16:51:07,100 [ERROR] orchestrator: [topic_filter] Ошибка (попытка 3): Все темы отфильтрованы (дубли или unsafe) — нечего публиковать
+2026-05-23 16:51:07,961 [INFO] agents.notify_agent: Telegram: отправлено (message_id=47)
+2026-05-23 16:51:07,966 [CRITICAL] orchestrator: Пайплайн упал: Шаг 'topic_filter' провалился после 3 попыток
+Traceback (most recent call last):
+  File "D:\Projects\content-factory\main.py", line 160, in _run_with_retry
+    result = fn(*args, **kwargs)
+  File "D:\Projects\content-factory\main.py", line 207, in step_topic_filter
+    raise ValueError("Все темы отфильтрованы (дубли или unsafe) — нечего публиковать")
+ValueError: Все темы отфильтрованы (дубли или unsafe) — нечего публиковать
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "D:\Projects\content-factory\main.py", line 478, in run_pipeline
+    filtered = retry("topic_filter", step_topic_filter, ideas, platform, niche)
+  File "D:\Projects\content-factory\main.py", line 450, in retry
+    return _run_with_retry(name, fn, conn, run_id, None, *args, **kwargs)
+  File "D:\Projects\content-factory\main.py", line 180, in _run_with_retry
+    raise RuntimeError(f"Шаг '{step_name}' провалился после {MAX_RETRIES} попыток") from last_error
+RuntimeError: Шаг 'topic_filter' провалился после 3 попыток
+
+2026-05-23 16:51:08,952 [INFO] orchestrator: === Запуск пайплайна run_id=20260523_135108_бизнес ===
+2026-05-23 16:51:08,980 [INFO] orchestrator: [trend_scout] Попытка 1/3
+2026-05-23 16:51:13,631 [INFO] agents.trend_scout: Google Trends (geo=RU): найдено 5 запросов по 'бизнес'
+2026-05-23 16:51:14,622 [INFO] agents.trend_scout: YouTube Trending (region=RU, cat=22): найдено 2 релевантных видео
+2026-05-23 16:51:16,694 [INFO] agents.trend_scout: Google News RSS: найдено 10 статей по 'бизнес'
+2026-05-23 16:51:17,552 [INFO] agents.trend_scout: Habr RSS: найдено 5 статей по 'бизнес'
+2026-05-23 16:51:18,805 [INFO] agents.trend_scout: vc.ru RSS: найдено 0 статей по 'бизнес'
+2026-05-23 16:51:18,805 [INFO] agents.trend_scout: Trend Scout: итого 5 тем для ниши 'бизнес'
+2026-05-23 16:51:18,809 [INFO] orchestrator: Тренды: 5 тем
+2026-05-23 16:51:18,814 [INFO] orchestrator: [idea_generator] Попытка 1/3
+2026-05-23 16:51:18,822 [INFO] agents.idea_generator: Отправляю 5 тем в Groq для генерации идей
+2026-05-23 16:51:25,248 [INFO] agents.idea_generator: Idea Generator вернул 3 идей
+2026-05-23 16:51:25,275 [INFO] orchestrator: Идеи: 3 вариантов
+2026-05-23 16:51:25,280 [INFO] orchestrator: [topic_filter] Попытка 1/3
+2026-05-23 16:51:26,336 [INFO] agents.topic_filter: Дубль (30 дней): 'бизнес онлайн' — пропускаем
+2026-05-23 16:51:26,337 [INFO] agents.topic_filter: Дубль (30 дней): 'Малый бизнес в Ульяновске терпит убытки' — пропускаем
+2026-05-23 16:51:28,046 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-23 16:51:28,640 [INFO] google_genai.models: AFC is enabled with max remote calls: 10.
+2026-05-23 16:51:29,380 [INFO] httpx: HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-05-23 16:51:29,381 [WARNING] agents.topic_filter: Gemini 429 — переключаемся на Cerebras для safety-check
+2026-05-23 16:51:29,953 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-23 16:51:29,954 [INFO] agents.topic_filter: Unsafe (Cerebras): 'Лечение рака: новые методы и перспективы' — МЕДИЦИНСКИЕ СОВЕТЫ: лечение конкретных болезней
+2026-05-23 16:51:29,954 [INFO] agents.topic_filter: Unsafe (Cerebras): 'Секс и отношения в современном мире' — 18+ / ЖЁСТКИЙ КОНТЕНТ: секс, эротика
+2026-05-23 16:51:29,954 [INFO] agents.topic_filter: Unsafe (Cerebras): 'Вылечить депрессию: психологические советы' — МЕДИЦИНСКИЕ СОВЕТЫ: лечение конкретных болезней
+2026-05-23 16:51:29,954 [INFO] agents.topic_filter: Unsafe (Cerebras): 'Экстремизм и терроризм: причины и последствия' — 18+ / ЖЁСТКИЙ КОНТЕНТ: подробное насилие
+2026-05-23 16:51:29,954 [INFO] agents.topic_filter: Unsafe (Cerebras): 'Путин и Зеленский: геополитика и конфликты' — ПОЛИТИКА: геополитические конфликты
+2026-05-23 16:51:29,954 [INFO] agents.topic_filter: Topic Filter: входило 3 -> dedup 1 -> niche 1 -> safety 1
+2026-05-23 16:51:29,980 [INFO] orchestrator: После фильтрации: 1 идей
+2026-05-23 16:51:29,985 [INFO] orchestrator: Генерирую сценарий для идеи: 'IT сектор в условиях санкций: как адаптироваться бизнесу'
+2026-05-23 16:51:29,999 [INFO] agents.research_agent: Research Agent: исследую «IT сектор в условиях санкций: как адаптироваться бизнесу»
+2026-05-23 16:51:41,342 [INFO] agents.research_agent: Wikipedia: 6 фактов для «IT сектор в условиях санкций: как адаптироваться бизнесу»
+2026-05-23 16:51:42,111 [WARNING] agents.research_agent: Semantic Scholar: rate limit (429) — пропускаем
+2026-05-23 16:51:43,311 [INFO] agents.research_agent: Google News: 3 новостей для «IT сектор в условиях санкций: как адаптироваться бизнесу»
+2026-05-23 16:51:43,313 [INFO] agents.research_agent: Research Agent: Собрано 9 фактов по теме «IT сектор в условиях санкций: как адаптироваться бизнесу» из 2 источников: Wikipedia, Google News
+2026-05-23 16:51:43,322 [INFO] orchestrator: [script_writer] Попытка 1/3
+2026-05-23 16:51:45,854 [INFO] orchestrator: [fact_checker] Попытка 1/3
+2026-05-23 16:51:45,859 [INFO] agents.fact_checker: Fact Checker: проверяю сценарий (65 символов)
+2026-05-23 16:51:46,541 [INFO] agents.fact_checker: Fact Checker: сценарий прошёл проверку
+2026-05-23 16:51:46,549 [INFO] orchestrator: Идея прошла fact-check: 'IT сектор в условиях санкций: как адаптироваться бизнесу'
+2026-05-23 16:51:46,549 [INFO] orchestrator: [safety_agent] Попытка 1/3
+2026-05-23 16:51:47,158 [INFO] google_genai.models: AFC is enabled with max remote calls: 10.
+2026-05-23 16:51:47,809 [INFO] httpx: HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-05-23 16:51:47,810 [WARNING] agents.safety_agent: Gemini 429/quota — переключаюсь на Cerebras
+2026-05-23 16:51:48,513 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-23 16:51:48,514 [INFO] agents.safety_agent: Safety OK (Cerebras) 'IT сектор в условиях санкций: как адаптироваться бизнесу' / youtube
+2026-05-23 16:51:48,546 [INFO] orchestrator: [voice_agent] Попытка 1/3
+2026-05-23 16:51:48,552 [INFO] agents.voice_agent: Voice Agent: ElevenLabs (voice=Rachel)
+2026-05-23 16:51:49,339 [WARNING] agents.voice_agent: Voice Agent: ElevenLabs лимит исчерпан, используем Yandex
+2026-05-23 16:51:49,341 [INFO] agents.voice_agent: Voice Agent: Yandex SpeechKit (voice=alena)
+2026-05-23 16:51:49,923 [INFO] agents.voice_agent: Voice Agent: Yandex ✓ → D:\Projects\content-factory\output\audio\20260523_165148_youtube.mp3
+2026-05-23 16:51:49,933 [INFO] orchestrator: [visual_agent] Попытка 1/3
+2026-05-23 16:51:51,760 [WARNING] agents.visual_agent: Kling: 404 — эндпоинт не найден (проверьте KIE_API_KEY и URL)
+2026-05-23 16:51:51,762 [WARNING] agents.visual_agent: Kling: эндпоинт недоступен — прекращаем попытки, переходим на Pexels
+2026-05-23 16:51:51,763 [WARNING] agents.visual_agent: Kling вернул 0 клипов — переключаюсь на Pexels
+2026-05-23 16:52:24,692 [INFO] agents.music_agent: Определено настроение: calm
+2026-05-23 16:52:24,692 [INFO] agents.music_agent: Трек из локальной папки: calm_piano_02.mp3
+2026-05-23 16:52:24,692 [INFO] orchestrator: Музыка: source=local mood=calm
+2026-05-23 16:52:31,583 [INFO] orchestrator: Субтитры: 8 сегментов
+2026-05-23 16:52:31,636 [INFO] agents.entity_visuals: Entity Visuals: классиков не найдено
+2026-05-23 16:52:49,159 [INFO] agents.visual_agent: get_photos: 11 фото из pexels
+2026-05-23 16:52:49,160 [INFO] orchestrator: Photos pool: 11 шт (source=pexels)
+2026-05-23 16:52:49,165 [INFO] orchestrator: [assembly_agent] Попытка 1/3
+2026-05-23 16:52:50,559 [INFO] agents.assembly_agent: Photo burst slot=1 @ 2.1s (5 фото)
+2026-05-23 16:52:51,212 [INFO] agents.assembly_agent: Photo weave: 1/3 слотов под фото
+2026-05-23 16:52:56,651 [INFO] orchestrator: Видео собрано: D:\Projects\content-factory\output\video\20260523_165249_youtube.mp4
+2026-05-23 16:53:04,712 [INFO] agents.thumbnail_agent: Thumbnail via YandexART: D:\Projects\content-factory\output\thumbnails\20260523_165256_IT_сектор_в_условиях_санкций__как_адапти.jpg
+2026-05-23 16:53:04,716 [INFO] orchestrator: Thumbnail: D:\Projects\content-factory\output\thumbnails\20260523_165256_IT_сектор_в_условиях_санкций__как_адапти.jpg (source=yandex_art)
+2026-05-23 16:53:04,716 [INFO] orchestrator: [qa_agent] Попытка 1/3
+2026-05-23 16:53:04,806 [INFO] agents.qa_agent: QA approved: 20260523_165249_youtube.mp4 (1080x1920, 4.2 сек, платформа=youtube)
+2026-05-23 16:53:04,813 [INFO] orchestrator: [publisher_agent] Попытка 1/3
+2026-05-23 16:53:04,816 [INFO] orchestrator: [publisher] DRY RUN — публикация пропущена
+2026-05-23 16:53:04,818 [INFO] orchestrator: Опубликовано: post_id=dry-run-000
+2026-05-23 16:53:04,826 [INFO] agents.topic_filter: Тема отмечена как опубликованная: 'Усидеть на двух стульях. IT сектор в условиях санкций'
+2026-05-23 16:53:06,154 [INFO] orchestrator: === Пайплайн завершён успешно ===
+2026-05-23 17:51:59,332 [INFO] orchestrator: === Запуск пайплайна run_id=20260523_145159_наука ===
+2026-05-23 17:51:59,359 [INFO] orchestrator: [trend_scout] Попытка 1/3
+2026-05-23 17:52:03,806 [INFO] agents.trend_scout: Google Trends (geo=RU): найдено 5 запросов по 'наука'
+2026-05-23 17:52:04,463 [WARNING] agents.trend_scout: YouTube Trending (region=RU) HTTP ошибка: 404 Client Error: Not Found for url: https://www.googleapis.com/youtube/v3/videos?part=snippet%2Cstatistics&chart=mostPopular&maxResults=50&videoCategoryId=27&regionCode=RU&key=AIzaSyBjBYKNCI_1aJvjxY-ndS_F3yLLN-xuNqo
+2026-05-23 17:52:05,281 [WARNING] agents.trend_scout: YouTube Trending (region=US) HTTP ошибка: 404 Client Error: Not Found for url: https://www.googleapis.com/youtube/v3/videos?part=snippet%2Cstatistics&chart=mostPopular&maxResults=50&videoCategoryId=27&regionCode=US&key=AIzaSyBjBYKNCI_1aJvjxY-ndS_F3yLLN-xuNqo
+2026-05-23 17:52:06,153 [WARNING] agents.trend_scout: YouTube Trending (region=) HTTP ошибка: 404 Client Error: Not Found for url: https://www.googleapis.com/youtube/v3/videos?part=snippet%2Cstatistics&chart=mostPopular&maxResults=50&videoCategoryId=27&key=AIzaSyBjBYKNCI_1aJvjxY-ndS_F3yLLN-xuNqo
+2026-05-23 17:52:06,155 [INFO] agents.trend_scout: Ниша 'наука' не найдена в YouTube Trending — пропускаем
+2026-05-23 17:52:07,720 [INFO] agents.trend_scout: Google News RSS: найдено 10 статей по 'наука'
+2026-05-23 17:52:08,919 [INFO] agents.trend_scout: Habr RSS: найдено 5 статей по 'наука'
+2026-05-23 17:52:10,324 [INFO] agents.trend_scout: vc.ru RSS: найдено 0 статей по 'наука'
+2026-05-23 17:52:10,325 [INFO] agents.trend_scout: Trend Scout: итого 5 тем для ниши 'наука'
+2026-05-23 17:52:10,352 [INFO] orchestrator: Тренды: 5 тем
+2026-05-23 17:52:10,359 [INFO] orchestrator: [idea_generator] Попытка 1/3
+2026-05-23 17:52:10,366 [INFO] agents.idea_generator: Отправляю 5 тем в Groq для генерации идей
+2026-05-23 17:52:17,006 [INFO] agents.idea_generator: Idea Generator вернул 3 идей
+2026-05-23 17:52:17,032 [INFO] orchestrator: Идеи: 3 вариантов
+2026-05-23 17:52:17,038 [INFO] orchestrator: [topic_filter] Попытка 1/3
+2026-05-23 17:52:18,408 [INFO] agents.topic_filter: Дубль (30 дней): 'наука это' — пропускаем
+2026-05-23 17:52:20,261 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-23 17:52:20,940 [INFO] google_genai.models: AFC is enabled with max remote calls: 10.
+2026-05-23 17:52:21,746 [INFO] httpx: HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-05-23 17:52:21,747 [WARNING] agents.topic_filter: Gemini 429 — переключаемся на Cerebras для safety-check
+2026-05-23 17:52:22,228 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-23 17:52:22,229 [INFO] agents.topic_filter: Topic Filter: входило 3 -> dedup 2 -> niche 2 -> safety 2
+2026-05-23 17:52:22,233 [INFO] orchestrator: После фильтрации: 2 идей
+2026-05-23 17:52:22,246 [INFO] orchestrator: Генерирую сценарий для идеи: 'Как учёные создают сверхпрочные материалы'
+2026-05-23 17:52:22,259 [INFO] agents.research_agent: Research Agent: исследую «Как учёные создают сверхпрочные материалы»
+2026-05-23 17:52:33,803 [INFO] agents.research_agent: Wikipedia: 4 фактов для «Как учёные создают сверхпрочные материалы»
+2026-05-23 17:52:34,955 [WARNING] agents.research_agent: Semantic Scholar: rate limit (429) — пропускаем
+2026-05-23 17:52:36,643 [INFO] primp: response: https://grokipedia.com/api/typeahead?query=%D0%9A%D0%B0%D0%BA+%D1%83%D1%87%D1%91%D0%BD%D1%8B%D0%B5+%D1%81%D0%BE%D0%B7%D0%B4%D0%B0%D1%8E%D1%82+%D1%81%D0%B2%D0%B5%D1%80%D1%85%D0%BF%D1%80%D0%BE%D1%87%D0%BD%D1%8B%D0%B5+%D0%BC%D0%B0%D1%82%D0%B5%D1%80%D0%B8%D0%B0%D0%BB%D1%8B+%D0%B8%D1%81%D1%81%D0%BB%D0%B5%D0%B4%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5+%D1%81%D1%82%D0%B0%D1%82%D0%B8%D1%81%D1%82%D0%B8%D0%BA%D0%B0+%D0%B4%D0%B0%D0%BD%D0%BD%D1%8B%D0%B5&limit=1 200
+2026-05-23 17:52:36,768 [INFO] primp: response: https://ru.wikipedia.org/w/api.php?action=opensearch&profile=fuzzy&limit=1&search=%D0%9A%D0%B0%D0%BA%20%D1%83%D1%87%D1%91%D0%BD%D1%8B%D0%B5%20%D1%81%D0%BE%D0%B7%D0%B4%D0%B0%D1%8E%D1%82%20%D1%81%D0%B2%D0%B5%D1%80%D1%85%D0%BF%D1%80%D0%BE%D1%87%D0%BD%D1%8B%D0%B5%20%D0%BC%D0%B0%D1%82%D0%B5%D1%80%D0%B8%D0%B0%D0%BB%D1%8B%20%D0%B8%D1%81%D1%81%D0%BB%D0%B5%D0%B4%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5%20%D1%81%D1%82%D0%B0%D1%82%D0%B8%D1%81%D1%82%D0%B8%D0%BA%D0%B0%20%D0%B4%D0%B0%D0%BD%D0%BD%D1%8B%D0%B5 200
+2026-05-23 17:52:38,181 [INFO] primp: response: https://search.brave.com/search?q=%D0%9A%D0%B0%D0%BA+%D1%83%D1%87%D1%91%D0%BD%D1%8B%D0%B5+%D1%81%D0%BE%D0%B7%D0%B4%D0%B0%D1%8E%D1%82+%D1%81%D0%B2%D0%B5%D1%80%D1%85%D0%BF%D1%80%D0%BE%D1%87%D0%BD%D1%8B%D0%B5+%D0%BC%D0%B0%D1%82%D0%B5%D1%80%D0%B8%D0%B0%D0%BB%D1%8B+%D0%B8%D1%81%D1%81%D0%BB%D0%B5%D0%B4%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5+%D1%81%D1%82%D0%B0%D1%82%D0%B8%D1%81%D1%82%D0%B8%D0%BA%D0%B0+%D0%B4%D0%B0%D0%BD%D0%BD%D1%8B%D0%B5&source=web 200
+2026-05-23 17:52:38,315 [INFO] agents.research_agent: Web search via DuckDuckGo: 6 результатов для «Как учёные создают сверхпрочные материалы исследование статистика данные»
+2026-05-23 17:52:40,751 [INFO] primp: response: https://grokipedia.com/api/typeahead?query=%D0%9A%D0%B0%D0%BA+%D1%83%D1%87%D1%91%D0%BD%D1%8B%D0%B5+%D1%81%D0%BE%D0%B7%D0%B4%D0%B0%D1%8E%D1%82+%D1%81%D0%B2%D0%B5%D1%80%D1%85%D0%BF%D1%80%D0%BE%D1%87%D0%BD%D1%8B%D0%B5+%D0%BC%D0%B0%D1%82%D0%B5%D1%80%D0%B8%D0%B0%D0%BB%D1%8B+2024+%D0%BF%D1%80%D0%BE%D1%86%D0%B5%D0%BD%D1%82%D1%8B+%D1%80%D0%B5%D0%B7%D1%83%D0%BB%D1%8C%D1%82%D0%B0%D1%82%D1%8B&limit=1 200
+2026-05-23 17:52:40,827 [INFO] primp: response: https://ru.wikipedia.org/w/api.php?action=opensearch&profile=fuzzy&limit=1&search=%D0%9A%D0%B0%D0%BA%20%D1%83%D1%87%D1%91%D0%BD%D1%8B%D0%B5%20%D1%81%D0%BE%D0%B7%D0%B4%D0%B0%D1%8E%D1%82%20%D1%81%D0%B2%D0%B5%D1%80%D1%85%D0%BF%D1%80%D0%BE%D1%87%D0%BD%D1%8B%D0%B5%20%D0%BC%D0%B0%D1%82%D0%B5%D1%80%D0%B8%D0%B0%D0%BB%D1%8B%202024%20%D0%BF%D1%80%D0%BE%D1%86%D0%B5%D0%BD%D1%82%D1%8B%20%D1%80%D0%B5%D0%B7%D1%83%D0%BB%D1%8C%D1%82%D0%B0%D1%82%D1%8B 429
+2026-05-23 17:52:42,298 [INFO] primp: response: https://www.google.com/search?q=%D0%9A%D0%B0%D0%BA+%D1%83%D1%87%D1%91%D0%BD%D1%8B%D0%B5+%D1%81%D0%BE%D0%B7%D0%B4%D0%B0%D1%8E%D1%82+%D1%81%D0%B2%D0%B5%D1%80%D1%85%D0%BF%D1%80%D0%BE%D1%87%D0%BD%D1%8B%D0%B5+%D0%BC%D0%B0%D1%82%D0%B5%D1%80%D0%B8%D0%B0%D0%BB%D1%8B+2024+%D0%BF%D1%80%D0%BE%D1%86%D0%B5%D0%BD%D1%82%D1%8B+%D1%80%D0%B5%D0%B7%D1%83%D0%BB%D1%8C%D1%82%D0%B0%D1%82%D1%8B&filter=1&start=0&hl=ru-RU&lr=lang_ru&cr=countryRU 200
+2026-05-23 17:52:42,321 [INFO] agents.research_agent: Web search via DuckDuckGo: 6 результатов для «Как учёные создают сверхпрочные материалы 2024 проценты результаты»
+2026-05-23 17:52:44,439 [INFO] agents.research_agent: Web search total: 8 фактов для «Как учёные создают сверхпрочные материалы» через DuckDuckGo
+2026-05-23 17:52:45,572 [INFO] agents.research_agent: Google News: 3 новостей для «Как учёные создают сверхпрочные материалы»
+2026-05-23 17:52:45,574 [INFO] agents.research_agent: Research Agent: Собрано 15 фактов по теме «Как учёные создают сверхпрочные материалы» из 3 источников: Wikipedia, Web (DuckDuckGo), Google News
+2026-05-23 17:52:45,607 [INFO] orchestrator: [script_writer] Попытка 1/3
+2026-05-23 17:52:45,612 [INFO] agents.script_writer: Script Writer: target=60с → диапазон 140-160 слов
+2026-05-23 17:52:54,569 [INFO] orchestrator: [fact_checker] Попытка 1/3
+2026-05-23 17:52:54,575 [INFO] agents.fact_checker: Fact Checker: проверяю сценарий (1034 символов)
+2026-05-23 17:52:55,190 [INFO] agents.fact_checker: Fact Checker: сценарий прошёл проверку
+2026-05-23 17:52:55,223 [INFO] orchestrator: Идея прошла fact-check: 'Как учёные создают сверхпрочные материалы'
+2026-05-23 17:52:57,660 [INFO] agents.script_writer: Hook A/B: выбран вариант 1 из 3 — 60% людей считают CO₂ проблемой, но не знают, что его можно 
+2026-05-23 17:52:57,666 [INFO] orchestrator: [safety_agent] Попытка 1/3
+2026-05-23 17:52:58,309 [INFO] google_genai.models: AFC is enabled with max remote calls: 10.
+2026-05-23 17:52:59,296 [INFO] httpx: HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-05-23 17:52:59,297 [WARNING] agents.safety_agent: Gemini 429/quota — переключаюсь на Cerebras
+2026-05-23 17:53:00,067 [INFO] httpx: HTTP Request: POST https://api.cerebras.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-23 17:53:00,068 [INFO] agents.safety_agent: Safety OK (Cerebras) 'Как учёные создают сверхпрочные материалы' / youtube
+2026-05-23 17:53:00,099 [INFO] orchestrator: [voice_agent] Попытка 1/3
+2026-05-23 17:53:00,107 [INFO] agents.voice_agent: Voice Agent: ElevenLabs (voice=Rachel)
+2026-05-23 17:53:00,967 [WARNING] agents.voice_agent: Voice Agent: ElevenLabs лимит исчерпан, используем Yandex
+2026-05-23 17:53:00,969 [INFO] agents.voice_agent: Voice Agent: Yandex SpeechKit (voice=alena, SSML emphasis)
+2026-05-23 17:53:08,265 [INFO] agents.voice_agent: Voice Agent: Yandex ✓ → D:\Projects\content-factory\output\audio\20260523_175300_youtube.mp3
+2026-05-23 17:53:08,274 [INFO] orchestrator: [visual_agent] Попытка 1/3
+2026-05-23 17:53:10,152 [WARNING] agents.visual_agent: Kling: 404 — эндпоинт не найден (проверьте KIE_API_KEY и URL)
+2026-05-23 17:53:10,154 [WARNING] agents.visual_agent: Kling: эндпоинт недоступен — прекращаем попытки, переходим на Pexels
+2026-05-23 17:53:10,154 [WARNING] agents.visual_agent: Kling вернул 0 клипов — переключаюсь на Pexels
+2026-05-23 17:53:41,972 [INFO] agents.music_agent: Определено настроение: calm
+2026-05-23 17:53:41,973 [INFO] agents.music_agent: Трек из локальной папки: calm_ambient_01.mp3
+2026-05-23 17:53:41,973 [INFO] orchestrator: Музыка: source=local mood=calm
+2026-05-23 17:53:59,938 [INFO] orchestrator: Субтитры: 113 сегментов
+2026-05-23 17:53:59,994 [INFO] agents.entity_visuals: Entity Visuals: классиков не найдено
+2026-05-23 17:54:25,560 [WARNING] agents.visual_agent: Pexels photo download fail 29597135: HTTPSConnectionPool(host='images.pexels.com', port=443): Max retries exceeded with url: /photos/29597135/pexels-photo-29597135.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940 (Caused by ConnectTimeoutError(<urllib3.connection.HTTPSConnection object at 0x00000221095656D0>, 'Connection to images.pexels.com timed out. (connect timeout=60)'))
+2026-05-23 17:54:38,636 [INFO] agents.visual_agent: get_photos: 12 фото из pexels
+2026-05-23 17:54:38,636 [INFO] orchestrator: Photos pool: 12 шт (source=pexels)
+2026-05-23 17:54:38,644 [INFO] orchestrator: [assembly_agent] Попытка 1/3
+2026-05-23 17:54:42,792 [INFO] agents.assembly_agent: Beat-sync: выровнено 26/34 границ к ударам
+2026-05-23 17:54:43,856 [INFO] agents.assembly_agent: Hook overlay (big text) → slot 0, dur=1.30s
+2026-05-23 17:54:45,413 [INFO] agents.assembly_agent: Photo burst slot=17 @ 34.5s (5 фото)
+2026-05-23 17:54:48,842 [INFO] agents.assembly_agent: Photo weave: 7/35 слотов под фото
+2026-05-23 17:54:48,843 [INFO] agents.assembly_agent: Sound design: 9 SFX events
+2026-05-23 17:56:07,129 [INFO] orchestrator: Видео собрано: D:\Projects\content-factory\output\video\20260523_175438_youtube.mp4
+2026-05-23 17:56:15,293 [INFO] agents.thumbnail_agent: Thumbnail via YandexART: D:\Projects\content-factory\output\thumbnails\20260523_175607_Как_учёные_создают_сверхпрочные_материал.jpg
+2026-05-23 17:56:15,298 [INFO] orchestrator: Thumbnail: D:\Projects\content-factory\output\thumbnails\20260523_175607_Как_учёные_создают_сверхпрочные_материал.jpg (source=yandex_art)
+2026-05-23 17:56:16,411 [WARNING] agents.quality_scorer: Frame extract 67.10s failed: Command '['C:\\Users\\maxlu\\AppData\\Local\\Microsoft\\WinGet\\Links\\ffmpeg.EXE', '-y', '-ss', '67.10', '-i', 'D:\\Projects\\content-factory\\output\\video\\20260523_175438_youtube.mp4', '-vframes', '1', '-q:v', '3', 'C:\\Users\\maxlu\\AppData\\Local\\Temp\\qs_frames_tdv_v6hk\\frame_4.jpg']' returned non-zero exit status 4294967274.
+2026-05-23 17:56:17,069 [INFO] google_genai.models: AFC is enabled with max remote calls: 10.
+2026-05-23 17:56:18,295 [INFO] httpx: HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-05-23 17:56:18,297 [WARNING] agents.quality_scorer: Quality Scorer Gemini error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.0-flash\nPlease retry in 42.517943239s.', 'status': 'RESOURCE_EXHAUSTED', 'details': [{'@type': 'type.googleapis.com/google.rpc.Help', 'links': [{'description': 'Learn more about Gemini API quotas', 'url': 'https://ai.google.dev/gemini-api/docs/rate-limits'}]}, {'@type': 'type.googleapis.com/google.rpc.QuotaFailure', 'violations': [{'quotaMetric': 'generativelanguage.googleapis.com/generate_content_free_tier_requests', 'quotaId': 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', 'quotaDimensions': {'location': 'global', 'model': 'gemini-2.0-flash'}}, {'quotaMetric': 'generativelanguage.googleapis.com/generate_content_free_tier_requests', 'quotaId': 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier', 'quotaDimensions': {'location': 'global', 'model': 'gemini-2.0-flash'}}, {'quotaMetric': 'generativelanguage.googleapis.com/generate_content_free_tier_input_token_count', 'quotaId': 'GenerateContentInputTokensPerModelPerMinute-FreeTier', 'quotaDimensions': {'location': 'global', 'model': 'gemini-2.0-flash'}}]}, {'@type': 'type.googleapis.com/google.rpc.RetryInfo', 'retryDelay': '42s'}]}} — fallback approve
+2026-05-23 17:56:18,332 [INFO] orchestrator: [qa_agent] Попытка 1/3
+2026-05-23 17:56:18,421 [INFO] agents.qa_agent: QA approved: 20260523_175438_youtube.mp4 (1080x1920, 69.1 сек, платформа=youtube)
+2026-05-23 17:56:18,431 [INFO] orchestrator: [publisher_agent] Попытка 1/3
+2026-05-23 17:56:18,434 [INFO] orchestrator: [publisher] DRY RUN — публикация пропущена
+2026-05-23 17:56:18,437 [INFO] orchestrator: Опубликовано: post_id=dry-run-000
+2026-05-23 17:56:18,446 [INFO] agents.topic_filter: Тема отмечена как опубликованная: 'В Томске нашли способ выращивать сверхпрочную нанокерамику за несколько секунд'
+2026-05-23 17:56:19,791 [INFO] orchestrator: === Пайплайн завершён успешно ===

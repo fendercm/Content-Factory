@@ -1,0 +1,90 @@
+{
+  "started_at": "2026-05-23T13:25:24.476168+00:00",
+  "ended_at": "2026-05-23T13:53:08.276787+00:00",
+  "elapsed_total_sec": 1663.8,
+  "total": 10,
+  "ok": 8,
+  "failed": 2,
+  "results": [
+    {
+      "niche": "психология",
+      "platform": "youtube",
+      "ok": true,
+      "elapsed_sec": 192.5,
+      "returncode": 0,
+      "video_path": "\\Projects\\content-factory\\output\\video\\20260523_162734_youtube.mp4"
+    },
+    {
+      "niche": "бизнес",
+      "platform": "youtube",
+      "ok": true,
+      "elapsed_sec": 175.6,
+      "returncode": 0,
+      "video_path": "\\Projects\\content-factory\\output\\video\\20260523_163043_youtube.mp4"
+    },
+    {
+      "niche": "наука",
+      "platform": "youtube",
+      "ok": true,
+      "elapsed_sec": 272.3,
+      "returncode": 0,
+      "video_path": "\\Projects\\content-factory\\output\\video\\20260523_163517_youtube.mp4"
+    },
+    {
+      "niche": "здоровье",
+      "platform": "youtube",
+      "ok": true,
+      "elapsed_sec": 204.2,
+      "returncode": 0,
+      "video_path": "\\Projects\\content-factory\\output\\video\\20260523_163813_youtube.mp4"
+    },
+    {
+      "niche": "психология",
+      "platform": "youtube",
+      "ok": false,
+      "elapsed_sec": 28.1,
+      "returncode": 1,
+      "error_tail": "2026-05-23 16:39:50,157 [INFO] agents.topic_filter: Дубль (30 дней): 'Как преодолеть трудности: Психология препятствий и сила воли.' — пропускаем\n2026-05-23 16:39:50,158 [INFO] agents.topic_filter: Дубль (30 дней): 'Психологи объяснили, почему люди дают имена машинам и роботам-пылесосам' — пропускаем\n2026-05-23 16:39:50,158 [INFO] agents.topic_filter: Дубль (30 дней): 'психология это' — пропускаем\n2026-05-23 16:39:50,158 [INFO] agents.topic_filter: Все темы уже публиковались за последние 30 дней\n2026-05-23 16:39:50,158 [ERROR] orchestrator: [topic_filter] Ошибка (попытка 2): Все темы отфильтрованы (дубли или unsafe) — нечего публиковать\n2026-05-23 16:39:55,163 [INFO] orchestrator: [topic_filter] Попытка 3/3\n2026-05-23 16:39:55,192 [INFO] agents.topic_filter: Дубль (30 дней): 'Как преодолеть трудности: Психология препятствий и сила воли.' — пропускаем\n2026-05-23 16:39:55,192 [INFO] agents.topic_filter: Дубль (30 дней): 'Психологи объяснили, почему люди дают имена машинам и роботам-пылесосам' — пропускаем\n2026-05-23 16:39:55,193 [INFO] agents.topic_filter: Дубль (30 дней): 'психология это' — пропускаем\n2026-05-23 16:39:55,193 [INFO] agents.topic_filter: Все темы уже публиковались за последние 30 дней\n2026-05-23 16:39:55,193 [ERROR] orchestrator: [topic_filter] Ошибка (попытка 3): Все темы отфильтрованы (дубли или unsafe) — нечего публиковать\n2026-05-23 16:39:55,958 [INFO] agents.notify_agent: Telegram: отправлено (message_id=43)\n2026-05-23 16:39:55,990 [CRITICAL] orchestrator: Пайплайн упал: Шаг 'topic_filter' провалился после 3 попыток\nTraceback (most recent call last):\n  File \"D:\\Projects\\content-factory\\main.py\", line 160, in _run_with_retry\n    result = fn(*args, **kwargs)\n  File \"D:\\Projects\\content-factory\\main.py\", line 207, in step_topic_filter\n    raise ValueError(\"Все темы отфильтрованы (дубли или unsafe) — нечего публиковать\")\nValueError: Все темы отфильтрованы (дубли или unsafe) — нечего публиковать\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"D:\\Projects\\content-factory\\main.py\", line 478, in run_pipeline\n    filtered = retry(\"topic_filter\", step_topic_filter, ideas, platform, niche)\n  File \"D:\\Projects\\content-factory\\main.py\", line 450, in retry\n    return _run_with_retry(name, fn, conn, run_id, None, *args, **kwargs)\n  File \"D:\\Projects\\content-factory\\main.py\", line 180, in _run_with_retry\n    raise RuntimeError(f\"Шаг '{step_name}' провалился после {MAX_RETRIES} попыток\") from last_error\nRuntimeError: Шаг 'topic_filter' провалился после 3 попыток"
+    },
+    {
+      "niche": "бизнес",
+      "platform": "youtube",
+      "ok": true,
+      "elapsed_sec": 204.5,
+      "returncode": 0,
+      "video_path": "\\Projects\\content-factory\\output\\video\\20260523_164229_youtube.mp4"
+    },
+    {
+      "niche": "наука",
+      "platform": "youtube",
+      "ok": true,
+      "elapsed_sec": 217.0,
+      "returncode": 0,
+      "video_path": "\\Projects\\content-factory\\output\\video\\20260523_164517_youtube.mp4"
+    },
+    {
+      "niche": "здоровье",
+      "platform": "youtube",
+      "ok": true,
+      "elapsed_sec": 223.3,
+      "returncode": 0,
+      "video_path": "\\Projects\\content-factory\\output\\video\\20260523_164925_youtube.mp4"
+    },
+    {
+      "niche": "психология",
+      "platform": "youtube",
+      "ok": false,
+      "elapsed_sec": 26.8,
+      "returncode": 1,
+      "error_tail": "2026-05-23 16:51:02,087 [INFO] agents.topic_filter: Дубль (30 дней): 'Как преодолеть трудности: Психология препятствий и сила воли.' — пропускаем\n2026-05-23 16:51:02,087 [INFO] agents.topic_filter: Дубль (30 дней): 'Психологи объяснили, почему люди дают имена машинам и роботам-пылесосам' — пропускаем\n2026-05-23 16:51:02,087 [INFO] agents.topic_filter: Дубль (30 дней): 'психология это' — пропускаем\n2026-05-23 16:51:02,087 [INFO] agents.topic_filter: Все темы уже публиковались за последние 30 дней\n2026-05-23 16:51:02,087 [ERROR] orchestrator: [topic_filter] Ошибка (попытка 2): Все темы отфильтрованы (дубли или unsafe) — нечего публиковать\n2026-05-23 16:51:07,092 [INFO] orchestrator: [topic_filter] Попытка 3/3\n2026-05-23 16:51:07,100 [INFO] agents.topic_filter: Дубль (30 дней): 'Как преодолеть трудности: Психология препятствий и сила воли.' — пропускаем\n2026-05-23 16:51:07,100 [INFO] agents.topic_filter: Дубль (30 дней): 'Психологи объяснили, почему люди дают имена машинам и роботам-пылесосам' — пропускаем\n2026-05-23 16:51:07,100 [INFO] agents.topic_filter: Дубль (30 дней): 'психология это' — пропускаем\n2026-05-23 16:51:07,100 [INFO] agents.topic_filter: Все темы уже публиковались за последние 30 дней\n2026-05-23 16:51:07,100 [ERROR] orchestrator: [topic_filter] Ошибка (попытка 3): Все темы отфильтрованы (дубли или unsafe) — нечего публиковать\n2026-05-23 16:51:07,961 [INFO] agents.notify_agent: Telegram: отправлено (message_id=47)\n2026-05-23 16:51:07,966 [CRITICAL] orchestrator: Пайплайн упал: Шаг 'topic_filter' провалился после 3 попыток\nTraceback (most recent call last):\n  File \"D:\\Projects\\content-factory\\main.py\", line 160, in _run_with_retry\n    result = fn(*args, **kwargs)\n  File \"D:\\Projects\\content-factory\\main.py\", line 207, in step_topic_filter\n    raise ValueError(\"Все темы отфильтрованы (дубли или unsafe) — нечего публиковать\")\nValueError: Все темы отфильтрованы (дубли или unsafe) — нечего публиковать\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"D:\\Projects\\content-factory\\main.py\", line 478, in run_pipeline\n    filtered = retry(\"topic_filter\", step_topic_filter, ideas, platform, niche)\n  File \"D:\\Projects\\content-factory\\main.py\", line 450, in retry\n    return _run_with_retry(name, fn, conn, run_id, None, *args, **kwargs)\n  File \"D:\\Projects\\content-factory\\main.py\", line 180, in _run_with_retry\n    raise RuntimeError(f\"Шаг '{step_name}' провалился после {MAX_RETRIES} попыток\") from last_error\nRuntimeError: Шаг 'topic_filter' провалился после 3 попыток"
+    },
+    {
+      "niche": "бизнес",
+      "platform": "youtube",
+      "ok": true,
+      "elapsed_sec": 119.5,
+      "returncode": 0,
+      "video_path": "\\Projects\\content-factory\\output\\video\\20260523_165249_youtube.mp4"
+    }
+  ]
+}
