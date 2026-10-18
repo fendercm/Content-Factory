@@ -36,6 +36,22 @@ def _esc(text: str) -> str:
     return html.escape(str(text)) if text else ""
 
 
+def _describe_error(exc: Exception) -> str:
+    """
+    Описание ошибки без URL: str(HTTPError) содержит адрес запроса,
+    а в адресе Telegram Bot API — токен бота.
+    """
+    resp = getattr(exc, "response", None)
+    if resp is not None:
+        detail = ""
+        try:
+            detail = resp.json().get("description", "")
+        except Exception:
+            pass
+        return f"HTTP {resp.status_code}{': ' + detail if detail else ''}"
+    return type(exc).__name__
+
+
 def _extract_frame(video_path: str) -> bytes | None:
     """Извлекает кадр из видео на 2-й секунде через ffmpeg."""
     ffmpeg = shutil.which("ffmpeg")
@@ -111,8 +127,9 @@ def send(
         logger.warning("Telegram ok=false: %s", err)
         return {"ok": False, "message_id": None, "error": err}
     except requests.RequestException as exc:
-        logger.error("Telegram send ошибка: %s", exc)
-        return {"ok": False, "message_id": None, "error": str(exc)}
+        err = _describe_error(exc)
+        logger.error("Telegram send ошибка: %s", err)
+        return {"ok": False, "message_id": None, "error": err}
 
 
 def send_photo(
@@ -139,18 +156,20 @@ def send_photo(
             return {"ok": True, "message_id": data["result"].get("message_id")}
         return {"ok": False, "error": data.get("description")}
     except Exception as exc:
-        logger.error("Telegram sendPhoto ошибка: %s", exc)
+        logger.error("Telegram sendPhoto ошибка: %s", _describe_error(exc))
         # Fallback: отправляем текст без фото
         return send(caption, chat_id=chat_id, level="success")
 
 
-def alert_error(step: str, error: str, attempt: int = 1) -> dict[str, Any]:
+def alert_error(step: str, error: str, attempt: int | None = None) -> dict[str, Any]:
     """Алерт об ошибке в пайплайне: агент + причина + номер попытки."""
+    from utils.log_redact import redact
+    attempt_line = f"Попытка: {attempt}\n" if attempt else ""
     text = (
         f"<b>Ошибка пайплайна</b>\n"
         f"Агент: <code>{_esc(step)}</code>\n"
-        f"Попытка: {attempt}/3\n"
-        f"Причина: <code>{_esc(error[:400])}</code>"
+        f"{attempt_line}"
+        f"Причина: <code>{_esc(redact(error)[:400])}</code>"
     )
     return send(text, level="error")
 
@@ -161,19 +180,24 @@ def alert_success(
     post_id: str,
     duration: float | None = None,
     video_path: str | None = None,
+    dry_run: bool = False,
+    status: str | None = None,
 ) -> dict[str, Any]:
     """
-    Уведомление об успешной публикации.
+    Уведомление об успешной публикации (или о собранном видео в dry-run).
 
     Если передан video_path — отправляет карточку с превью кадром из видео.
     """
     platforms_str = ", ".join(platforms)
     dur_str = f"\nДлительность: <b>{duration:.1f} сек</b>" if duration else ""
+    status_str = f"\nСтатус: <b>{_esc(status)}</b>" if status and not dry_run else ""
+    header = "Dry-run: видео собрано (не опубликовано)" if dry_run else "Видео опубликовано!"
     caption = (
-        f"<b>Видео опубликовано!</b>\n"
+        f"<b>{header}</b>\n"
         f"Тема: <b>{_esc(title)}</b>\n"
         f"Платформа: {_esc(platforms_str)}{dur_str}\n"
         f"ID поста: <code>{_esc(post_id)}</code>"
+        f"{status_str}"
     )
 
     # Пробуем отправить с превью из видео

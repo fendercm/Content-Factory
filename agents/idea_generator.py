@@ -63,6 +63,8 @@ def _load_viral_patterns(db_path: str, days: int = 30, limit: int = 5) -> list[d
     Если таблицы или данных нет — пустой список.
     """
     import sqlite3
+    from datetime import datetime, timedelta, timezone
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     try:
         conn = sqlite3.connect(db_path)
         # Проверяем что таблица существует и имеет колонки views/title
@@ -77,14 +79,16 @@ def _load_viral_patterns(db_path: str, days: int = 30, limit: int = 5) -> list[d
                FROM performance
                WHERE title IS NOT NULL AND title != ''
                  AND COALESCE(views, 0) > 0
+                 AND (published_at IS NULL OR published_at >= ?)
                ORDER BY v DESC
                LIMIT ?""",
-            (limit,),
+            (cutoff, limit),
         ).fetchall()
         conn.close()
         return [{"title": r[0], "platform": r[1], "views": r[2]} for r in rows]
     except Exception as exc:
-        logger.debug("Viral patterns load error: %s", exc)
+        # warning, а не debug: раньше обратная связь от аналитики молча не работала
+        logger.warning("Viral patterns load error: %s", exc)
         return []
 
 

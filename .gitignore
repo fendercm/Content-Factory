@@ -40,8 +40,9 @@ htmlcov/
 Thumbs.db
 
 .claude/
-.assets/
-.tests/
-.utils/
-.pytest.ini
-.pipeline.db
+
+# --- База состояния пайплайна (SQLite + WAL) ---
+pipeline.db
+*.db-wal
+*.db-shm
+*.db.bak*

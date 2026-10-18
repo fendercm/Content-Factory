@@ -12,6 +12,8 @@ FFPROBE_OUTPUT = json.dumps({
 def _subprocess_mock():
     m = MagicMock()
     m.stdout = FFPROBE_OUTPUT
+    m.returncode = 0
+    m.stderr = b""
     return m
 
 

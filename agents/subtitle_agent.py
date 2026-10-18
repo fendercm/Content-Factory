@@ -7,6 +7,7 @@ Subtitle Agent — транскрибирует аудио через Whisper, �
 
 import logging
 import os
+import uuid
 from datetime import datetime
 from typing import Literal
 
@@ -156,7 +157,7 @@ def generate_subtitles(audio_path: str, platform: Platform = "tiktok") -> dict:
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    subtitle_path = os.path.abspath(os.path.join(OUTPUT_DIR, f"{ts}_{platform}.ass"))
+    subtitle_path = os.path.abspath(os.path.join(OUTPUT_DIR, f"{ts}_{platform}_{uuid.uuid4().hex[:6]}.ass"))
 
     _write_ass(chunks, subtitle_path, style["fontsize"], style["margin_v"])
 

@@ -20,6 +20,7 @@ API:
 
 import logging
 import os
+import re
 import threading
 
 logger = logging.getLogger(__name__)
@@ -73,16 +74,26 @@ def dead_reason(provider: str) -> str | None:
         return _dead.get(provider.strip().lower())
 
 
+# HTTP 402 как статус, а не любые «402» внутри id/таймингов/URL
+_HTTP_402_RE = re.compile(
+    r"(\b402 (client error|payment)|\bstatus(_code)?[\s:=]+402\b|['\"]code['\"]\s*:\s*402\b|\bhttp[ /]402\b|^402\b)"
+)
+
+
 def looks_like_no_credits(error_text: str) -> bool:
     """Эвристика: ошибка означает «нет денег/квоты», а не временный сбой."""
     t = str(error_text).lower()
-    return any(marker in t for marker in (
+    if any(marker in t for marker in (
         "credits insufficient",
         "insufficient credits",
         "insufficient balance",
+        "insufficient_quota",
         "payment required",
-        "402",
         "limit: 0",
         "quota exceeded for metric",
-        "billing",
-    ))
+        "billing account",
+        "billing is not enabled",
+        "billing not enabled",
+    )):
+        return True
+    return bool(_HTTP_402_RE.search(t))

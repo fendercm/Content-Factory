@@ -31,6 +31,15 @@ _PLATFORM_RATIOS: dict[str, tuple[float, float]] = {
 }
 _RATIO_TOLERANCE = 0.05   # ±5% отклонение допустимо
 _MIN_DURATION = 3.0        # секунды
+
+# Верхний предел длительности короткого вертикального видео на платформе (сек)
+_MAX_DURATION: dict[str, float] = {
+    "tiktok":    600.0,
+    "instagram": 180.0,   # Reels
+    "youtube":   180.0,   # Shorts
+    "linkedin":  600.0,
+    "twitter":   140.0,   # без подписки X Premium
+}
 _DURATION_TOLERANCE = 0.10 # ±10% от expected
 
 
@@ -67,6 +76,8 @@ def _check_streams(probe: dict) -> tuple[str | None, dict | None]:
     video_streams = [s for s in streams if s.get("codec_type") == "video"]
     if not video_streams:
         return "Видео-стрим не найден", None
+    if not any(s.get("codec_type") == "audio" for s in streams):
+        return "Аудио-стрим не найден (видео без звука)", None
     return None, video_streams[0]
 
 
@@ -155,6 +166,11 @@ def check(
 
     # 4. Длительность
     err = _check_duration(probe, expected_duration)
+    if not err:
+        max_dur = _MAX_DURATION.get(platform)
+        duration = float(probe.get("format", {}).get("duration", 0) or 0)
+        if max_dur and duration > max_dur:
+            err = f"Длительность {duration:.1f} сек > лимита {platform} ({max_dur:.0f} сек)"
     if err:
         logger.warning("QA rejected: %s", err)
         return {"status": "rejected", "reason": err}

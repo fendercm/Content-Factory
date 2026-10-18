@@ -120,10 +120,14 @@ def test_generate_voice_silero_speaker_override():
 
 
 def test_generate_voice_no_file_created_raises():
+    # Цепочка: edge-tts → Silero (офлайн-резерв последним). Если файла нет
+    # после обоих движков — ошибка последнего, Silero.
     patches = _no_cloud_engines()
     with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], \
-         patch("agents.voice_agent._silero"), \
-         patch("agents.voice_agent._edge_tts"), \
+         patch("agents.voice_agent._silero") as mock_silero, \
+         patch("agents.voice_agent._edge_tts") as mock_edge, \
          patch("agents.voice_agent.os.path.exists", return_value=False):
-        with pytest.raises(RuntimeError, match="edge-tts не создал файл"):
+        with pytest.raises(RuntimeError, match="Silero не создал файл"):
             generate_voice("Текст", "tiktok")
+    mock_edge.assert_called_once()
+    mock_silero.assert_called_once()

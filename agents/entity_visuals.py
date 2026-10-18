@@ -120,16 +120,11 @@ def _wikipedia_photo_url(title_ru: str, title_en: str) -> str | None:
 
 def _download_photo(url: str, dest: str) -> bool:
     """Скачиваем с 2 попытками и timeout=60 — Wikipedia иногда тормозит на больших JPEG."""
+    from utils.download import download_to
     for attempt in range(2):
         try:
-            resp = requests.get(url, timeout=60, headers=HEADERS, stream=True)
-            if resp.status_code != 200:
-                continue
-            with open(dest, "wb") as f:
-                for chunk in resp.iter_content(chunk_size=16384):
-                    f.write(chunk)
-            if os.path.getsize(dest) > 5_000:
-                return True
+            download_to(url, dest, timeout=60, headers=HEADERS, min_bytes=5_001)
+            return True
         except Exception as exc:
             logger.warning("Download photo попытка %d ошибка: %s", attempt + 1, exc)
     return False

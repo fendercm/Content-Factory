@@ -225,11 +225,11 @@ def _render_counter_frames(
             "-t", f"{duration:.4f}",
             "-an", out_path,
         ]
-        result = subprocess.run(cmd, capture_output=True)
+        result = subprocess.run(cmd, capture_output=True, timeout=300)
         if result.returncode != 0:
             # yuva420p не везде поддерживается — fallback yuv420p
             cmd[-3] = "yuv420p"
-            subprocess.run(cmd, capture_output=True, check=True)
+            subprocess.run(cmd, capture_output=True, check=True, timeout=300)
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 

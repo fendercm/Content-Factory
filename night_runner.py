@@ -43,6 +43,9 @@ logging.basicConfig(
         logging.FileHandler("logs/night_run.log", encoding="utf-8"),
     ],
 )
+from utils.log_redact import install_log_redaction  # noqa: E402
+
+install_log_redaction()
 logger = logging.getLogger("night_runner")
 
 

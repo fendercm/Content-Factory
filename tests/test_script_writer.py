@@ -4,8 +4,8 @@ from unittest.mock import MagicMock, patch
 
 from agents.script_writer import write_script, recommend_duration, PLATFORM_GUIDELINES
 
-# 108 слов — попадает в диапазон пресета 45с (100-115 ±10%)
-PROSE_SCRIPT = ("Ты прокрастинируешь не потому что ленивый — мозг защищается. " * 12).strip()
+# 126 слов — попадает в диапазон пресета 45с (120-135, нижняя граница — MIN_WORDS_FLOOR=120)
+PROSE_SCRIPT = ("Ты прокрастинируешь не потому что ленивый — мозг защищается. " * 14).strip()
 
 VALID_PARSE = {
     "hook": "Ты прокрастинируешь не потому что ленивый.",

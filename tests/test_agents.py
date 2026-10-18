@@ -1,6 +1,11 @@
 """
 Quick-test suite для Admin Panel (/api/test/<agent>).
-Каждая функция возвращает {"success": bool, "message": str}.
+Каждая check_*-функция возвращает {"success": bool, "message": str}.
+
+Функции названы check_*, а не test_*: раньше pytest собирал их как тесты,
+а они ловят все исключения и возвращают dict — поэтому всегда были «зелёными»,
+даже когда 5 из 12 падали. Теперь pytest гоняет их через test_quick_agent
+и проверяет success.
 
 Запуск из командной строки:
     py tests/test_agents.py              # все тесты
@@ -40,10 +45,11 @@ def _llm_resp_mock(payload: dict | list | str) -> MagicMock:
 
 # ── Individual tests ──────────────────────────────────────────────────────────
 
-def test_trend_scout() -> dict:
+def check_trend_scout() -> dict:
     try:
         with patch("agents.trend_scout.TrendReq") as mock_tr, \
-             patch("agents.trend_scout.requests.get") as mock_req:
+             patch("agents.trend_scout.requests.get") as mock_req, \
+             patch("feedparser.parse", return_value=MagicMock(entries=[])):
             mock_df = MagicMock()
             mock_df.empty = True
             mock_tr.return_value.build_payload = MagicMock()
@@ -58,7 +64,7 @@ def test_trend_scout() -> dict:
         return {"success": False, "message": str(e)}
 
 
-def test_idea_generator() -> dict:
+def check_idea_generator() -> dict:
     try:
         from agents.idea_generator import run
         payload = [
@@ -78,22 +84,23 @@ def test_idea_generator() -> dict:
         return {"success": False, "message": str(e)}
 
 
-def test_topic_filter() -> dict:
+def check_topic_filter() -> dict:
     try:
         from agents.topic_filter import run
         ideas = [{"title": "5 ловушек мозга", "hook": "...", "angle": "...",
                   "hashtags": ["психология"], "source_topic": "психология", "virality": 0.85}]
-        with patch.dict("os.environ", {"GEMINI_API_KEY": "test-key"}), \
+        with patch("agents.topic_filter.GEMINI_API_KEY", "test-key"), \
+             patch("utils.providers.is_enabled", return_value=True), \
              patch("agents.topic_filter.genai") as mock_genai:
             mock_genai.Client.return_value.models.generate_content.return_value = \
-                MagicMock(text='[{"title": "5 ловушек мозга", "safe": true, "reason": ""}]')
+                MagicMock(text='[{"id": 1, "safe": true, "reason": ""}]')
             result = run(ideas, platform="tiktok", db_path=":memory:")
-        return {"success": isinstance(result, list), "message": f"{len(result)} идей прошли фильтр"}
+        return {"success": len(result) == 1, "message": f"{len(result)} идей прошли фильтр"}
     except Exception as e:
         return {"success": False, "message": str(e)}
 
 
-def test_script_writer() -> dict:
+def check_script_writer() -> dict:
     try:
         from agents.script_writer import write_script
         json_payload = {
@@ -114,7 +121,7 @@ def test_script_writer() -> dict:
         return {"success": False, "message": str(e)}
 
 
-def test_fact_checker() -> dict:
+def check_fact_checker() -> dict:
     try:
         from agents.fact_checker import check
         bad_text = "Алексей Немов — легендарный российский футболист, завоевавший 6 медалей."
@@ -133,12 +140,13 @@ def test_fact_checker() -> dict:
         return {"success": False, "message": str(e)}
 
 
-def test_safety_agent() -> dict:
+def check_safety_agent() -> dict:
     try:
         from agents.safety_agent import check
-        with patch.dict("os.environ", {"GEMINI_API_KEY": "test-key"}), \
-             patch("agents.safety_agent.genai") as mock_genai:
-            mock_genai.Client.return_value.models.generate_content.return_value = \
+        with patch("agents.safety_agent.GEMINI_API_KEY", "test-key"), \
+             patch("utils.providers.is_enabled", return_value=True), \
+             patch("google.genai.Client") as mock_client:
+            mock_client.return_value.models.generate_content.return_value = \
                 MagicMock(text='{"safe": true}')
             result = check(
                 script_text="Привычки успешных людей помогают достигать целей",
@@ -149,11 +157,9 @@ def test_safety_agent() -> dict:
         return {"success": False, "message": str(e)}
 
 
-def test_voice_agent() -> dict:
+def check_voice_agent() -> dict:
     try:
         from agents.voice_agent import generate_voice
-        fake_path = str(Path(ROOT) / "output" / "voice" / "test_mock.mp3")
-
         async def fake_save(path):
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "wb") as f:
@@ -162,15 +168,21 @@ def test_voice_agent() -> dict:
         mock_instance = MagicMock()
         mock_instance.save = fake_save
 
-        with patch("agents.voice_agent.edge_tts.Communicate", return_value=mock_instance):
+        with patch("edge_tts.Communicate", return_value=mock_instance), \
+             patch("agents.voice_agent.KIE_API_KEY", ""), \
+             patch("agents.voice_agent.DASHSCOPE_API_KEY", ""), \
+             patch.dict("os.environ", {"YANDEX_API_KEY": ""}), \
+             patch("agents.voice_agent._normalize_volume"):
             result = generate_voice("Тестовый текст для синтеза голоса.", "tiktok")
         ok = "audio_path" in result
-        return {"success": ok, "message": f"audio_path создан ✓"}
+        if ok and os.path.exists(result["audio_path"]):
+            os.remove(result["audio_path"])
+        return {"success": ok, "message": "audio_path создан ✓"}
     except Exception as e:
         return {"success": False, "message": str(e)}
 
 
-def test_music_agent() -> dict:
+def check_music_agent() -> dict:
     try:
         from agents.music_agent import get_music
         with patch.dict("os.environ", {"GROQ_API_KEY": "test-key"}), \
@@ -186,7 +198,7 @@ def test_music_agent() -> dict:
         return {"success": False, "message": str(e)}
 
 
-def test_visual_agent() -> dict:
+def check_visual_agent() -> dict:
     try:
         from agents.visual_agent import get_visuals
         fake_video = {
@@ -207,7 +219,7 @@ def test_visual_agent() -> dict:
         with patch.dict("os.environ", {"PEXELS_API_KEY": "test-key", "GROQ_API_KEY": "test-key"}), \
              patch("agents.visual_agent.requests.get", return_value=_FakeResp()), \
              patch("agents.visual_agent._niche_override", return_value="psychology mind"), \
-             patch("builtins.open", MagicMock()):
+             patch("agents.visual_agent._download_clip"):
             result = get_visuals("психология мышления", "tiktok", num_clips=1)
         ok = "clips" in result
         return {"success": ok, "message": f"query='{result.get('query','?')}' ✓"}
@@ -215,14 +227,18 @@ def test_visual_agent() -> dict:
         return {"success": False, "message": str(e)}
 
 
-def test_qa_agent() -> dict:
+def check_qa_agent() -> dict:
     try:
         from agents.qa_agent import check
         fake_probe = json.dumps({
-            "streams": [{"codec_type": "video", "width": 1080, "height": 1920, "r_frame_rate": "30/1"}],
+            "streams": [
+                {"codec_type": "video", "width": 1080, "height": 1920, "r_frame_rate": "30/1"},
+                {"codec_type": "audio"},
+            ],
             "format": {"duration": "45.0", "size": "5000000"},
         })
         with patch("agents.qa_agent.subprocess.run") as mock_run, \
+             patch("agents.qa_agent.shutil.which", return_value="/usr/bin/ffprobe"), \
              patch("agents.qa_agent.os.path.exists", return_value=True), \
              patch("agents.qa_agent.os.path.getsize", return_value=5_000_000):
             mock_run.return_value.returncode = 0
@@ -234,36 +250,44 @@ def test_qa_agent() -> dict:
         return {"success": False, "message": str(e)}
 
 
-def test_publisher_agent() -> dict:
+def check_publisher_agent() -> dict:
     try:
         from agents.publisher_agent import publish_video
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_resp.json.return_value = {"post_id": "mock-123", "status": "published"}
+        mock_resp.ok = True
+        mock_resp.json.return_value = {
+            "uploadUrl": "https://upload.example/put", "publicUrl": "https://cdn.example/v.mp4",
+            "post": {"_id": "mock-123", "status": "published"},
+        }
         mock_resp.raise_for_status = MagicMock()
         with patch.dict("os.environ", {"ZERNIO_API_KEY": "test-key"}), \
              patch("agents.publisher_agent.requests.post", return_value=mock_resp), \
-             patch("agents.publisher_agent.os.path.exists", return_value=True):
+             patch("agents.publisher_agent.requests.put", return_value=mock_resp), \
+             patch("agents.publisher_agent.os.path.exists", return_value=True), \
+             patch("agents.publisher_agent.os.path.getsize", return_value=1024), \
+             patch("builtins.open", MagicMock()):
             result = publish_video(
                 video_path="/fake/video.mp4", title="Тест",
                 description="Тест", hashtags=["тест"],
                 platform="tiktok", account_id="acc-1",
             )
-        ok = "post_id" in result
+        ok = result.get("post_id") == "mock-123"
         return {"success": ok, "message": f"post_id={result.get('post_id','?')} ✓"}
     except Exception as e:
         return {"success": False, "message": str(e)}
 
 
-def test_notify_agent() -> dict:
+def check_notify_agent() -> dict:
     try:
         from agents.notify_agent import send
-        with patch.dict("os.environ", {"TELEGRAM_BOT_TOKEN": "123:ABC", "TELEGRAM_CHAT_ID": "456"}), \
+        with patch("agents.notify_agent.TELEGRAM_BOT_TOKEN", "123:ABC"), \
+             patch("agents.notify_agent.TELEGRAM_CHAT_ID", "456"), \
              patch("agents.notify_agent.requests.post") as mock_post:
             mock_post.return_value.status_code = 200
-            mock_post.return_value.json.return_value = {"ok": True}
-            send("Тест уведомления", level="info")
-        return {"success": True, "message": "Telegram mock-отправка ✓"}
+            mock_post.return_value.json.return_value = {"ok": True, "result": {"message_id": 1}}
+            res = send("Тест уведомления", level="info")
+        return {"success": res.get("ok") is True, "message": "Telegram mock-отправка ✓"}
     except Exception as e:
         return {"success": False, "message": str(e)}
 
@@ -271,18 +295,18 @@ def test_notify_agent() -> dict:
 # ── Registry ──────────────────────────────────────────────────────────────────
 
 AGENT_TESTS: dict[str, tuple] = {
-    "trend_scout":    (test_trend_scout,    "Парсинг Google Trends и Reddit"),
-    "idea_generator": (test_idea_generator, "Генерация идей через Groq"),
-    "topic_filter":   (test_topic_filter,   "Дедупликация + Gemini safety"),
-    "script_writer":  (test_script_writer,  "Сценарий PAS через Groq"),
-    "fact_checker":   (test_fact_checker,   "valid=False для текста с ошибкой"),
-    "safety_agent":   (test_safety_agent,   "Проверка политик платформ"),
-    "voice_agent":    (test_voice_agent,    "Синтез голоса edge-tts"),
-    "music_agent":    (test_music_agent,    "Подбор фоновой музыки по настроению"),
-    "visual_agent":   (test_visual_agent,   "Скачивание клипов с Pexels"),
-    "qa_agent":       (test_qa_agent,       "QA проверка через ffprobe"),
-    "publisher_agent":(test_publisher_agent,"Публикация через Zernio API"),
-    "notify_agent":   (test_notify_agent,   "Telegram уведомления"),
+    "trend_scout":    (check_trend_scout,    "Google Trends + YouTube + RSS"),
+    "idea_generator": (check_idea_generator, "Генерация идей через Groq"),
+    "topic_filter":   (check_topic_filter,   "Дедупликация + Gemini safety"),
+    "script_writer":  (check_script_writer,  "Сценарий PAS через Groq"),
+    "fact_checker":   (check_fact_checker,   "valid=False для текста с ошибкой"),
+    "safety_agent":   (check_safety_agent,   "Проверка политик платформ"),
+    "voice_agent":    (check_voice_agent,    "Синтез голоса edge-tts"),
+    "music_agent":    (check_music_agent,    "Подбор фоновой музыки по настроению"),
+    "visual_agent":   (check_visual_agent,   "Скачивание клипов с Pexels"),
+    "qa_agent":       (check_qa_agent,       "QA проверка через ffprobe"),
+    "publisher_agent":(check_publisher_agent,"Публикация через Zernio API"),
+    "notify_agent":   (check_notify_agent,   "Telegram уведомления"),
 }
 
 
@@ -292,6 +316,18 @@ def run_agent_test(agent_name: str) -> dict:
         return {"success": False, "message": f"Агент '{agent_name}' не найден в реестре"}
     fn, _ = AGENT_TESTS[agent_name]
     return fn()
+
+
+# ── pytest ────────────────────────────────────────────────────────────────────
+
+def test_quick_agent_checks():
+    """Каждая check_*-функция должна вернуть success=True."""
+    failed = {}
+    for name, (fn, _) in AGENT_TESTS.items():
+        res = fn()
+        if not res["success"]:
+            failed[name] = res["message"]
+    assert not failed, failed
 
 
 if __name__ == "__main__":

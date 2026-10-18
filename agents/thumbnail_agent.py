@@ -23,11 +23,8 @@ import time
 from datetime import datetime
 from typing import Any
 
-import urllib3
 import requests
 from dotenv import load_dotenv
-
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
 
@@ -120,7 +117,6 @@ def _pixazo(title: str, output_path: str) -> bool:
             },
             json={"model": "flux-schnell", "prompt": prompt, "width": 1280, "height": 720},
             timeout=90,
-            verify=False,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -438,7 +434,7 @@ def ab_test_thumbnails(
                 parts.append(genai_types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"))
 
             resp = client.models.generate_content(
-                model="gemini-2.0-flash",
+                model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
                 contents=parts,
             )
             raw = (resp.text or "").strip()

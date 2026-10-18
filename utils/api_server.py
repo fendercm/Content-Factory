@@ -3,6 +3,15 @@ API Server v2 — расширенный Flask бэкенд для Admin Panel.
 
 Запуск:  py utils/api_server.py
 Порт:    5000 (переопределяется через API_PORT)
+Хост:    127.0.0.1 (API_HOST). Для доступа из сети задайте API_HOST=0.0.0.0
+         и обязательно ADMIN_TOKEN — без токена сервер не стартует.
+
+Защита: /api/run может запустить реальную публикацию, поэтому
+  - запросы принимаются только с Host = localhost/127.0.0.1 (+ API_ALLOWED_HOSTS):
+    защита от DNS rebinding;
+  - POST требует Content-Type: application/json и Origin того же хоста:
+    защита от CSRF со сторонних сайтов;
+  - если задан ADMIN_TOKEN — нужен заголовок X-Admin-Token или ?token=.
 
 Эндпоинты:
   GET  /api/stats          — KPI: видео сегодня/всего, ошибок, аккаунтов
@@ -36,14 +45,59 @@ if hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
+import hmac
+from urllib.parse import urlsplit
+
 from flask import Flask, Response, jsonify, request, send_file
-from flask_cors import CORS
 from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
 
+if str(Path(__file__).parent.parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+from utils.log_redact import redact  # noqa: E402
+
 app = Flask(__name__)
-CORS(app, origins="*")
+
+API_HOST = os.getenv("API_HOST", "127.0.0.1")
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
+_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+_ALLOWED_HOSTS = _LOOPBACK_HOSTS | {
+    h.strip().lower() for h in os.getenv("API_ALLOWED_HOSTS", "").split(",") if h.strip()
+}
+_PLATFORMS = {"tiktok", "instagram", "youtube", "linkedin", "twitter"}
+
+
+def _hostname(netloc: str) -> str:
+    """'127.0.0.1:5000' → '127.0.0.1', '[::1]:5000' → '::1'."""
+    return (urlsplit(f"//{netloc}").hostname or "").lower()
+
+
+@app.before_request
+def _guard():
+    if _hostname(request.host) not in _ALLOWED_HOSTS:
+        return jsonify({"error": "host not allowed"}), 403
+
+    if request.method not in ("GET", "HEAD", "OPTIONS"):
+        origin = request.headers.get("Origin")
+        if origin and _hostname(urlsplit(origin).netloc) != _hostname(request.host):
+            return jsonify({"error": "cross-origin request rejected"}), 403
+        if not request.is_json:
+            return jsonify({"error": "Content-Type must be application/json"}), 415
+
+    if ADMIN_TOKEN and request.path.startswith("/api/"):
+        supplied = request.headers.get("X-Admin-Token") or request.args.get("token", "")
+        if not hmac.compare_digest(supplied, ADMIN_TOKEN):
+            return jsonify({"error": "unauthorized"}), 401
+    return None
+
+
+def _int_arg(name: str, default: int, lo: int = 1, hi: int = 1000) -> int:
+    try:
+        value = int(request.args.get(name, default))
+    except (TypeError, ValueError):
+        value = default
+    return max(lo, min(hi, value))
 
 DB_PATH = os.getenv("DB_PATH", "pipeline.db")
 LOGS_DIR = Path(__file__).parent.parent / "logs"
@@ -68,12 +122,12 @@ STEP_DISPLAY = {
 }
 
 STEP_META = {
-    "trend_scout":    {"model": "pytrends + PRAW",       "layer": "Идеи"},
-    "idea_generator": {"model": "Groq Llama 3.3 70B",    "layer": "Идеи"},
-    "topic_filter":   {"model": "Gemini Flash + SQLite",  "layer": "Идеи"},
-    "script_writer":  {"model": "Groq Llama 3.3 70B",    "layer": "Сценарий"},
-    "fact_checker":   {"model": "Groq Llama 3.3 70B",    "layer": "Сценарий"},
-    "safety_agent":   {"model": "Gemini 2.0 Flash",       "layer": "Контроль"},
+    "trend_scout":    {"model": "Google Trends + YouTube + RSS", "layer": "Идеи"},
+    "idea_generator": {"model": "LLM-цепочка (Groq → Cerebras)", "layer": "Идеи"},
+    "topic_filter":   {"model": "SQLite + Gemini/Groq",   "layer": "Идеи"},
+    "script_writer":  {"model": "LLM-цепочка (Groq → Cerebras)", "layer": "Сценарий"},
+    "fact_checker":   {"model": "LLM-цепочка (Groq → Cerebras)", "layer": "Сценарий"},
+    "safety_agent":   {"model": "Gemini → Cerebras → Groq", "layer": "Контроль"},
     "voice_agent":    {"model": "Edge TTS",               "layer": "Медиа"},
     "music_agent":    {"model": "Groq + FMA/local",       "layer": "Медиа"},
     "subtitle_agent": {"model": "Whisper",                "layer": "Медиа"},
@@ -204,7 +258,7 @@ def api_stats():
 
 @app.get("/api/runs")
 def api_runs():
-    limit = int(request.args.get("limit", 50))
+    limit = _int_arg("limit", 50)
     if not _db_exists():
         return jsonify([])
     conn = _db()
@@ -336,7 +390,7 @@ def _classify_log(line: str) -> str:
 
 @app.get("/api/logs")
 def api_logs():
-    n = int(request.args.get("lines", 100))
+    n = _int_arg("lines", 100, hi=2000)
     if not LOGS_DIR.exists():
         return jsonify([])
     log_files = sorted(LOGS_DIR.glob("*.log"), key=lambda p: p.stat().st_mtime)
@@ -349,8 +403,9 @@ def api_logs():
                 break
         except OSError:
             continue
+    # Старые логи могут содержать токены из URL ошибок — маскируем при выдаче
     return jsonify([
-        {"text": ln.rstrip(), "level": _classify_log(ln)}
+        {"text": redact(ln.rstrip()), "level": _classify_log(ln)}
         for ln in raw[-n:] if ln.strip()
     ])
 
@@ -361,7 +416,7 @@ def api_logs():
 def api_messages():
     """Возвращает сообщения агентов. ?since=ISO&limit=200&run_id="""
     since = request.args.get("since", "")
-    limit = int(request.args.get("limit", 200))
+    limit = _int_arg("limit", 200)
     run_id_filter = request.args.get("run_id", "")
     _ensure_tables()
     if not _db_exists():
@@ -456,7 +511,6 @@ def api_stream():
         headers={
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
-            "Access-Control-Allow-Origin": "*",
             "Connection": "keep-alive",
         },
     )
@@ -484,18 +538,24 @@ def _drain_stdout(proc: subprocess.Popen) -> None:
 def api_run():
     """Запускает py main.py в subprocess. Body: {niche, platform, dry_run, custom_topic}."""
     global _active_process, _active_meta
-    data = request.get_json(force=True, silent=True) or {}
+    data = request.get_json(silent=True) or {}
     niche = str(data.get("niche", "психология")).strip()
     platform = str(data.get("platform", "tiktok")).strip()
-    dry_run = bool(data.get("dry_run", False))
+    dry_run = data.get("dry_run", False) is True
     custom_topic = str(data.get("custom_topic", "")).strip()
+
+    if platform not in _PLATFORMS:
+        return jsonify({"error": f"Неизвестная платформа: {platform}"}), 400
+    if not niche or niche.startswith("-") or custom_topic.startswith("-"):
+        return jsonify({"error": "Некорректная ниша или тема"}), 400
 
     with _process_lock:
         if _active_process and _active_process.poll() is None:
             return jsonify({"error": "Пайплайн уже запущен", "pid": _active_process.pid}), 409
 
-        topic_arg = custom_topic if custom_topic else niche
-        cmd = [sys.executable, "main.py", "--niche", topic_arg, "--platform", platform]
+        cmd = [sys.executable, "main.py", "--niche", niche, "--platform", platform]
+        if custom_topic:
+            cmd += ["--custom-topic", custom_topic]
         if dry_run:
             cmd.append("--dry-run")
 
@@ -511,7 +571,8 @@ def api_run():
             )
             _active_process = proc
             _active_meta = {
-                "niche": topic_arg,
+                "niche": niche,
+                "custom_topic": custom_topic or None,
                 "platform": platform,
                 "dry_run": dry_run,
                 "started_at": datetime.now(timezone.utc).isoformat(),
@@ -522,21 +583,20 @@ def api_run():
             t.start()
             return jsonify({"status": "started", "pid": proc.pid})
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            return jsonify({"error": redact(e)}), 500
 
 
 @app.get("/api/run/output")
 def api_run_output():
     """Последние строки stdout текущего/последнего запуска."""
     with _stdout_lock:
-        lines = list(_stdout_lines[-100:])
+        lines = [redact(ln) for ln in _stdout_lines[-100:]]
     return jsonify(lines)
 
 
 @app.post("/api/run/stop")
 def api_run_stop():
     """Завершает активный subprocess."""
-    global _active_process
     with _process_lock:
         if not _active_process or _active_process.poll() is not None:
             return jsonify({"error": "Нет активного процесса"}), 404
@@ -564,7 +624,7 @@ def api_run_status():
 def api_ideas():
     """Все идеи из pipeline_state. ?status=pending|published|failed&limit=200"""
     status_filter = request.args.get("status", "")
-    limit = int(request.args.get("limit", 200))
+    limit = _int_arg("limit", 200)
     if not _db_exists():
         return jsonify([])
 
@@ -651,7 +711,7 @@ def api_test_agent(agent_name: str):
                         "message": result.get("message", ""), "duration_ms": ms})
     except Exception as e:
         ms = round((time.time() - start) * 1000)
-        return jsonify({"success": False, "message": str(e), "duration_ms": ms})
+        return jsonify({"success": False, "message": redact(e), "duration_ms": ms})
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -662,5 +722,12 @@ if __name__ == "__main__":
         sys.path.insert(0, root)
     _ensure_tables()
     port = int(os.getenv("API_PORT", 5000))
+    if API_HOST not in _LOOPBACK_HOSTS and not ADMIN_TOKEN:
+        sys.exit(
+            f"API_HOST={API_HOST} открывает админку в сеть — задайте ADMIN_TOKEN в .env "
+            "(админка умеет запускать реальную публикацию)."
+        )
+    if API_HOST not in _LOOPBACK_HOSTS:
+        print("Внимание: для доступа по IP/имени хоста добавьте его в API_ALLOWED_HOSTS")
     print(f"Admin API v2 → http://localhost:{port}")
-    app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
+    app.run(host=API_HOST, port=port, debug=False, threaded=True)

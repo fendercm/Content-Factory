@@ -5,7 +5,7 @@ Master Orchestrator — запускает полный пайплайн ген�
     python main.py --niche "психология"
     python main.py --niche "психология" --platform tiktok
     python main.py --niche "психология" --dry-run       # без реальной публикации
-    python main.py --niches "психология,бизнес,здоровье"  # несколько ниш параллельно
+    python main.py --niches "психология,бизнес,здоровье"  # несколько ниш параллельно (отдельные процессы)
 
 Пайплайн:
     trend_scout → idea_generator → topic_filter → script_writer → fact_checker →
@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import sqlite3
+import subprocess
 import sys
 import threading
 
@@ -36,6 +37,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from utils.agent_logger import log_message, set_run_id
+from utils.log_redact import install_log_redaction, redact
 
 # Настройка логов
 os.makedirs("logs", exist_ok=True)
@@ -50,6 +52,7 @@ logging.basicConfig(
         ),
     ],
 )
+install_log_redaction()
 logger = logging.getLogger("orchestrator")
 
 DB_PATH = os.getenv("DB_PATH", "pipeline.db")
@@ -156,7 +159,27 @@ def _init_db(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_performance_platform ON performance(platform);
         CREATE INDEX IF NOT EXISTS idx_agent_messages_run_id ON agent_messages(run_id);
     """)
+    _migrate_performance(conn)
     conn.commit()
+
+
+def _migrate_performance(conn: sqlite3.Connection) -> None:
+    """
+    Старые БД содержат performance без метрик (post_id/platform/title/published_at).
+    CREATE TABLE IF NOT EXISTS их не обновляет — без views idea_generator
+    молча не видит прошлые хиты, а analytics_agent не может сделать upsert.
+    """
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(performance)")}
+    for col, typedef in [
+        ("views", "INTEGER DEFAULT 0"),
+        ("likes", "INTEGER DEFAULT 0"),
+        ("comments", "INTEGER DEFAULT 0"),
+        ("niche", "TEXT"),
+        ("hook", "TEXT"),
+        ("fetched_at", "TEXT"),
+    ]:
+        if col not in existing:
+            conn.execute(f"ALTER TABLE performance ADD COLUMN {col} {typedef}")
 
 
 def _save_step(
@@ -196,41 +219,50 @@ def _log_error(conn: sqlite3.Connection, run_id: str, step: str, error: str, att
 # Retry-обёртка
 # ---------------------------------------------------------------------------
 
+class StepFailedError(RuntimeError):
+    """Шаг исчерпал попытки — Telegram-алерт уже отправлен из _run_with_retry."""
+
+
+def _alert(step: str, error: str, attempt: int | None = None) -> None:
+    try:
+        from agents.notify_agent import alert_error
+        alert_error(step, error, attempt)
+    except Exception as notify_exc:
+        logger.warning("Не удалось отправить Telegram алерт: %s", notify_exc)
+
+
 def _run_with_retry(
     step_name: str,
     fn,
     conn: sqlite3.Connection,
     run_id: str,
-    notify_fn,
     *args,
+    max_retries: int = MAX_RETRIES,
     **kwargs,
 ) -> Any:
     last_error: Exception | None = None
-    for attempt in range(1, MAX_RETRIES + 1):
+    for attempt in range(1, max_retries + 1):
         try:
-            logger.info("[%s] Попытка %d/%d", step_name, attempt, MAX_RETRIES)
+            logger.info("[%s] Попытка %d/%d", step_name, attempt, max_retries)
             _save_step(conn, run_id, step_name, "running")
             result = fn(*args, **kwargs)
             _save_step(conn, run_id, step_name, "success", result)
             return result
         except Exception as exc:
             last_error = exc
-            err_text = str(exc)
+            err_text = redact(exc)
             logger.error("[%s] Ошибка (попытка %d): %s", step_name, attempt, err_text)
             _log_error(conn, run_id, step_name, err_text, attempt)
             _save_step(conn, run_id, step_name, f"failed_attempt_{attempt}", error=err_text)
 
-            if attempt == MAX_RETRIES:
-                # Финальный алерт после 3 неудач
-                try:
-                    from agents.notify_agent import alert_error
-                    alert_error(step_name, err_text, attempt)
-                except Exception as notify_exc:
-                    logger.warning("Не удалось отправить Telegram алерт: %s", notify_exc)
+            if attempt == max_retries:
+                _alert(step_name, err_text, attempt)
             else:
                 time.sleep(RETRY_DELAY)
 
-    raise RuntimeError(f"Шаг '{step_name}' провалился после {MAX_RETRIES} попыток") from last_error
+    raise StepFailedError(
+        f"Шаг '{step_name}' провалился после {max_retries} попыток: {redact(last_error)}"
+    ) from last_error
 
 
 # ---------------------------------------------------------------------------
@@ -290,9 +322,9 @@ def step_script_writer(idea: dict, platform: str, research: dict | None = None) 
     return script
 
 
-def step_fact_checker(script: dict) -> dict:
+def step_fact_checker(script: dict, research_facts: list[dict] | None = None) -> dict:
     from agents.fact_checker import check
-    return check(script_text=script.get("full_script", ""))
+    return check(script_text=script.get("full_script", ""), facts=research_facts)
 
 
 def step_safety_agent(script: dict, idea: dict, platform: str) -> dict:
@@ -497,7 +529,8 @@ def step_publisher_agent(
 
 
 def step_notify_success(
-    idea: dict, pub_result: dict, platform: str, video: dict | None = None
+    idea: dict, pub_result: dict, platform: str, video: dict | None = None,
+    dry_run: bool = False,
 ) -> None:
     from agents.notify_agent import alert_success
     alert_success(
@@ -506,6 +539,8 @@ def step_notify_success(
         post_id=pub_result.get("post_id", "unknown"),
         duration=video.get("duration") if video else None,
         video_path=video.get("video_path") if video else None,
+        dry_run=dry_run,
+        status=pub_result.get("status"),
     )
 
 
@@ -550,6 +585,35 @@ def step_series_check(
         return None
 
 
+def _quality_gate(
+    conn: sqlite3.Connection, run_id: str, video: dict, hook_text: str, dry_run: bool,
+) -> None:
+    """
+    AI-оценка готового видео. Видео с verdict=rejected в реальном режиме
+    не публикуется. Если оценщик недоступен (verdict=skipped) — не блокируем:
+    технические проверки делает qa_agent.
+    """
+    try:
+        from agents.quality_scorer import score_video
+        score_result = score_video(video_path=video["video_path"], hook_text=hook_text, threshold=6)
+    except Exception as exc:
+        logger.warning("Quality Scorer пропущен: %s", exc)
+        return
+
+    _save_step(conn, run_id, "quality_scorer", "success", score_result)
+    score = score_result.get("score")
+    verdict = score_result.get("verdict")
+    log_message("quality_scorer",
+                f"Score: {score if score is not None else '—'}/10 — {verdict}", "qa_agent")
+    if verdict == "rejected":
+        reason = score_result.get("reasoning", "")
+        if dry_run:
+            logger.warning("Quality Scorer: видео отбраковано (score=%s): %s — dry-run, продолжаю",
+                           score, reason)
+        else:
+            raise ValueError(f"Quality Scorer отбраковал видео (score={score}/10): {reason[:200]}")
+
+
 # ---------------------------------------------------------------------------
 # Главный пайплайн
 # ---------------------------------------------------------------------------
@@ -563,6 +627,8 @@ def run_pipeline(
 ) -> None:
     run_id = f"{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{niche[:20]}"
     set_run_id(run_id)
+    from utils.cost_tracker import set_run_id as set_cost_run_id
+    set_cost_run_id(run_id)
     logger.info("=== Запуск пайплайна run_id=%s ===", run_id)
 
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -570,7 +636,7 @@ def run_pipeline(
     log_message("orchestrator", f"Запуск пайплайна: ниша={niche}, платформа={platform}")
 
     def retry(name, fn, *args, **kwargs):
-        return _run_with_retry(name, fn, conn, run_id, None, *args, **kwargs)
+        return _run_with_retry(name, fn, conn, run_id, *args, **kwargs)
 
     try:
         if custom_topic:
@@ -622,11 +688,15 @@ def run_pipeline(
             log_message("script_writer", f"Генерирую сценарий: «{candidate['title']}»")
             candidate_script = retry("script_writer", step_script_writer, candidate, platform, research_data)
             words = len(candidate_script.get("full_script", "").split())
-            # If script is too short, retry up to 2 more times
+            # Script Writer сам добивается диапазона пресета; повторяем только если
+            # текст короче его же минимума (раньше здесь была константа 120,
+            # не совпадавшая с пресетами, — лишние генерации жгли лимит Groq)
+            min_words = int(candidate_script.get("min_words") or 0)
             for _sw_retry in range(2):
-                if words >= 120:
+                if words >= min_words:
                     break
-                logger.warning("Script too short (%d words) — retrying script_writer (%d/2)", words, _sw_retry + 1)
+                logger.warning("Script too short (%d < %d words) — retrying script_writer (%d/2)",
+                               words, min_words, _sw_retry + 1)
                 candidate_script = retry("script_writer", step_script_writer, candidate, platform, research_data)
                 words = len(candidate_script.get("full_script", "").split())
             log_message("script_writer", f"Сценарий готов: {words} слов", "fact_checker")
@@ -637,36 +707,39 @@ def run_pipeline(
                 fallback_script = candidate_script
 
             # 4.5. Проверка фактов — если провалена, пробуем следующую идею
-            fact_result = retry("fact_checker", step_fact_checker, candidate_script)
+            facts = research_data.get("facts") or []
+            fact_result = retry("fact_checker", step_fact_checker, candidate_script, facts)
             if not fact_result["valid"]:
                 errors = fact_result.get("errors", [])
                 err_msg = f"Фактические ошибки в «{candidate['title']}»: {errors}"
                 logger.warning("Fact-check не прошёл: %s", err_msg)
                 _log_error(conn, run_id, "fact_checker", err_msg, 1)
                 log_message("fact_checker", f"Ошибки: {'; '.join(str(e) for e in errors)} — пробую другую тему", "orchestrator")
-                try:
-                    from agents.notify_agent import alert_error
-                    alert_error("fact_checker", err_msg, 1)
-                except Exception as notify_exc:
-                    logger.warning("Telegram алерт не отправлен: %s", notify_exc)
-                continue  # следующая идея
+                continue  # следующая идея (итоговый алерт — если не пройдёт ни одна)
 
             log_message("fact_checker", f"Факты проверены ✓ — «{candidate['title']}»", "safety_agent")
             idea = candidate
             script = candidate_script
             logger.info("Идея прошла fact-check: '%s'", idea["title"])
 
-            # 4.7. Hook A/B — генерируем 2 альтернативы и LLM-судья выбирает лучший
+            # 4.7. Hook A/B — генерируем 2 альтернативы и LLM-судья выбирает лучший.
+            # Новый hook тоже проходит fact-check: иначе непроверенная «статистика-шок»
+            # попадает в публикацию в обход проверки.
             try:
                 from agents.script_writer import improve_hook
                 hook_ab = improve_hook(script.get("full_script", ""), idea["title"])
                 if hook_ab.get("chosen_index", 0) != 0 and hook_ab.get("script"):
-                    old_hook = script.get("hook", "")[:50]
-                    script["full_script"] = hook_ab["script"]
-                    script["hook"] = hook_ab["hook"]
-                    log_message("script_writer",
-                        f"Hook A/B: заменён hook — было «{old_hook}», стало «{hook_ab['hook'][:50]}»",
-                        "safety_agent")
+                    new_script = {**script, "full_script": hook_ab["script"], "hook": hook_ab["hook"]}
+                    recheck = step_fact_checker(new_script, facts)
+                    if recheck.get("valid"):
+                        old_hook = script.get("hook", "")[:50]
+                        script = new_script
+                        log_message("script_writer",
+                            f"Hook A/B: заменён hook — было «{old_hook}», стало «{hook_ab['hook'][:50]}»",
+                            "safety_agent")
+                    else:
+                        logger.warning("Hook A/B: новый hook не прошёл fact-check (%s) — оставляю исходный",
+                                       recheck.get("errors"))
             except Exception as exc:
                 logger.warning("Hook A/B пропущен: %s", exc)
 
@@ -677,14 +750,18 @@ def run_pipeline(
             break
 
         if idea is None or script is None:
-            # Fallback: все идеи провалили fact-check, берём первую и продолжаем
-            if fallback_idea is not None:
-                idea = fallback_idea
-                script = fallback_script
-                logger.warning("Все идеи провалили fact-check — продолжаю с «%s» (нет других вариантов)", idea["title"])
-                log_message("orchestrator", f"Fact-check: нет идеального варианта — продолжаю с «{idea['title']}»", "safety_agent")
-            else:
+            if fallback_idea is None:
                 raise ValueError("Не удалось сгенерировать ни одного сценария")
+            if not dry_run:
+                # Публикация непроверенного сценария — риск страйков. Fail-closed.
+                raise ValueError(
+                    f"Ни одна из {len(sorted_ideas)} идей не прошла fact-check — публикация отменена"
+                )
+            # Dry-run: собираем видео для просмотра, но явно помечаем
+            idea = fallback_idea
+            script = fallback_script
+            logger.warning("DRY-RUN: все идеи провалили fact-check — собираю «%s» для просмотра", idea["title"])
+            log_message("orchestrator", f"Dry-run: fact-check не пройден — собираю «{idea['title']}» только для просмотра", "safety_agent")
 
         # 4.9. Применяем серийный брендинг к заголовку и сценарию
         if series_info is not None:
@@ -795,44 +872,30 @@ def run_pipeline(
         # 7.5. Thumbnail — опционально, генерируем после видео
         thumbnail = step_thumbnail_agent(idea, platform, video)
 
-        # 7.6. Quality Scorer — AI оценка финального видео (Gemini Vision)
-        try:
-            from agents.quality_scorer import score_video
-            score_result = score_video(
-                video_path=video["video_path"],
-                hook_text=script.get("hook", ""),
-                threshold=6,
-            )
-            log_message("quality_scorer",
-                f"Score: {score_result['score']}/10 — {score_result['verdict']}",
-                "qa_agent")
-            _save_step(conn, run_id, "quality_scorer", "success", score_result)
-            if score_result["verdict"] == "rejected" and not dry_run:
-                # В production: rejected = warn в Telegram, но не блокируем (на первом этапе)
-                logger.warning(
-                    "Quality Scorer: видео отбраковано (score=%d): %s — публикуем с предупреждением",
-                    score_result["score"], score_result.get("reasoning", ""),
-                )
-        except Exception as exc:
-            logger.warning("Quality Scorer пропущен: %s", exc)
+        # 7.6. Quality Scorer — AI оценка финального видео (Gemini → Groq Vision)
+        _quality_gate(conn, run_id, video, script.get("hook", ""), dry_run)
 
         # 8. QA — проверяем готовое видео перед публикацией
         retry("qa_agent", step_qa_agent, video, platform)
         log_message("qa_agent", "Видео прошло QA ✓", "publisher_agent")
 
-        # 9. Публикация
+        # 9. Публикация — одна попытка: POST /posts не идемпотентен, повтор после
+        # обрыва соединения создаёт дубль поста (presign/upload ретраятся внутри агента)
         pub_result = retry(
             "publisher_agent", step_publisher_agent,
             video, idea, script, platform, dry_run, thumbnail, account_id_override,
+            max_retries=1,
         )
         logger.info("Опубликовано: post_id=%s", pub_result.get("post_id"))
         log_message("publisher_agent", f"Опубликовано: post_id={pub_result.get('post_id','?')}", "notify_agent")
 
-        # 10. Отмечаем тему как использованную
-        step_mark_published(idea)
+        # 10. Отмечаем тему как использованную — только после реальной публикации,
+        # иначе dry-run «съедает» темы на 30 дней
+        if not dry_run:
+            step_mark_published(idea)
 
         # 10.1. Серийный эпизод — фиксируем после успешной публикации
-        if series_info is not None:
+        if series_info is not None and not dry_run:
             try:
                 from agents.series_agent import mark_episode_published
                 mark_episode_published(
@@ -863,7 +926,7 @@ def run_pipeline(
 
         # 11. Уведомление об успехе (с превью кадром из видео)
         try:
-            step_notify_success(idea, pub_result, platform, video)
+            step_notify_success(idea, pub_result, platform, video, dry_run=dry_run)
             log_message("notify_agent", "Telegram-карточка отправлена ✓")
         except Exception as exc:
             logger.warning("Уведомление не отправлено: %s", exc)
@@ -879,7 +942,9 @@ def run_pipeline(
     except Exception as exc:
         tb = traceback.format_exc()
         logger.critical("Пайплайн упал: %s\n%s", exc, tb)
-        _save_step(conn, run_id, "pipeline", "failed", error=str(exc))
+        _save_step(conn, run_id, "pipeline", "failed", error=redact(exc))
+        if not isinstance(exc, StepFailedError):
+            _alert("pipeline", f"[{niche}] {exc}")
         sys.exit(1)
 
     finally:
@@ -903,6 +968,8 @@ def run_story_pipeline(
     """
     run_id = f"{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_story_{niche[:14]}"
     set_run_id(run_id)
+    from utils.cost_tracker import set_run_id as set_cost_run_id
+    set_cost_run_id(run_id)
     logger.info("=== Story-пайплайн run_id=%s ===", run_id)
 
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -910,7 +977,7 @@ def run_story_pipeline(
     log_message("orchestrator", f"Story-эпизод: мир ниши «{niche}», платформа {platform}")
 
     def retry(name, fn, *args, **kwargs):
-        return _run_with_retry(name, fn, conn, run_id, None, *args, **kwargs)
+        return _run_with_retry(name, fn, conn, run_id, *args, **kwargs)
 
     try:
         from agents.story_agent import get_or_create_world, write_episode, save_episode
@@ -995,31 +1062,26 @@ def run_story_pipeline(
                     f"Эпизод собран: {video.get('duration', '?')} сек", "qa_agent")
 
         # 6. Quality score (Gemini → Groq vision)
-        try:
-            from agents.quality_scorer import score_video
-            score_result = score_video(video["video_path"], hook_text=episode["hook"])
-            _save_step(conn, run_id, "quality_scorer", "success", score_result)
-            log_message("quality_scorer",
-                        f"Score: {score_result['score']}/10 — {score_result['verdict']}",
-                        "qa_agent")
-        except Exception as exc:
-            logger.warning("Quality Scorer пропущен: %s", exc)
+        _quality_gate(conn, run_id, video, episode["hook"], dry_run)
 
-        # 7. QA + публикация
+        # 7. QA + публикация (одна попытка — см. run_pipeline)
         retry("qa_agent", step_qa_agent, video, platform)
         pub_result = retry(
             "publisher_agent", step_publisher_agent,
             video, idea, script, platform, dry_run, None, account_id_override,
+            max_retries=1,
         )
         log_message("publisher_agent",
                     f"Опубликовано: post_id={pub_result.get('post_id', '?')}", "notify_agent")
 
-        # 8. Эпизод — в лор-память (только после успешной публикации/сборки)
-        save_episode(world["id"], episode, run_id=run_id,
-                     post_id=pub_result.get("post_id", ""), db_path=DB_PATH)
+        # 8. Эпизод — в лор-память только после реальной публикации:
+        # иначе dry-run двигает сюжет, и настоящий следующий эпизод «перескакивает»
+        if not dry_run:
+            save_episode(world["id"], episode, run_id=run_id,
+                         post_id=pub_result.get("post_id", ""), db_path=DB_PATH)
 
         try:
-            step_notify_success(idea, pub_result, platform, video)
+            step_notify_success(idea, pub_result, platform, video, dry_run=dry_run)
         except Exception as exc:
             logger.warning("Уведомление не отправлено: %s", exc)
 
@@ -1036,7 +1098,9 @@ def run_story_pipeline(
     except Exception as exc:
         tb = traceback.format_exc()
         logger.critical("Story-пайплайн упал: %s\n%s", exc, tb)
-        _save_step(conn, run_id, "pipeline", "failed", error=str(exc))
+        _save_step(conn, run_id, "pipeline", "failed", error=redact(exc))
+        if not isinstance(exc, StepFailedError):
+            _alert("story_pipeline", f"[{niche}] {exc}")
         sys.exit(1)
 
     finally:
@@ -1093,31 +1157,42 @@ def main() -> None:
     if args.niches:
         niches = [n.strip() for n in args.niches.split(",") if n.strip()]
         logger.info("Multi-niche режим: %s", niches)
-
-        def _run_niche(niche: str) -> None:
-            # Нишево-специфичный account_id из .env
-            env_key = f"ZERNIO_ACCOUNT_ID_{niche.upper().replace(' ', '_')}"
-            account_id = os.getenv(env_key) or os.getenv("ZERNIO_ACCOUNT_ID", "")
-            run_pipeline(
-                niche=niche,
-                platform=args.platform,
-                dry_run=args.dry_run,
-                account_id_override=account_id,
-                custom_topic=getattr(args, "custom_topic", None),
-            )
-
-        threads = [threading.Thread(target=_run_niche, args=(n,), daemon=False) for n in niches]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
+        if args.custom_topic:
+            parser.error("--custom-topic задаёт одну тему — используйте его с --niche")
+        sys.exit(_run_niches_parallel(niches, args.platform, args.dry_run))
     else:
+        env_key = f"ZERNIO_ACCOUNT_ID_{args.niche.upper().replace(' ', '_')}"
         run_pipeline(
             niche=args.niche,
             platform=args.platform,
             dry_run=args.dry_run,
-            custom_topic=getattr(args, "custom_topic", None),
+            account_id_override=os.getenv(env_key) or None,
+            custom_topic=args.custom_topic,
         )
+
+
+def _run_niches_parallel(niches: list[str], platform: str, dry_run: bool) -> int:
+    """
+    Каждая ниша — отдельный процесс main.py --niche: у агентов есть
+    процессно-глобальное состояние (run_id логгера, circuit breaker провайдеров),
+    которое потоки перемешивали. Возвращает 1, если упала хотя бы одна ниша.
+    """
+    procs: dict[str, subprocess.Popen] = {}
+    for niche in niches:
+        cmd = [sys.executable, os.path.abspath(__file__), "--niche", niche, "--platform", platform]
+        if dry_run:
+            cmd.append("--dry-run")
+        procs[niche] = subprocess.Popen(cmd)
+
+    failed = []
+    for niche, proc in procs.items():
+        if proc.wait() != 0:
+            failed.append(niche)
+    if failed:
+        logger.error("Multi-niche: упали ниши %s", failed)
+        return 1
+    logger.info("Multi-niche: все %d ниш завершены успешно", len(niches))
+    return 0
 
 
 if __name__ == "__main__":

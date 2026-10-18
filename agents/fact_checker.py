@@ -1,15 +1,20 @@
 """
-Fact Checker Agent — проверяет сценарий на фактические ошибки через Groq.
+Fact Checker Agent — проверяет сценарий на фактические ошибки через LLM.
 
 Вход:  script_text (str) — полный текст сценария
+       facts (list[dict] | None) — факты от research_agent, на которые опирался сценарий
 Выход: {"valid": True} | {"valid": False, "errors": [...]}
 
 Запускается после script_writer, ДО safety_agent и voice_agent.
+
+Fail-closed: если ответ LLM не удалось разобрать, сценарий считается
+непроверенным ({"valid": False}) — Orchestrator пробует следующую идею.
 """
 
 import json
 import logging
 import os
+import re
 
 from dotenv import load_dotenv
 
@@ -20,49 +25,84 @@ logger = logging.getLogger(__name__)
 MODEL = "llama-3.3-70b-versatile"
 CEREBRAS_MODEL = "gpt-oss-120b"
 
-_SYSTEM_PROMPT = """Ты редактор-фактчекер. Ищи ТОЛЬКО критические ошибки, которые опозорят автора.
+_SYSTEM_PROMPT = """Ты редактор-фактчекер коротких видео. Тон и стиль не оцениваешь — только факты.
 
-Флагируй ТОЛЬКО если все три условия выполнены одновременно:
-• В тексте упоминается конкретный реальный человек по имени (не анонимный пример)
-• ЕМУ приписана ЯВНО НЕВЕРНАЯ профессия или биография (например: "футболист Немов" — он гимнаст)
-• Ты на 100% уверен в ошибке
+ФЛАГУЙ (valid=false), если есть хотя бы одно:
+1. Реальному человеку по имени приписана явно неверная профессия или биография
+   (например: "футболист Немов" — он гимнаст).
+2. Конкретная атрибуция исследования — университет, организация, год, автор
+   ("учёные Стэнфорда показали", "исследование 2024 года", "по данным ВОЗ") —
+   которой НЕТ в списке FACTS ниже. Выдуманная атрибуция = ошибка.
+3. Точная статистика (проценты, "в N раз", "N минут") подана как установленный факт,
+   но её НЕТ в списке FACTS и она НЕ смягчена hedge-маркером
+   ("по некоторым данным", "по некоторым исследованиям", "примерно").
+4. Утверждение, которое ты точно знаешь как ложное.
 
-НЕ флагируй — это нормально для мотивационного контента:
-• Округлённые статистики ("80% людей", "в 3 раза") — никогда не флагуй
-• "Исследования показывают...", "учёные выяснили..." — никогда не флагуй
-• Hedge-маркеры ("по некоторым исследованиям", "одна из теорий") — никогда не флагуй
-• Гипотетические примеры и аналогии — никогда не флагуй
-• Приблизительные цифры и неверифицируемые утверждения — никогда не флагуй
-• Любые обобщения, советы, мнения — никогда не флагуй
+НЕ флагуй:
+• Цифры и атрибуции, которые есть в FACTS (допустимо округление и пересказ)
+• Hedge-формулировки без конкретного вуза/года ("исследования показывают...")
+• Личные истории от 1-го лица, гипотетические примеры, аналогии, мнения, советы
 • Ссылки на умерших классиков (Юнг, Фрейд, Дарвин, Эйнштейн, Кант, Ницше, Сократ,
-  Платон, Аристотель, Тесла, Павлов, Скиннер) — никогда не флагуй, даже если
-  цитата не дословная. Это литературный приём.
-• Атрибуция "учёные из Стэнфорда/Гарварда/Йеля/MIT 2022-2024" — никогда не флагуй
+  Платон, Аристотель, Тесла, Павлов, Скиннер, Ферми, Кюри) в их реальной области
 
-Правило по умолчанию: если не уверен — {"valid": true}.
-Флагуй только очевидные ошибки с реальными именами.
+В errors пиши кратко: какая фраза и почему (нет в FACTS / неверная биография / ложь).
 
-Если ошибок НЕТ или ты НЕ УВЕРЕН — верни: {"valid": true}
-Если ошибка ОЧЕВИДНА (реальный человек + явно неверная профессия) — верни: {"valid": false, "errors": ["описание"]}
+Если ошибок нет — верни: {"valid": true}
+Если есть — верни: {"valid": false, "errors": ["описание", ...]}
 
 Отвечай ТОЛЬКО JSON без комментариев и markdown."""
 
-_USER_TEMPLATE = """Проверь этот текст сценария на фактические ошибки:
+_USER_TEMPLATE = """FACTS (единственная разрешённая база для цифр и атрибуций):
+{facts_block}
+
+Проверь этот текст сценария:
 
 {script_text}"""
 
+_MAX_FACTS = 12
 
-def check(script_text: str) -> dict:
+
+def _format_facts(facts: list[dict] | None) -> str:
+    if not facts:
+        return "(пусто — значит, в сценарии не должно быть точной статистики и атрибуций исследований)"
+    lines = []
+    for i, f in enumerate(facts[:_MAX_FACTS], 1):
+        text = str(f.get("text", "")).strip()
+        if not text:
+            continue
+        source = f.get("source", "")
+        lines.append(f"{i}. {text}" + (f" — {source}" if source else ""))
+    return "\n".join(lines) or "(пусто)"
+
+
+def _as_bool(value) -> bool | None:
+    """LLM иногда присылает "false" строкой — bool("false") == True."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in ("true", "yes", "1"):
+            return True
+        if v in ("false", "no", "0"):
+            return False
+    return None
+
+
+def _unverified(reason: str) -> dict:
+    logger.warning("Fact Checker: %s — сценарий считается непроверенным", reason)
+    return {"valid": False, "errors": [f"fact-check не выполнен: {reason}"], "unverified": True}
+
+
+def check(script_text: str, facts: list[dict] | None = None) -> dict:
     """
     Проверяет сценарий на фактические ошибки.
 
     Returns:
         {"valid": True} — если ошибок нет
-        {"valid": False, "errors": [...]} — если найдены ошибки
+        {"valid": False, "errors": [...]} — если найдены ошибки или проверка не удалась
 
     Raises:
         EnvironmentError: если ни один LLM-ключ не настроен
-        RuntimeError: если Groq вернул невалидный JSON
     """
     has_llm = any([
         os.getenv("YANDEX_API_KEY"),
@@ -74,11 +114,14 @@ def check(script_text: str) -> dict:
             "Ни один LLM не настроен: задайте YANDEX_API_KEY, GROQ_API_KEY или CEREBRAS_API_KEY"
         )
 
-    logger.info("Fact Checker: проверяю сценарий (%d символов)", len(script_text))
+    logger.info("Fact Checker: проверяю сценарий (%d символов, %d фактов)",
+                len(script_text), len(facts or []))
 
     messages = [
         {"role": "system", "content": _SYSTEM_PROMPT},
-        {"role": "user", "content": _USER_TEMPLATE.format(script_text=script_text)},
+        {"role": "user", "content": _USER_TEMPLATE.format(
+            facts_block=_format_facts(facts), script_text=script_text,
+        )},
     ]
 
     from utils.llm_client import groq_with_cerebras_fallback
@@ -92,46 +135,36 @@ def check(script_text: str) -> dict:
         caller="fact_checker",
     )
 
-    raw = response.choices[0].message.content.strip()
+    raw = (response.choices[0].message.content or "").strip()
 
     try:
         result = json.loads(raw)
-    except json.JSONDecodeError as e:
-        # 1. LLM refusal (модерация) — пропускаем
-        refusal_signals = ("не могу", "cannot", "can't", "sorry", "извини")
-        if any(s in raw.lower() for s in refusal_signals) or not raw:
-            logger.warning("Fact Checker: LLM отказался проверять — пропускаем: %s", raw[:80])
-            return {"valid": True}
-        # 2. Иногда LLM возвращает JSON в markdown-блоке ```json {...} ```
-        import re as _re
-        m = _re.search(r"\{[^{}]*\"valid\"[^{}]*\}", raw)
-        if m:
-            try:
-                return json.loads(m.group())
-            except json.JSONDecodeError:
-                pass
-        # 3. Если "valid" слово вообще есть и нет явных markers ошибок — считаем pass
-        if "valid" in raw.lower() and "true" in raw.lower() and "false" not in raw.lower():
-            logger.warning("Fact Checker: невалидный JSON, но похоже на pass: %s", raw[:80])
-            return {"valid": True}
-        # 4. Финальный fallback — не валим пайплайн, считаем pass с warn
-        logger.warning(
-            "Fact Checker: невалидный JSON, пропускаем (нет refusal/valid сигналов): %s",
-            raw[:200],
-        )
-        return {"valid": True}
+    except json.JSONDecodeError:
+        # Иногда LLM оборачивает JSON в markdown-блок ```json {...} ```
+        m = re.search(r"\{.*\}", raw, re.S)
+        try:
+            result = json.loads(m.group()) if m else None
+        except json.JSONDecodeError:
+            result = None
+        if result is None:
+            return _unverified(f"невалидный JSON от LLM: {raw[:120]!r}")
 
-    if "valid" not in result:
-        logger.warning("Fact Checker: в ответе нет поля 'valid' — пропускаем: %s", result)
-        return {"valid": True}
+    if not isinstance(result, dict):
+        return _unverified(f"ответ не объект: {str(result)[:120]}")
 
-    if result["valid"]:
+    valid = _as_bool(result.get("valid"))
+    if valid is None:
+        return _unverified(f"нет корректного поля 'valid': {str(result)[:120]}")
+
+    if valid:
         logger.info("Fact Checker: сценарий прошёл проверку")
-    else:
-        errors = result.get("errors", [])
-        logger.warning("Fact Checker: найдены ошибки: %s", errors)
+        return {"valid": True}
 
-    return result
+    errors = result.get("errors") or ["ошибка без описания"]
+    if not isinstance(errors, list):
+        errors = [str(errors)]
+    logger.warning("Fact Checker: найдены ошибки: %s", errors)
+    return {"valid": False, "errors": errors}
 
 
 if __name__ == "__main__":

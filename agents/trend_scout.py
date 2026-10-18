@@ -101,12 +101,12 @@ def _fetch_google_trends(niche: str) -> list[dict[str, Any]]:
 def _yt_get(endpoint: str, params: dict) -> dict:
     """GET запрос к YouTube Data API v3 с двумя попытками при сетевых сбоях."""
     base = "https://www.googleapis.com/youtube/v3"
-    # Передаём params как dict — requests сам кодирует, сохраняя запятые в part
-    payload = {**params, "key": YOUTUBE_API_KEY}
+    # Ключ — в заголовке, а не в ?key=: иначе он попадает в текст HTTPError и в логи
+    headers = {"X-Goog-Api-Key": YOUTUBE_API_KEY}
     last_exc: Exception | None = None
     for attempt in range(2):
         try:
-            resp = requests.get(f"{base}/{endpoint}", params=payload, timeout=15)
+            resp = requests.get(f"{base}/{endpoint}", params=params, headers=headers, timeout=15)
             resp.raise_for_status()
             return resp.json()
         except requests.HTTPError:

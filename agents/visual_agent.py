@@ -117,12 +117,15 @@ def _niche_override(topic: str) -> str | None:
     return None
 
 
+def is_cached(path: str) -> bool:
+    from utils.download import is_cached as _is_cached
+    return _is_cached(path, min_bytes=1_000)
+
+
 def _download_clip(url: str, dest_path: str) -> None:
-    with requests.get(url, stream=True, timeout=60) as r:
-        r.raise_for_status()
-        with open(dest_path, "wb") as f:
-            for chunk in r.iter_content(chunk_size=8192):
-                f.write(chunk)
+    # Через .part: оборванная загрузка не должна остаться в кэше как «готовый» клип
+    from utils.download import download_to
+    download_to(url, dest_path, timeout=60, min_bytes=1_000)
 
 
 # ---------------------------------------------------------------------------
@@ -837,7 +840,7 @@ def _pexels_clips(
                 continue
             clip_path = os.path.abspath(os.path.join(CLIPS_DIR, f"pexels_{vid_id}.mp4"))
             used_ids.add(vid_id)
-            if os.path.exists(clip_path):
+            if is_cached(clip_path):
                 logger.debug("Клип %s уже скачан", vid_id)
                 clips.append(clip_path)
             else:
@@ -955,7 +958,7 @@ def get_visuals(
         if not url:
             continue
         clip_path = os.path.abspath(os.path.join(CLIPS_DIR, f"pexels_{video['id']}.mp4"))
-        if os.path.exists(clip_path):
+        if is_cached(clip_path):
             logger.debug("Клип %s уже скачан", video["id"])
             clips.append(clip_path)
         else:

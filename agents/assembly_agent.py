@@ -21,6 +21,7 @@ import os
 import random
 import shutil
 import subprocess
+import uuid
 from datetime import datetime
 from typing import Literal
 
@@ -83,11 +84,16 @@ def _check_ffmpeg() -> None:
         )
 
 
+def _run_ffmpeg(cmd: list[str], timeout: float = 600, what: str = "ffmpeg"):
+    from utils.ffmpeg import run_ffmpeg
+    return run_ffmpeg(cmd, timeout=timeout, what=what)
+
+
 def _get_duration(path: str) -> float:
     result = subprocess.run(
         ["ffprobe", "-v", "quiet", "-print_format", "json",
          "-show_format", "-show_streams", path],
-        capture_output=True, text=True, check=True,
+        capture_output=True, text=True, check=True, timeout=60,
     )
     data = json.loads(result.stdout)
     # format-level duration — надёжнее всего, есть почти всегда
@@ -400,15 +406,15 @@ def _ensure_sfx_library() -> dict[str, str]:
         path = os.path.abspath(os.path.join(SFX_DIR, f"{name}.wav"))
         if not os.path.exists(path) or os.path.getsize(path) < 1000:
             try:
-                subprocess.run(
+                _run_ffmpeg(
                     [
                         "ffmpeg", "-y", "-f", "lavfi", "-i", src,
                         "-af", af, "-t", f"{dur:.2f}",
                         "-c:a", "pcm_s16le", path,
                     ],
-                    check=True, capture_output=True,
+                    timeout=60,
                 )
-            except subprocess.CalledProcessError as exc:
+            except RuntimeError as exc:
                 logger.warning("SFX %s gen failed: %s", name, exc)
                 continue
         paths[name] = path
@@ -710,7 +716,7 @@ def _render_endcard_clip(duration: float, width: int, height: int) -> str:
         "-c:v", "libx264", "-preset", "fast", "-crf", "18",
         "-an", mp4_out,
     ]
-    subprocess.run(cmd, check=True, capture_output=True)
+    _run_ffmpeg(cmd)
     return mp4_out
 
 
@@ -751,7 +757,7 @@ def _render_hook_clip(
         "-c:v", "libx264", "-preset", "fast", "-crf", "18",
         "-an", mp4_out,
     ]
-    subprocess.run(cmd, check=True, capture_output=True)
+    _run_ffmpeg(cmd)
     return mp4_out
 
 
@@ -853,7 +859,7 @@ def _render_captioned_photo_clip(
         "-c:v", "libx264", "-preset", "fast", "-crf", "20",
         "-an", mp4_out,
     ]
-    subprocess.run(cmd, check=True, capture_output=True)
+    _run_ffmpeg(cmd)
     return mp4_out
 
 
@@ -885,7 +891,7 @@ def _render_photo_clip(
         "-c:v", "libx264", "-preset", "fast", "-crf", "20",
         "-an", out,
     ]
-    subprocess.run(cmd, check=True, capture_output=True)
+    _run_ffmpeg(cmd)
     return out
 
 
@@ -938,7 +944,7 @@ def _render_burst_clip(
         "-c:v", "libx264", "-preset", "fast", "-crf", "20",
         "-an", out,
     ]
-    subprocess.run(cmd, check=True, capture_output=True)
+    _run_ffmpeg(cmd)
     return out
 
 
@@ -1318,7 +1324,7 @@ def _assemble_with_clips(
         filter_parts, voice_idx, music_path, input_args, sfx_events,
     )
 
-    subprocess.run(
+    _run_ffmpeg(
         [
             "ffmpeg", "-y",
             *input_args,
@@ -1333,8 +1339,8 @@ def _assemble_with_clips(
             "-movflags", "+faststart",
             output_path,
         ],
-        check=True,
-        capture_output=True,
+        timeout=1800,
+        what="ffmpeg final render",
     )
 
 
@@ -1384,7 +1390,7 @@ def _assemble_black(
         "-movflags", "+faststart",
         output_path,
     ]
-    subprocess.run(cmd, check=True, capture_output=True)
+    _run_ffmpeg(cmd)
 
 
 def assemble_video(
@@ -1448,7 +1454,8 @@ def assemble_video(
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = os.path.abspath(os.path.join(OUTPUT_DIR, f"{timestamp}_{platform}.mp4"))
+    # Суффикс uuid: параллельные ниши в одну секунду не перезаписывают файлы друг друга
+    output_path = os.path.abspath(os.path.join(OUTPUT_DIR, f"{timestamp}_{platform}_{uuid.uuid4().hex[:6]}.mp4"))
 
     if clips:
         extras = []

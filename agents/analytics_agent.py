@@ -100,8 +100,13 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
         CREATE UNIQUE INDEX IF NOT EXISTS uix_performance_post
         ON performance (post_id)
     """)
-    # Добавляем колонки если таблица уже существовала без них (migration)
+    # Добавляем колонки если таблица уже существовала без них (migration).
+    # Старые БД создавали performance вообще без метрик — без views/likes/comments
+    # upsert ниже падал.
     for col, typedef in [
+        ("views", "INTEGER DEFAULT 0"),
+        ("likes", "INTEGER DEFAULT 0"),
+        ("comments", "INTEGER DEFAULT 0"),
         ("fetched_at", "TEXT"),
         ("niche", "TEXT"),
         ("hook", "TEXT"),

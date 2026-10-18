@@ -490,7 +490,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </div><!-- /layout -->
 
 <script>
-const API = 'http://localhost:5000/api';
+// Относительный путь: панель отдаёт тот же Flask-сервер (любой хост/порт)
+const API = '/api';
+
+// Токен админки (если на сервере задан ADMIN_TOKEN): откройте панель один раз
+// как /?token=XXX — токен сохранится в localStorage и уйдёт из адресной строки
+const ADMIN_TOKEN = (() => {
+  try {
+    const params = new URLSearchParams(location.search);
+    const fromUrl = params.get('token');
+    if (fromUrl) {
+      localStorage.setItem('cf_admin_token', fromUrl);
+      params.delete('token');
+      const qs = params.toString();
+      history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
+      return fromUrl;
+    }
+    return localStorage.getItem('cf_admin_token') || '';
+  } catch (e) { return ''; }
+})();
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -552,7 +570,7 @@ let runPolling = null;
 function connectSSE() {
   if (sseSource) { sseSource.close(); sseSource = null; }
   try {
-    sseSource = new EventSource(API + '/stream');
+    sseSource = new EventSource(API + '/stream' + (ADMIN_TOKEN ? '?token=' + encodeURIComponent(ADMIN_TOKEN) : ''));
     sseSource.onmessage = onSSEMsg;
     sseSource.onerror = () => {
       if (sseSource) { sseSource.close(); sseSource = null; }
@@ -1114,7 +1132,7 @@ async function refresh() {
 async function apiFetch(path, opts = {}) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 5000);
-  const headers = {'Content-Type': 'application/json', ...(opts.headers||{})};
+  const headers = {'Content-Type': 'application/json', ...(ADMIN_TOKEN ? {'X-Admin-Token': ADMIN_TOKEN} : {}), ...(opts.headers||{})};
   try {
     const r = await fetch(API + path, {...opts, headers, signal: ctrl.signal});
     clearTimeout(t);

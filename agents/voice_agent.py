@@ -18,6 +18,7 @@ import os
 import re
 import shutil
 import subprocess
+import uuid
 import time
 from datetime import datetime
 from typing import Literal
@@ -157,7 +158,7 @@ def _normalize_volume(path: str) -> None:
     try:
         result = subprocess.run(
             ["ffmpeg", "-y", "-i", path, "-af", "loudnorm=I=-16:TP=-1.5:LRA=11", tmp],
-            capture_output=True,
+            capture_output=True, timeout=300,
         )
         if result.returncode == 0 and os.path.exists(tmp):
             shutil.move(tmp, path)
@@ -396,7 +397,7 @@ def _cosyvoice(text: str, gender: str, output_path: str) -> None:
         result = subprocess.run(
             ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", list_file,
              "-codec:a", "copy", output_path],
-            capture_output=True,
+            capture_output=True, timeout=300,
         )
         os.remove(list_file)
         if result.returncode != 0:
@@ -464,7 +465,7 @@ def _silero(text: str, gender: str, output_path: str) -> None:
     result = subprocess.run(
         ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", list_file,
          "-codec:a", "libmp3lame", "-q:a", "4", output_path],
-        capture_output=True,
+        capture_output=True, timeout=300,
     )
     # Чистим временные файлы
     os.remove(list_file)
@@ -479,7 +480,7 @@ def _wav_to_mp3(wav_path: str, mp3_path: str) -> None:
     """Конвертирует WAV → MP3 через ffmpeg."""
     result = subprocess.run(
         ["ffmpeg", "-y", "-i", wav_path, "-codec:a", "libmp3lame", "-q:a", "4", mp3_path],
-        capture_output=True,
+        capture_output=True, timeout=300,
     )
     os.remove(wav_path)
     if result.returncode != 0:
@@ -586,7 +587,7 @@ def _yandex_v3(text: str, voice: str, output_path: str) -> None:
         result = subprocess.run(
             ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", list_file,
              "-codec:a", "copy", output_path],
-            capture_output=True,
+            capture_output=True, timeout=300,
         )
         os.remove(list_file)
         if result.returncode != 0:
@@ -720,7 +721,7 @@ def generate_voice(
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = os.path.abspath(os.path.join(OUTPUT_DIR, f"{timestamp}_{platform}.mp3"))
+    output_path = os.path.abspath(os.path.join(OUTPUT_DIR, f"{timestamp}_{platform}_{uuid.uuid4().hex[:6]}.mp3"))
 
     gender = settings["gender"]
     script_with_pauses = _inject_pauses(full_script)

@@ -4,7 +4,9 @@ Safety Agent — проверяет сценарий и метаданные н�
 Вход:  script_text (str), title (str), hashtags (list[str]), platform (str)
 Выход: {"safe": True} или {"safe": False, "issue": "...", "category": "..."}
 
-Приоритет: Gemini 2.0 Flash (25s timeout) → Cerebras → Groq → default safe
+Приоритет: Gemini (25s timeout) → Cerebras → Groq.
+Fail-closed: если ни один движок не дал разборчивый ответ — {"safe": False,
+"category": "unchecked"}; Orchestrator не пускает такой сценарий в публикацию.
 """
 
 import concurrent.futures
@@ -24,6 +26,7 @@ CEREBRAS_API_KEY = os.getenv("CEREBRAS_API_KEY", "")
 GROQ_API_KEY     = os.getenv("GROQ_API_KEY", "")
 
 GEMINI_TIMEOUT = 25  # секунд — после этого переключаемся на fallback
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 _PLATFORM_RULES = {
     "tiktok": (
@@ -74,18 +77,45 @@ _PROMPT_TEMPLATE = """Ты — специалист по модерации ко
 Только JSON, без пояснений."""
 
 
+def _as_bool(value: Any) -> bool | None:
+    """LLM иногда присылает "false" строкой — а bool("false") == True."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in ("true", "yes", "1"):
+            return True
+        if v in ("false", "no", "0"):
+            return False
+    return None
+
+
 def _parse_result(raw: str) -> dict[str, Any]:
+    """Разбирает ответ движка. Неоднозначный ответ → ValueError (пробуем следующий движок)."""
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):
             raw = raw[4:]
         raw = raw.strip()
     result = json.loads(raw)
+    if not isinstance(result, dict):
+        raise ValueError(f"ответ safety-движка не объект: {raw[:120]}")
+    safe = _as_bool(result.get("safe"))
+    if safe is None:
+        raise ValueError(f"в ответе safety-движка нет однозначного 'safe': {raw[:120]}")
     return {
-        "safe": bool(result.get("safe", True)),
+        "safe": safe,
         "issue": result.get("issue") or None,
-        "category": result.get("category", "safe"),
+        "category": result.get("category") or ("safe" if safe else "unspecified"),
     }
+
+
+def _log_result(engine: str, result: dict[str, Any], title: str, platform: str) -> None:
+    if result["safe"]:
+        logger.info("Safety OK (%s) '%s' / %s", engine, title, platform)
+    else:
+        logger.warning("Safety FAILED (%s) '%s' / %s: [%s] %s",
+                       engine, title, platform, result["category"], result["issue"])
 
 
 # ---------------------------------------------------------------------------
@@ -99,17 +129,20 @@ def _gemini_call(prompt: str) -> dict[str, Any]:
     def _do_request():
         client = genai.Client(api_key=GEMINI_API_KEY)
         return client.models.generate_content(
-            model="gemini-2.0-flash",
+            model=GEMINI_MODEL,
             contents=prompt,
         )
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(_do_request)
-        try:
-            response = future.result(timeout=GEMINI_TIMEOUT)
-        except concurrent.futures.TimeoutError:
-            future.cancel()
-            raise TimeoutError(f"Gemini не ответил за {GEMINI_TIMEOUT}с")
+    # Без with: выход из контекст-менеджера ждёт зависший запрос (shutdown(wait=True)),
+    # и таймаут фактически не работал
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(_do_request)
+    try:
+        response = future.result(timeout=GEMINI_TIMEOUT)
+    except concurrent.futures.TimeoutError:
+        raise TimeoutError(f"Gemini не ответил за {GEMINI_TIMEOUT}с")
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
     return _parse_result(response.text.strip())
 
@@ -184,13 +217,7 @@ def check(
     if GEMINI_API_KEY and is_enabled("gemini"):
         try:
             result = _gemini_call(prompt)
-            if not result["safe"]:
-                logger.warning(
-                    "Safety FAILED '%s' / %s: [%s] %s",
-                    title, platform, result["category"], result["issue"],
-                )
-            else:
-                logger.info("Safety OK (Gemini) '%s' / %s", title, platform)
+            _log_result("Gemini", result, title, platform)
             return result
         except TimeoutError as exc:
             logger.warning("Safety Agent: %s — переключаюсь на Cerebras", exc)
@@ -210,7 +237,7 @@ def check(
     if CEREBRAS_API_KEY:
         try:
             result = _cerebras_call(prompt)
-            logger.info("Safety OK (Cerebras) '%s' / %s", title, platform)
+            _log_result("Cerebras", result, title, platform)
             return result
         except Exception as exc:
             logger.warning("Cerebras ошибка: %s — переключаюсь на Groq", exc)
@@ -221,14 +248,18 @@ def check(
     if GROQ_API_KEY:
         try:
             result = _groq_call(prompt)
-            logger.info("Safety OK (Groq) '%s' / %s", title, platform)
+            _log_result("Groq", result, title, platform)
             return result
         except Exception as exc:
-            logger.warning("Groq ошибка: %s — safety-check пропущен", exc)
+            logger.warning("Groq ошибка: %s", exc)
 
-    # ── Fallback: пропускаем проверку ─────────────────────────────────────────
-    logger.warning("Все движки safety-check недоступны — считаем контент безопасным")
-    return {"safe": True, "issue": None, "category": "skipped"}
+    # ── Fail-closed: непроверенный контент не публикуем ──────────────────────
+    logger.error("Все движки safety-check недоступны — контент считается непроверенным")
+    return {
+        "safe": False,
+        "issue": "safety-check не выполнен: все движки недоступны",
+        "category": "unchecked",
+    }
 
 
 if __name__ == "__main__":

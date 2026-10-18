@@ -1,3 +1,4 @@
+import re
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -124,4 +125,5 @@ def test_generate_subtitles_all_platforms(mock_makedirs, mock_write_ass, platfor
     with patch("agents.subtitle_agent._get_whisper_model", return_value=model):
         result = generate_subtitles("/fake/audio.mp3", platform)
 
-    assert result["subtitle_path"].endswith(f"{platform}.ass")
+    # <timestamp>_<platform>_<uuid6>.ass — суффикс исключает коллизии параллельных ниш
+    assert re.search(rf"_{platform}_[0-9a-f]{{6}}\.ass$", result["subtitle_path"])

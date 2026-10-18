@@ -349,16 +349,13 @@ def _from_fma(mood: str) -> str | None:
         safe_name = re.sub(r"[^\w-]", "_", track_title)[:40]
         dest = os.path.join(dest_dir, f"{safe_name}.mp3")
 
-        if os.path.exists(dest):
+        from utils.download import download_to, is_cached
+        if is_cached(dest, min_bytes=5_000):
             logger.info("Трек уже скачан: %s", safe_name)
             return os.path.abspath(dest)
 
         logger.info("Скачиваю трек FMA: %s", track_title)
-        dl = requests.get(track_url, timeout=90, stream=True)
-        dl.raise_for_status()
-        with open(dest, "wb") as f:
-            for chunk in dl.iter_content(chunk_size=8192):
-                f.write(chunk)
+        download_to(track_url, dest, timeout=90, min_bytes=5_000)
 
         logger.info("Трек сохранён: %s", dest)
         return os.path.abspath(dest)
@@ -380,7 +377,7 @@ def _make_silence(mood: str, duration: int = 60) -> str:
                 [ffmpeg, "-y", "-f", "lavfi",
                  "-i", f"anullsrc=r=44100:cl=stereo",
                  "-t", str(duration), dest],
-                capture_output=True, check=True,
+                capture_output=True, check=True, timeout=300,
             )
     return os.path.abspath(dest)
 

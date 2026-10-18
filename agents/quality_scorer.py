@@ -81,7 +81,7 @@ def _extract_frames(video_path: str, num_frames: int = 5) -> list[str]:
         out = subprocess.run(
             [ffprobe, "-v", "error", "-show_entries", "format=duration",
              "-of", "csv=p=0", video_path],
-            capture_output=True, text=True, check=True,
+            capture_output=True, text=True, check=True, timeout=60,
         ).stdout.strip()
         duration = float(out)
     except Exception as exc:
@@ -152,6 +152,11 @@ def _groq_vision_score(prompt_text: str, frame_paths: list[str]) -> str:
     return raw
 
 
+def _skipped(reason: str, frames_analyzed: int) -> dict[str, Any]:
+    return {"score": None, "verdict": "skipped", "reasoning": reason,
+            "frames_analyzed": frames_analyzed}
+
+
 def score_video(
     video_path: str,
     hook_text: str = "",
@@ -166,17 +171,18 @@ def score_video(
         threshold:  минимальный score для verdict=approved (default 6)
 
     Returns:
-        {score: int, verdict: str, reasoning: str, frames_analyzed: int}
+        {score: int | None, verdict: str, reasoning: str, frames_analyzed: int}
 
     Verdict логика:
         score >= 8 → approved
         threshold <= score < 8 → warning (можно публиковать, но не идеально)
         score < threshold → rejected
+        оценка не получена → skipped, score=None (раньше подставлялось 7/approved,
+        и статистика оценок была фиктивной)
     """
     if not GEMINI_API_KEY and not os.getenv("GROQ_API_KEY", ""):
         logger.warning("Quality Scorer: нет ни GEMINI_API_KEY, ни GROQ_API_KEY — пропускаем оценку")
-        return {"score": 7, "verdict": "approved", "reasoning": "scorer skipped (no API key)",
-                "frames_analyzed": 0}
+        return _skipped("no API key", 0)
 
     if not os.path.exists(video_path):
         return {"score": 0, "verdict": "rejected", "reasoning": "video file missing",
@@ -185,8 +191,7 @@ def score_video(
     frames = _extract_frames(video_path, FRAMES_TO_SAMPLE)
     if len(frames) < 2:
         logger.warning("Quality Scorer: не удалось извлечь кадры — пропускаем")
-        return {"score": 7, "verdict": "approved", "reasoning": "frame extract failed",
-                "frames_analyzed": 0}
+        return _skipped("frame extract failed", 0)
 
     from utils.providers import is_enabled, mark_dead
 
@@ -207,7 +212,7 @@ def score_video(
                     parts.append(genai_types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"))
 
                 resp = client.models.generate_content(
-                    model="gemini-2.0-flash",
+                    model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
                     contents=parts,
                 )
                 raw = (resp.text or "").strip()
@@ -222,9 +227,8 @@ def score_video(
             try:
                 raw = _groq_vision_score(prompt_text, frames)
             except Exception as exc:
-                logger.warning("Quality Scorer Groq vision error: %s — fallback approve", exc)
-                return {"score": 7, "verdict": "approved", "reasoning": f"scorer error: {exc}",
-                        "frames_analyzed": len(frames)}
+                logger.warning("Quality Scorer Groq vision error: %s — оценка пропущена", exc)
+                return _skipped(f"scorer error: {exc}", len(frames))
     finally:
         # Cleanup temp frames directory (not just individual files)
         tmp_dir = getattr(_extract_frames, "_last_tmp_dir", None)
@@ -234,16 +238,14 @@ def score_video(
     # Парсим JSON из ответа
     m = _re.search(r"\{.*\}", raw, _re.DOTALL)
     if not m:
-        logger.warning("Quality Scorer: невалидный JSON — pass-through. Ответ: %s", raw[:100])
-        return {"score": 7, "verdict": "approved", "reasoning": "json parse failed",
-                "frames_analyzed": len(frames)}
+        logger.warning("Quality Scorer: невалидный JSON — оценка пропущена. Ответ: %s", raw[:100])
+        return _skipped("json parse failed", len(frames))
     try:
         data = _json.loads(m.group())
-    except _json.JSONDecodeError:
-        return {"score": 7, "verdict": "approved", "reasoning": "json decode failed",
-                "frames_analyzed": len(frames)}
+        score = int(data["score"])
+    except (_json.JSONDecodeError, KeyError, TypeError, ValueError):
+        return _skipped("json decode failed / no score", len(frames))
 
-    score = int(data.get("score", 7))
     reasoning = str(data.get("reasoning", ""))[:300]
 
     if score >= 8:
@@ -253,13 +255,14 @@ def score_video(
     else:
         verdict = "rejected"
 
-    # Если LLM сам прислал verdict — учитываем но не выше нашего расчёта
+    # Если LLM сам прислал verdict — учитываем но не выше нашего расчёта.
+    # rejected блокирует публикацию, поэтому он выставляется только по score:
+    # вердикт модели может понизить approved → warning, но не до rejected.
     llm_verdict = data.get("verdict", "")
     if llm_verdict in ("approved", "warning", "rejected"):
-        # Берём более консервативный из двух
         order = {"rejected": 0, "warning": 1, "approved": 2}
         if order.get(llm_verdict, 2) < order.get(verdict, 2):
-            verdict = llm_verdict
+            verdict = "warning" if verdict == "approved" else verdict
 
     logger.info(
         "Quality Scorer: score=%d/10 verdict=%s — %s",

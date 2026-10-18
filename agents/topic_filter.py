@@ -4,6 +4,10 @@ Topic Filter Agent — фильтрует темы: дедупликация п�
 Вход:  ideas (list[dict]) — [{title, hook, angle, hashtags, source_topic, virality}]
          platform (str) — целевая платформа для safety-check
 Выход: отфильтрованный список идей (те же поля)
+
+Safety fail-closed: Gemini → Groq/Cerebras; если ни один движок не ответил
+разборчиво — RuntimeError (Orchestrator ретраит шаг). Идея, по которой
+движок не вернул вердикт, считается небезопасной.
 """
 
 import json
@@ -24,6 +28,7 @@ logger = logging.getLogger(__name__)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 CEREBRAS_API_KEY = os.getenv("CEREBRAS_API_KEY", "")
 DB_PATH = os.getenv("DB_PATH", "pipeline.db")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 DEDUP_DAYS = 30
 
 _SAFETY_PROMPT = """Ты — модератор контента для социальных сетей ({platform}).
@@ -47,9 +52,9 @@ _SAFETY_PROMPT = """Ты — модератор контента для соци
 Идеи:
 {ideas_json}
 
-Для каждой идеи (по полю title) ответь: safe (true/false) и reason (краткая причина, если false).
-Верни JSON-массив:
-[{{"title": "...", "safe": true/false, "reason": "..."}}]
+Для каждой идеи (по полю id) ответь: safe (true/false) и reason (краткая причина, если false).
+Верни JSON-массив, по одному элементу на КАЖДЫЙ id:
+[{{"id": 1, "safe": true/false, "reason": "..."}}]
 Только JSON, без markdown."""
 
 _NICHE_RELEVANCE_PROMPT = """Проверь, относится ли каждая идея видео к нише «{niche}».
@@ -92,88 +97,100 @@ def _parse_safety_json(raw: str) -> list[dict]:
         if raw.startswith("json"):
             raw = raw[4:]
         raw = raw.strip()
-    return json.loads(raw)
+    data = json.loads(raw)
+    # json_object-режим некоторых моделей заворачивает массив в объект
+    if isinstance(data, dict):
+        data = next((v for v in data.values() if isinstance(v, list)), [])
+    if not isinstance(data, list):
+        raise ValueError(f"ожидался JSON-массив: {raw[:120]}")
+    return data
 
 
-def _cerebras_safety(ideas: list[dict[str, Any]], platform: str) -> dict[str, bool]:
-    """Cerebras fallback когда Gemini возвращает 429."""
-    if not CEREBRAS_API_KEY:
-        logger.warning("CEREBRAS_API_KEY не задан — пропускаем safety-check")
-        return {idea["title"]: True for idea in ideas}
+def _as_bool(value: Any) -> bool | None:
+    """LLM иногда присылает "false" строкой — а bool("false") == True."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in ("true", "yes", "1"):
+            return True
+        if v in ("false", "no", "0"):
+            return False
+    return None
 
+
+def _safety_prompt(ideas: list[dict[str, Any]], platform: str) -> str:
     ideas_json = json.dumps(
-        [{"title": i["title"], "hook": i["hook"]} for i in ideas],
+        [{"id": n, "title": i["title"], "hook": i.get("hook", "")} for n, i in enumerate(ideas, 1)],
         ensure_ascii=False, indent=2,
     )
-    prompt = _SAFETY_PROMPT.format(platform=platform, ideas_json=ideas_json)
-
-    try:
-        from utils.llm_client import cerebras_call
-        response = cerebras_call(
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,
-            max_tokens=512,
-            caller="topic_filter_safety",
-        )
-        results = _parse_safety_json(response.choices[0].message.content.strip())
-        safety_map = {}
-        for item in results:
-            title = item.get("title", "")
-            safe = bool(item.get("safe", True))
-            if not safe:
-                logger.info("Unsafe (Cerebras): '%s' — %s", title, item.get("reason", ""))
-            safety_map[title] = safe
-        return safety_map
-    except Exception as exc:
-        logger.warning("Cerebras safety-check ошибка: %s — считаем всё безопасным", exc)
-        return {idea["title"]: True for idea in ideas}
+    return _SAFETY_PROMPT.format(platform=platform, ideas_json=ideas_json)
 
 
-def _check_safety(ideas: list[dict[str, Any]], platform: str) -> dict[str, bool]:
-    """Возвращает {title: is_safe}."""
+def _to_safety_list(results: list[dict], ideas: list[dict[str, Any]], engine: str) -> list[bool]:
+    """
+    Сопоставляет вердикты с идеями по id. Идея без однозначного вердикта —
+    небезопасна (fail-closed): раньше совпадение шло по title, и любая
+    перефразировка заголовка моделью означала «safe» по умолчанию.
+    """
+    verdicts: dict[int, bool] = {}
+    for item in results:
+        try:
+            idx = int(item.get("id"))
+        except (TypeError, ValueError):
+            continue
+        safe = _as_bool(item.get("safe"))
+        if safe is not None:
+            verdicts[idx] = safe
+            if not safe and 1 <= idx <= len(ideas):
+                logger.info("Unsafe (%s): '%s' — %s", engine, ideas[idx - 1]["title"], item.get("reason", ""))
+
+    flags = []
+    for n, idea in enumerate(ideas, 1):
+        if n not in verdicts:
+            logger.warning("Safety (%s): нет вердикта для '%s' — считаем небезопасной", engine, idea["title"])
+        flags.append(verdicts.get(n, False))
+    return flags
+
+
+def _llm_chain_safety(ideas: list[dict[str, Any]], platform: str) -> list[bool]:
+    """Резерв к Gemini: Groq → Cerebras через общий клиент. Ошибка — наверх."""
+    from utils.llm_client import groq_with_cerebras_fallback
+    response = groq_with_cerebras_fallback(
+        messages=[{"role": "user", "content": _safety_prompt(ideas, platform)}],
+        temperature=0.1,
+        max_tokens=512,
+        caller="topic_filter_safety",
+    )
+    results = _parse_safety_json(response.choices[0].message.content.strip())
+    return _to_safety_list(results, ideas, "Groq/Cerebras")
+
+
+def _check_safety(ideas: list[dict[str, Any]], platform: str) -> list[bool]:
+    """Возвращает список флагов is_safe в порядке ideas. Если проверить нечем — RuntimeError."""
     from utils.providers import is_enabled, mark_dead
 
-    if not GEMINI_API_KEY:
-        logger.warning("GEMINI_API_KEY не задан — пропускаем safety-check, считаем всё безопасным")
-        return {idea["title"]: True for idea in ideas}
-    if not is_enabled("gemini"):
-        logger.info("Gemini выключен (квота) — safety-check через Cerebras")
-        return _cerebras_safety(ideas, platform)
-
-    client = genai.Client(api_key=GEMINI_API_KEY)
-
-    ideas_json = json.dumps(
-        [{"title": i["title"], "hook": i["hook"]} for i in ideas],
-        ensure_ascii=False,
-        indent=2,
-    )
-    prompt = _SAFETY_PROMPT.format(platform=platform, ideas_json=ideas_json)
-
-    try:
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=prompt,
-        )
-        raw = response.text.strip()
-        results: list[dict] = _parse_safety_json(raw)
-        safety_map = {}
-        for item in results:
-            title = item.get("title", "")
-            safe = bool(item.get("safe", True))
-            if not safe:
-                logger.info("Unsafe: '%s' — %s", title, item.get("reason", ""))
-            safety_map[title] = safe
-        return safety_map
-
-    except Exception as exc:
-        err = str(exc)
-        if "429" in err or "RESOURCE_EXHAUSTED" in err or "quota" in err.lower():
+    if GEMINI_API_KEY and is_enabled("gemini"):
+        try:
+            client = genai.Client(api_key=GEMINI_API_KEY)
+            response = client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=_safety_prompt(ideas, platform),
+            )
+            results = _parse_safety_json(response.text.strip())
+            return _to_safety_list(results, ideas, "Gemini")
+        except Exception as exc:
+            err = str(exc)
             if "limit: 0" in err or "RESOURCE_EXHAUSTED" in err:
                 mark_dead("gemini", err[:200])
-            logger.warning("Gemini 429 — переключаемся на Cerebras для safety-check")
-            return _cerebras_safety(ideas, platform)
-        logger.warning("Gemini safety-check ошибка: %s — считаем всё безопасным", exc)
-        return {idea["title"]: True for idea in ideas}
+            logger.warning("Gemini safety-check ошибка: %s — переключаюсь на Groq/Cerebras", err[:200])
+    else:
+        logger.info("Gemini недоступен — safety-check через Groq/Cerebras")
+
+    try:
+        return _llm_chain_safety(ideas, platform)
+    except Exception as exc:
+        raise RuntimeError(f"Safety-check тем не выполнен ни одним движком: {exc}") from exc
 
 
 def _check_niche_relevance(ideas: list[dict[str, Any]], niche: str) -> dict[str, bool]:
@@ -250,9 +267,9 @@ def run(
 
     niche_count = len(fresh)
 
-    # 3. Safety-check через Gemini
-    safety_map = _check_safety(fresh, platform)
-    safe_ideas = [i for i in fresh if safety_map.get(i["title"], True)]
+    # 3. Safety-check (Gemini → Groq/Cerebras), fail-closed
+    safety_flags = _check_safety(fresh, platform)
+    safe_ideas = [i for i, safe in zip(fresh, safety_flags) if safe]
 
     logger.info(
         "Topic Filter: входило %d -> dedup %d -> niche %d -> safety %d",

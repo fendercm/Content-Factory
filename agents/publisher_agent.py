@@ -10,12 +10,17 @@ Publisher Agent — публикует MP4 в социальные сети че
   2. PUT <presigned_url>   — загружаем MP4
   3. POST /posts           — создаём пост с mediaItem URL
 
+Шаги 1-2 идемпотентны и ретраятся здесь же. Шаг 3 — ровно одна попытка:
+повтор после таймаута/обрыва соединения создаёт дубль поста. Orchestrator
+тоже вызывает агента с max_retries=1.
+
 Документация: https://docs.zernio.com/api/openapi
 """
 
 import logging
 import os
 import mimetypes
+import time
 from typing import Literal
 
 import requests
@@ -26,6 +31,12 @@ logger = logging.getLogger(__name__)
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 BASE_URL = "https://zernio.com/api/v1"
+
+_UPLOAD_ATTEMPTS = 3
+_UPLOAD_BACKOFF = 5  # секунд, растёт линейно
+
+# Статусы поста, при которых публикация считается неуспешной
+_FAILED_STATUSES = {"failed", "error", "rejected", "cancelled", "canceled"}
 
 Platform = Literal[
     "tiktok", "instagram", "youtube", "twitter", "linkedin",
@@ -39,6 +50,23 @@ def _headers() -> dict:
     if not api_key:
         raise EnvironmentError("ZERNIO_API_KEY не задан в .env")
     return {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+
+
+def _with_retries(what: str, fn, *args):
+    """Ретрай идемпотентных шагов (presign, PUT по presigned URL). 4xx не ретраим."""
+    for attempt in range(1, _UPLOAD_ATTEMPTS + 1):
+        try:
+            return fn(*args)
+        except requests.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else 0
+            if 400 <= status < 500 or attempt == _UPLOAD_ATTEMPTS:
+                raise
+            logger.warning("%s: HTTP %s — повтор %d/%d", what, status, attempt, _UPLOAD_ATTEMPTS)
+        except (requests.ConnectionError, requests.Timeout) as exc:
+            if attempt == _UPLOAD_ATTEMPTS:
+                raise
+            logger.warning("%s: %s — повтор %d/%d", what, type(exc).__name__, attempt, _UPLOAD_ATTEMPTS)
+        time.sleep(_UPLOAD_BACKOFF * attempt)
 
 
 def _presign(filename: str, size: int, mime_type: str) -> dict:
@@ -154,18 +182,20 @@ def publish_video(
     """
     if not os.path.exists(video_path):
         raise ValueError(f"Видео файл не найден: {video_path}")
+    if not account_id:
+        raise ValueError("account_id пустой — задайте ZERNIO_ACCOUNT_ID в .env")
 
     filename = os.path.basename(video_path)
     file_size = os.path.getsize(video_path)
     mime_type = mimetypes.guess_type(video_path)[0] or "video/mp4"
 
     logger.info("Запрашиваю presigned URL для %s (%d MB)...", filename, file_size // 1024 // 1024)
-    presign_data = _presign(filename, file_size, mime_type)
+    presign_data = _with_retries("presign", _presign, filename, file_size, mime_type)
     presign_url = presign_data["uploadUrl"]
     media_url = presign_data["publicUrl"]
 
     logger.info("Загружаю видео на Zernio...")
-    _upload_file(presign_url, video_path, mime_type)
+    _with_retries("upload", _upload_file, presign_url, video_path, mime_type)
 
     # Загружаем thumbnail отдельно (только для YouTube)
     thumbnail_url: str | None = None
@@ -195,9 +225,17 @@ def publish_video(
     )
 
     post = result.get("post", result)
+    post_id = post.get("_id") or post.get("id") or ""
+    status = str(post.get("status", "unknown"))
+    if not post_id:
+        raise RuntimeError(f"Zernio не вернул id поста (status={status}) — проверьте дашборд вручную")
+    if status.lower() in _FAILED_STATUSES:
+        raise RuntimeError(f"Zernio: пост {post_id} в статусе {status}")
+    if status.lower() == "draft":
+        logger.warning("Zernio: пост %s создан как черновик, а не опубликован", post_id)
     return {
-        "post_id": post.get("_id", ""),
-        "status": post.get("status", "unknown"),
+        "post_id": post_id,
+        "status": status,
         "platform": platform,
     }
 

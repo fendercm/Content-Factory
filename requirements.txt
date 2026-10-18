@@ -26,14 +26,14 @@ pytrends>=4.9.0           # Google Trends
 feedparser>=6.0.10        # RSS feeds (Google News, Habr, vc.ru)
 ddgs>=5.0.0               # DuckDuckGo search (no key required)
 
-# ── Reddit (Trend Scout) ─────────────────────────────────────────────────────
-praw>=7.7.0
-
 # ── Web API server (Admin Panel) ─────────────────────────────────────────────
 flask>=3.0.0
 
 # ── Scheduler ────────────────────────────────────────────────────────────────
 schedule>=1.2.0
+
+# ── Тесты ────────────────────────────────────────────────────────────────────
+pytest>=8.0.0
 
 # ── Silero TTS (optional, local CPU inference) ───────────────────────────────
 # torch>=2.0.0            # uncomment for Silero TTS; large download ~2GB

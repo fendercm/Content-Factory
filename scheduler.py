@@ -6,6 +6,8 @@ Scheduler — запускает main.py по расписанию 3 раза в
 
 Расписание (локальное время): 09:00, 14:00, 20:00
 Ежедневная сводка в Telegram: 21:00
+Аналитика Zernio (обратная связь для idea_generator): 08:30
+Уборка диска (utils/housekeeping.py): 04:00
 
 Настройка через .env:
     SCHEDULER_NICHE=психология      # ниша по умолчанию
@@ -16,6 +18,7 @@ Scheduler — запускает main.py по расписанию 3 раза в
 """
 
 import io
+import json
 import logging
 import os
 import sqlite3
@@ -28,7 +31,8 @@ if hasattr(sys.stdout, "buffer"):
 import subprocess
 import threading
 import time
-from datetime import date, datetime
+from datetime import datetime, time as dtime, timedelta, timezone
+from pathlib import Path
 
 try:
     import schedule
@@ -43,6 +47,7 @@ load_dotenv()
 _NICHE_DEFAULT = os.getenv("SCHEDULER_NICHE", "психология")
 _PLATFORM = os.getenv("SCHEDULER_PLATFORM", "tiktok")
 _RUN_TIMES = ["09:00", "14:00", "20:00"]
+_ROOT = Path(__file__).resolve().parent
 
 os.makedirs("logs", exist_ok=True)
 logging.basicConfig(
@@ -53,6 +58,9 @@ logging.basicConfig(
         logging.FileHandler("logs/scheduler.log", encoding="utf-8"),
     ],
 )
+from utils.log_redact import install_log_redaction  # noqa: E402
+
+install_log_redaction()
 logger = logging.getLogger("scheduler")
 
 
@@ -60,7 +68,8 @@ def _run_pipeline(niche: str, platform: str) -> None:
     logger.info(">>> Запуск: niche=%s platform=%s", niche, platform)
     try:
         proc = subprocess.run(
-            [sys.executable, "main.py", "--niche", niche, "--platform", platform],
+            [sys.executable, str(_ROOT / "main.py"), "--niche", niche, "--platform", platform],
+            cwd=str(_ROOT),
             timeout=3600,
         )
         if proc.returncode == 0:
@@ -89,6 +98,42 @@ def job_pipeline() -> None:
         t.join()
 
 
+def job_analytics() -> None:
+    """Собирает статистику постов из Zernio в performance — её читает idea_generator."""
+    logger.info(">>> Аналитика: сбор статистики за 7 дней")
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(_ROOT / "agents" / "analytics_agent.py"), "--days", "7"],
+            cwd=str(_ROOT),
+            timeout=900,
+        )
+        if proc.returncode != 0:
+            logger.error("<<< Аналитика: ошибка (code=%d)", proc.returncode)
+    except subprocess.TimeoutExpired:
+        logger.error("<<< Аналитика: таймаут")
+    except Exception as exc:
+        logger.error("<<< Аналитика: исключение %s", exc)
+
+
+def job_housekeeping() -> None:
+    try:
+        from utils.housekeeping import run as housekeeping_run
+        housekeeping_run()
+    except Exception as exc:
+        logger.warning("Housekeeping ошибка: %s", exc)
+
+
+def _local_day_utc_range() -> tuple[str, str]:
+    """
+    Границы сегодняшних локальных суток в UTC ISO: created_at в БД хранится в UTC,
+    а «сегодня» для сводки — по местному времени.
+    """
+    start_local = datetime.combine(datetime.now().date(), dtime.min).astimezone()
+    end_local = start_local + timedelta(days=1)
+    return (start_local.astimezone(timezone.utc).isoformat(),
+            end_local.astimezone(timezone.utc).isoformat())
+
+
 def job_daily_digest() -> None:
     """Отправляет ежедневную сводку в Telegram в 21:00."""
     try:
@@ -100,22 +145,29 @@ def job_daily_digest() -> None:
             return
 
         conn = sqlite3.connect(db_path)
-        today = date.today().isoformat()
+        today = datetime.now().date().isoformat()
+        day_start, day_end = _local_day_utc_range()
 
         videos_today = conn.execute(
             "SELECT COUNT(*) FROM pipeline_state "
-            "WHERE step='pipeline' AND status='completed' AND created_at LIKE ?",
-            (f"{today}%",),
+            "WHERE step='pipeline' AND status='completed' AND created_at >= ? AND created_at < ?",
+            (day_start, day_end),
         ).fetchone()[0]
 
         errors_today = conn.execute(
-            "SELECT COUNT(*) FROM error_log WHERE created_at LIKE ?",
-            (f"{today}%",),
+            "SELECT COUNT(*) FROM error_log WHERE created_at >= ? AND created_at < ?",
+            (day_start, day_end),
         ).fetchone()[0]
 
-        top = conn.execute(
-            "SELECT title, platform FROM performance ORDER BY id DESC LIMIT 1"
+        # Последняя реальная публикация (dry-run пишет status=skipped)
+        top = None
+        last_pub = conn.execute(
+            "SELECT payload FROM pipeline_state WHERE step='publisher_agent' AND status='success' "
+            "AND payload NOT LIKE '%\"skipped\"%' ORDER BY id DESC LIMIT 1"
         ).fetchone()
+        if last_pub and last_pub[0]:
+            pub = json.loads(last_pub[0])
+            top = (pub.get("post_id", "?"), pub.get("platform", "?"))
 
         active_series = conn.execute(
             "SELECT COUNT(*) FROM series s "
@@ -168,6 +220,8 @@ def main() -> None:
         schedule.every().day.at(t).do(job_pipeline)
 
     schedule.every().day.at("21:00").do(job_daily_digest)
+    schedule.every().day.at("08:30").do(job_analytics)
+    schedule.every().day.at("04:00").do(job_housekeeping)
 
     logger.info("Ожидание по расписанию... (Ctrl+C для остановки)")
     while True:
