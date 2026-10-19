@@ -1,13 +1,13 @@
 """
-Topic Filter Agent — фильтрует темы: дедупликация по SQLite + safety-check через Gemini.
+Topic Filter Agent — фильтрует темы: дедупликация по SQLite + niche-check + safety-check.
 
 Вход:  ideas (list[dict]) — [{title, hook, angle, hashtags, source_topic, virality}]
          platform (str) — целевая платформа для safety-check
 Выход: отфильтрованный список идей (те же поля)
 
-Safety fail-closed: Gemini → Groq/Cerebras; если ни один движок не ответил
-разборчиво — RuntimeError (Orchestrator ретраит шаг). Идея, по которой
-движок не вернул вердикт, считается небезопасной.
+LLM — общая цепочка utils.llm_client.chat (Gemini Flash-Lite → Groq → … → Gemma).
+Safety fail-closed: если цепочка не ответила разборчиво — RuntimeError
+(Orchestrator ретраит шаг). Идея без вердикта считается небезопасной.
 """
 
 import json
@@ -17,58 +17,47 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from google import genai
-from google.genai import types as genai_types
 from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 logger = logging.getLogger(__name__)
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-CEREBRAS_API_KEY = os.getenv("CEREBRAS_API_KEY", "")
 DB_PATH = os.getenv("DB_PATH", "pipeline.db")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 DEDUP_DAYS = 30
 
-_SAFETY_PROMPT = """Ты — модератор контента для социальных сетей ({platform}).
-Проверь следующие идеи видео на безопасность для публикации.
+_SAFETY_PROMPT = """Ты — модератор идей для коротких видео ({platform}). Оцени каждую идею ДО написания сценария.
 
-СТОП-КАТЕГОРИИ — safe=false если идея попадает в любую:
-1. ПОЛИТИКА: политики, выборы, войны, военные действия, оппозиция, санкции,
-   геополитические конфликты, "Путин", "Зеленский", "Трамп" и т.п.
-2. МЕДИЦИНСКИЕ СОВЕТЫ: лечение конкретных болезней, диагнозы,
-   рекомендации дозировок лекарств, "вылечить рак/диабет/депрессию",
-   замена врача. Общая популярная психология/привычки — ОК.
-3. 18+ / ЖЁСТКИЙ КОНТЕНТ: секс, эротика, наркотики, суицид,
-   подробное насилие, расчленение, экстремизм.
+safe=false, если идея по сути про одно из:
+1. ПОЛИТИКА: политики, выборы, войны и военные действия, оппозиция, санкции, геополитика.
+2. МЕДИЦИНСКИЕ СОВЕТЫ: диагнозы, лечение конкретных болезней, лекарства и дозировки,
+   «вылечить депрессию/диабет», замена врача.
+3. ФИНАНСОВЫЕ СОВЕТЫ: купить/продать конкретные активы, обещания дохода, схемы заработка.
+4. 18+ И ВРЕД: секс, наркотики, суицид и самоповреждение, жёсткое насилие, опасные челленджи.
+5. ВРАЖДА к группам людей; шок и запугивание ради просмотров.
 
-ОК — пропускай эти темы как safe=true:
-- Психология поведения, привычки, общение, продуктивность, отношения
-- Бизнес, карьера, деньги (без инвест-советов с конкретными активами)
-- Наука, история, технологии, философия (классики)
-- Здоровый образ жизни в общем виде (без диагностики)
+safe=true для: психологии поведения, привычек, общения, продуктивности, отношений,
+карьеры и денег без советов по активам, науки, истории, технологий, философии,
+здорового образа жизни в общем виде.
+Сомневаешься — safe=false: у нас есть другие идеи.
 
 Идеи:
 {ideas_json}
 
-Для каждой идеи (по полю id) ответь: safe (true/false) и reason (краткая причина, если false).
-Верни JSON-массив, по одному элементу на КАЖДЫЙ id:
-[{{"id": 1, "safe": true/false, "reason": "..."}}]
-Только JSON, без markdown."""
+Верни JSON-объект с вердиктом для КАЖДОГО id:
+{{"results": [{{"id": 1, "safe": true, "reason": "кратко, если false"}}]}}"""
 
-_NICHE_RELEVANCE_PROMPT = """Проверь, относится ли каждая идея видео к нише «{niche}».
+_NICHE_RELEVANCE_PROMPT = """Ниша канала: «{niche}». Зритель подписан ради этой ниши.
+
+Для каждой идеи реши: relevant=true, если зритель ниши «{niche}» воспримет её как «своё»
+(основная мысль видео — про нишу, а не про случайный инфоповод).
+relevant=false, если ниша упомянута для галочки, а суть — про гаджеты, знаменитостей,
+спорт, политику или новость без связи с нишей.
 
 Идеи:
 {ideas_json}
 
-Для каждой идеи ответь: relevant (true/false).
-true — тема реально про «{niche}» (психология, поведение, мышление, эмоции и т.п. если ниша психология).
-false — тема про что-то другое (технологии, политика, iPhone, спорт и т.п. если ниша психология).
-
-Верни JSON-массив:
-[{{"title": "...", "relevant": true/false}}]
-Только JSON, без markdown."""
+Верни JSON-объект: {{"results": [{{"id": 1, "relevant": true}}]}}"""
 
 
 def _ensure_db(conn: sqlite3.Connection) -> None:
@@ -92,6 +81,7 @@ def _is_duplicate(conn: sqlite3.Connection, topic: str) -> bool:
 
 
 def _parse_safety_json(raw: str) -> list[dict]:
+    raw = raw.strip()
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):
@@ -119,12 +109,23 @@ def _as_bool(value: Any) -> bool | None:
     return None
 
 
-def _safety_prompt(ideas: list[dict[str, Any]], platform: str) -> str:
-    ideas_json = json.dumps(
-        [{"id": n, "title": i["title"], "hook": i.get("hook", "")} for n, i in enumerate(ideas, 1)],
+def _ideas_json(ideas: list[dict[str, Any]]) -> str:
+    return json.dumps(
+        [{"id": n, "title": i["title"], "hook": i.get("hook", ""), "angle": i.get("angle", "")}
+         for n, i in enumerate(ideas, 1)],
         ensure_ascii=False, indent=2,
     )
-    return _SAFETY_PROMPT.format(platform=platform, ideas_json=ideas_json)
+
+
+def _safety_prompt(ideas: list[dict[str, Any]], platform: str) -> str:
+    return _SAFETY_PROMPT.format(platform=platform, ideas_json=_ideas_json(ideas))
+
+
+def _ask(prompt: str, caller: str) -> tuple[list[dict], str]:
+    from utils.llm_client import chat
+    resp = chat([{"role": "user", "content": prompt}], tier="fast", temperature=0.0,
+                max_tokens=600, json_mode=True, caller=caller)
+    return _parse_safety_json(resp.choices[0].message.content), f"{resp.provider}/{resp.model}"
 
 
 def _to_safety_list(results: list[dict], ideas: list[dict[str, Any]], engine: str) -> list[bool]:
@@ -153,77 +154,63 @@ def _to_safety_list(results: list[dict], ideas: list[dict[str, Any]], engine: st
     return flags
 
 
-def _llm_chain_safety(ideas: list[dict[str, Any]], platform: str) -> list[bool]:
-    """Резерв к Gemini: Groq → Cerebras через общий клиент. Ошибка — наверх."""
-    from utils.llm_client import groq_with_cerebras_fallback
-    response = groq_with_cerebras_fallback(
-        messages=[{"role": "user", "content": _safety_prompt(ideas, platform)}],
-        temperature=0.1,
-        max_tokens=512,
-        caller="topic_filter_safety",
-    )
-    results = _parse_safety_json(response.choices[0].message.content.strip())
-    return _to_safety_list(results, ideas, "Groq/Cerebras")
-
-
 def _check_safety(ideas: list[dict[str, Any]], platform: str) -> list[bool]:
     """Возвращает список флагов is_safe в порядке ideas. Если проверить нечем — RuntimeError."""
-    from utils.providers import is_enabled, mark_dead
-
-    if GEMINI_API_KEY and is_enabled("gemini"):
+    last_error: Exception | None = None
+    for attempt in range(2):  # повтор, если ответ не разобрался или вердиктов не хватает
         try:
-            client = genai.Client(api_key=GEMINI_API_KEY)
-            response = client.models.generate_content(
-                model=GEMINI_MODEL,
-                contents=_safety_prompt(ideas, platform),
-            )
-            results = _parse_safety_json(response.text.strip())
-            return _to_safety_list(results, ideas, "Gemini")
+            results, engine = _ask(_safety_prompt(ideas, platform), "topic_filter_safety")
         except Exception as exc:
-            err = str(exc)
-            if "limit: 0" in err or "RESOURCE_EXHAUSTED" in err:
-                mark_dead("gemini", err[:200])
-            logger.warning("Gemini safety-check ошибка: %s — переключаюсь на Groq/Cerebras", err[:200])
-    else:
-        logger.info("Gemini недоступен — safety-check через Groq/Cerebras")
+            last_error = exc
+            logger.warning("Safety-check тем: %s", str(exc)[:200])
+            continue
+        if attempt == 0 and not _has_all_verdicts(results, len(ideas)):
+            logger.warning("Safety-check тем (%s): вердикты не для всех идей — переспрашиваю. Ответ: %s",
+                           engine, json.dumps(results, ensure_ascii=False)[:300])
+            continue
+        return _to_safety_list(results, ideas, engine)
+    if last_error is None:
+        # Второй ответ тоже неполный: идеи без вердикта отсеются как небезопасные
+        return _to_safety_list(results, ideas, engine)
+    raise RuntimeError(f"Safety-check тем не выполнен: {last_error}") from last_error
 
-    try:
-        return _llm_chain_safety(ideas, platform)
-    except Exception as exc:
-        raise RuntimeError(f"Safety-check тем не выполнен ни одним движком: {exc}") from exc
+
+def _has_all_verdicts(results: list[dict], n: int) -> bool:
+    ids = set()
+    for item in results:
+        try:
+            if _as_bool(item.get("safe")) is not None:
+                ids.add(int(item.get("id")))
+        except (TypeError, ValueError, AttributeError):
+            continue
+    return ids >= set(range(1, n + 1))
 
 
-def _check_niche_relevance(ideas: list[dict[str, Any]], niche: str) -> dict[str, bool]:
-    """Проверяет соответствие идей нише через Cerebras (быстрый и дешёвый)."""
+def _check_niche_relevance(ideas: list[dict[str, Any]], niche: str) -> list[bool]:
+    """
+    Флаги релевантности нише в порядке ideas. Это фильтр качества, а не безопасности,
+    поэтому при сбое LLM он не блокирует пайплайн (все идеи считаются релевантными).
+    """
     if not niche:
-        return {idea["title"]: True for idea in ideas}
-
-    if not CEREBRAS_API_KEY:
-        logger.warning("CEREBRAS_API_KEY не задан — пропускаем niche-check")
-        return {idea["title"]: True for idea in ideas}
-
-    ideas_json = json.dumps([{"title": i["title"]} for i in ideas], ensure_ascii=False, indent=2)
-    prompt = _NICHE_RELEVANCE_PROMPT.format(niche=niche, ideas_json=ideas_json)
+        return [True] * len(ideas)
     try:
-        from utils.llm_client import cerebras_call
-        response = cerebras_call(
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,
-            max_tokens=256,
-            caller="topic_filter_niche",
-        )
-        results = _parse_safety_json(response.choices[0].message.content.strip())
-        relevance_map = {}
-        for item in results:
-            title = item.get("title", "")
-            relevant = bool(item.get("relevant", True))
-            if not relevant:
-                logger.info("Нерелевантно нише '%s': '%s' — пропускаем", niche, title)
-            relevance_map[title] = relevant
-        return relevance_map
+        results, engine = _ask(_NICHE_RELEVANCE_PROMPT.format(niche=niche, ideas_json=_ideas_json(ideas)),
+                               "topic_filter_niche")
     except Exception as exc:
-        logger.warning("Niche-check ошибка: %s — считаем всё релевантным", exc)
-        return {idea["title"]: True for idea in ideas}
+        logger.warning("Niche-check ошибка: %s — считаем всё релевантным", str(exc)[:200])
+        return [True] * len(ideas)
+
+    verdicts: dict[int, bool] = {}
+    for item in results:
+        try:
+            verdicts[int(item.get("id"))] = _as_bool(item.get("relevant")) is not False
+        except (TypeError, ValueError):
+            continue
+    flags = [verdicts.get(n, True) for n in range(1, len(ideas) + 1)]
+    for idea, ok in zip(ideas, flags):
+        if not ok:
+            logger.info("Нерелевантно нише '%s' (%s): '%s' — пропускаем", niche, engine, idea["title"])
+    return flags
 
 
 def run(
@@ -258,8 +245,8 @@ def run(
 
     # 2. Niche-check — отсеиваем нерелевантные темы
     if niche:
-        relevance_map = _check_niche_relevance(fresh, niche)
-        relevant = [i for i in fresh if relevance_map.get(i["title"], True)]
+        relevance_flags = _check_niche_relevance(fresh, niche)
+        relevant = [i for i, ok in zip(fresh, relevance_flags) if ok]
         if not relevant:
             logger.warning("Niche-check: все идеи нерелевантны нише '%s' — пропускаем фильтр", niche)
             relevant = fresh  # если все отклонены — не блокируем пайплайн
@@ -267,7 +254,7 @@ def run(
 
     niche_count = len(fresh)
 
-    # 3. Safety-check (Gemini → Groq/Cerebras), fail-closed
+    # 3. Safety-check (LLM-цепочка), fail-closed
     safety_flags = _check_safety(fresh, platform)
     safe_ideas = [i for i, safe in zip(fresh, safety_flags) if safe]
 

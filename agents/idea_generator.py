@@ -17,11 +17,18 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 logger = logging.getLogger(__name__)
 
-MODEL = "llama-3.3-70b-versatile"
-
 _SYSTEM_PROMPT = """Ты — опытный контент-стратег для коротких вертикальных видео (TikTok, Reels, Shorts).
 Твоя задача — превращать трендовые темы в конкретные идеи видео, которые наберут максимум просмотров.
 Всегда отвечай строго в формате JSON без лишних комментариев.
+
+ХОРОШАЯ ИДЕЯ:
+• Отвечает на один конкретный вопрос зрителя («почему я откладываю важное?»),
+  а не описывает область («психология прокрастинации»).
+• Обещает инсайт, который зритель не ожидает: разрушает миф, называет скрытую причину,
+  показывает ошибку, которую делают почти все.
+• Раскрывается за 45-60 секунд одной мыслью, без списков из 10 пунктов.
+• Не требует медицинских, финансовых или юридических советов и не касается политики —
+  такие идеи отсеются фильтром, не трать на них место.
 
 КРИТИЧЕСКИ ВАЖНО — правила по упоминанию людей:
 • НЕ упоминай конкретных людей по имени, если не уверен в их профессии и биографии на 100%.
@@ -39,21 +46,26 @@ _USER_TEMPLATE = """НИША: {niche}
 Вот список трендовых тем (используй только те, что реально относятся к нише «{niche}»):
 {topics_json}
 
-Верни JSON-массив из трёх идей строго про «{niche}»:
-[
+Три идеи должны РАЗЛИЧАТЬСЯ форматом подачи — выбери три разных из:
+миф-разрушение · скрытая причина · типичная ошибка · неожиданный эксперимент/факт · сравнение «большинство vs немногие».
+Одинаковые по структуре ролики подряд платформы считают шаблонным контентом и режут охват.
+
+Верни JSON-объект с тремя идеями строго про «{niche}»:
+{{"ideas": [
   {{
-    "title": "заголовок видео до 60 символов",
-    "hook": "первые 5 секунд — один конкретный крючок, интригующий вопрос или шокирующий факт",
-    "angle": "угол подачи — почему именно это зашло бы аудитории (1-2 предложения)",
-    "hashtags": ["хэштег1", "хэштег2", "хэштег3", "хэштег4", "хэштег5"],
+    "title": "заголовок видео до 60 символов: конкретный и интригующий, без кликбейт-лжи",
+    "hook": "первая фраза ролика, 6-10 слов, на «ты»: шок-утверждение или провокация, НЕ вопрос",
+    "angle": "формат подачи + главный инсайт, который зритель унесёт (1-2 предложения)",
+    "hashtags": ["хэштег1", "хэштег2", "хэштег3", "хэштег4"],
     "source_topic": "исходная тема из входных данных или сама ниша если тренды нерелевантны",
+    "research_query": "2-5 слов для поиска фактов: научный термин или явление (например: «прокрастинация эмоциональная регуляция»), НЕ заголовок",
     "virality": 0.0
   }}
-]
+]}}
 
-Хэштеги — без решётки, на русском и английском (микс). virality скопируй из входных данных для этой темы (или ставь 0.5 если тема придумана самостоятельно).
-Если тема подразумевает конкретного человека — переформулируй идею в универсальную (без имён и биографий).
-Верни только JSON-массив, без markdown-блоков."""
+Хэштеги — 3-5 штук, без решётки, строчными: 1-2 широких по нише + 2-3 узких по теме ролика, в основном по-русски.
+virality скопируй из входных данных для этой темы (или 0.5, если идея придумана самостоятельно).
+Если тема подразумевает конкретного человека — переформулируй идею в универсальную (без имён и биографий)."""
 
 
 def _load_viral_patterns(db_path: str, days: int = 30, limit: int = 5) -> list[dict]:
@@ -113,9 +125,6 @@ def run(topics: list[dict[str, Any]], niche: str = "") -> list[dict[str, Any]]:
     if not topics:
         raise ValueError("Список тем пуст")
 
-    if not os.getenv("GROQ_API_KEY", ""):
-        raise EnvironmentError("GROQ_API_KEY не задан в .env")
-
     # Analytics feedback — подсасываем топ-5 виралов канала за 30 дней
     db_path = os.getenv("DB_PATH", "pipeline.db")
     viral_patterns = _load_viral_patterns(db_path, days=30, limit=5)
@@ -134,15 +143,11 @@ def run(topics: list[dict[str, Any]], niche: str = "") -> list[dict[str, Any]]:
         {"role": "user", "content": user_prompt},
     ]
 
-    logger.info("Отправляю %d тем в Groq для генерации идей", len(topics))
+    logger.info("Отправляю %d тем в LLM для генерации идей", len(topics))
 
-    from utils.llm_client import groq_with_cerebras_fallback
-    response = groq_with_cerebras_fallback(
-        messages=messages,
-        temperature=0.8,
-        max_tokens=1024,
-        caller="idea_generator",
-    )
+    from utils.llm_client import chat
+    response = chat(messages, tier="fast", temperature=0.8, max_tokens=1200,
+                    json_mode=True, caller="idea_generator")
 
     raw = response.choices[0].message.content.strip()
 
@@ -154,7 +159,9 @@ def run(topics: list[dict[str, Any]], niche: str = "") -> list[dict[str, Any]]:
         raw = raw.strip()
 
     try:
-        ideas: list[dict[str, Any]] = json.loads(raw)
+        ideas = json.loads(raw)
+        if isinstance(ideas, dict):
+            ideas = next((v for v in ideas.values() if isinstance(v, list)), [])
     except json.JSONDecodeError:
         # Ищем JSON-массив в тексте (LLM иногда добавляет преамбулу)
         import re as _re
@@ -172,6 +179,11 @@ def run(topics: list[dict[str, Any]], niche: str = "") -> list[dict[str, Any]]:
         if missing:
             logger.warning("Идея пропущена — отсутствуют поля: %s", missing)
             continue
+        idea["hashtags"] = [str(h).lstrip("#").strip().lower() for h in idea.get("hashtags") or [] if str(h).strip()][:5]
+        try:
+            idea["virality"] = float(idea.get("virality") or 0.5)
+        except (TypeError, ValueError):
+            idea["virality"] = 0.5
         validated.append(idea)
 
     logger.info("Idea Generator вернул %d идей", len(validated))

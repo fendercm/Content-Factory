@@ -614,15 +614,11 @@ def _kling_clips(queries: list[str], ratio: str, num_clips: int) -> list[str]:
 # Pexels
 # ---------------------------------------------------------------------------
 
-def _llm_query(messages: list[dict], temperature: float, max_tokens: int) -> str:
+def _llm_query(messages: list[dict], temperature: float, max_tokens: int, json_mode: bool = False) -> str:
     """Call Groq with throttled Cerebras fallback on 429."""
-    from utils.llm_client import groq_with_cerebras_fallback
-    resp = groq_with_cerebras_fallback(
-        messages=messages,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        caller="visual_agent",
-    )
+    from utils.llm_client import chat
+    resp = chat(messages, tier="fast", temperature=temperature, max_tokens=max_tokens,
+                json_mode=json_mode, caller="visual_agent")
     content = resp.choices[0].message.content
     if not content:
         # reasoning-модели (gpt-oss на Cerebras) иногда отдают content=None —
@@ -655,8 +651,26 @@ def _to_english_query(q: str) -> str:
     return cleaned
 
 
+# Детерминированный фильтр поверх промпта: LLM иногда игнорирует запреты,
+# а тёмные кадры и кадры с текстом — главные источники брака (см. AVOID ниже)
+_BANNED_QUERY_RE = re.compile(
+    r"\b(dark|darkness|night|nightlife|silhouettes?|shadows?|dim|moody|gloomy|neon|"
+    r"signs?|placards?|banners?|posters?|text|quotes?|headlines?|letters?|documents?|papers?|"
+    r"flatlay|mri|scans?|scanner|radiology|x-ray|hospital|syringe|pills?|bills?|debt|tax|"
+    r"protests?|crowds?|crowded|markets?|bazaar|vendors?)\b",
+    re.I,
+)
+
+
+def _query_ok(q: str) -> bool:
+    return not _BANNED_QUERY_RE.search(q)
+
+
 def _script_to_queries(script_text: str, topic: str = "", n: int = 5) -> list[str]:
-    """Генерирует n разнообразных English-only поисковых запросов по блокам сценария."""
+    """
+    Генерирует n разнообразных English-only поисковых запросов по сценарию —
+    в хронологическом порядке, равномерно покрывая весь текст.
+    """
     niche_hint = _niche_override(topic)
     niche_guidance = f"The video topic is: '{topic}'."
     if niche_hint:
@@ -666,8 +680,12 @@ def _script_to_queries(script_text: str, topic: str = "", n: int = 5) -> list[st
         messages=[{"role": "user", "content": (
             f"{niche_guidance}\n\n"
             f"Read this video script and generate {n} diverse ENGLISH stock video search queries "
-            "(3-4 English words each, NO Russian or other languages) "
-            "for different visual moments in the script. "
+            "(3-4 English words each, NO Russian or other languages). "
+            "Go through the script from start to end and cover it evenly: each query illustrates "
+            "a concrete moment of the script in order (an action, an object, an emotion on a face), "
+            "not the abstract topic. Each query must describe something a camera can film: "
+            "a person doing something, a place, an object, nature. Vary shot types: close-up face, "
+            "hands, medium shot, wide outdoor. No two queries may describe the same scene. "
             "AVOID: dark night street, rain city night, lonely figure darkness, dark alley, silhouette rain, "
             "night crowd concert, festival crowd night, protest crowd, crowd with phones night, "
             "generic urban crowd, anonymous office meeting, handshake, "
@@ -701,19 +719,30 @@ def _script_to_queries(script_text: str, topic: str = "", n: int = 5) -> list[st
             "For psychology/mind: person thinking daylight portrait, human face emotion bright, calm person outdoor, focused mind outdoor, thinking person sunlight. "
             "For business: entrepreneur bright office, success daylight, professional growth outdoor. "
             "For health: fitness workout bright, healthy lifestyle outdoor, wellness nature sunlight. "
-            f"Return exactly {n} queries in ENGLISH ONLY, one per line, no numbers or bullets.\n\n"
-            f"Script: {script_text[:600]}"
+            f'Return JSON: {{"queries": ["query 1", "query 2", ...]}} with exactly {n} ENGLISH queries.\n\n'
+            f"Script: {script_text[:1500]}"
         )}],
         temperature=0.7,
-        max_tokens=120,
+        # ~6 токенов на запрос + JSON; раньше 120 токенов обрезали список из 25 запросов
+        max_tokens=60 + n * 14,
+        json_mode=True,
     )
-    lines = raw.strip().split('\n')
+    try:
+        data = json.loads(raw)
+        lines = data.get("queries", []) if isinstance(data, dict) else list(data)
+        lines = [str(x) for x in lines]
+    except (ValueError, TypeError):
+        lines = raw.strip().split('\n')
     queries_raw = [re.sub(r'^[\d\.\-\*\s]+', '', l).strip().strip('"') for l in lines if l.strip()]
     # Drop preamble lines ("Here are 5 queries...") — too long to be a search query
     queries_raw = [q for q in queries_raw if len(q.split()) <= 6]
     # Ensure ASCII-only (filter out any Cyrillic that snuck in)
     queries = [_to_english_query(q) for q in queries_raw]
     queries = [q for q in queries if len(q) > 3]
+    rejected = [q for q in queries if not _query_ok(q)]
+    if rejected:
+        logger.info("Visual: отброшены запросы с запрещёнными словами: %s", rejected)
+    queries = list(dict.fromkeys(q for q in queries if _query_ok(q)))
     # Pad with niche fallback combos (parsed niche keywords + well-lit abstracts)
     if len(queries) < n:
         fallback_pool = [

@@ -48,7 +48,8 @@ _WORLD_USER = """Тематика сериала: «{niche}».
   }}
 }}"""
 
-_EPISODE_SYSTEM = """Ты — сценарист вирусного сериала для TikTok/Shorts. Пишешь по-русски, от третьего лица, настоящим временем, короткими фразами. Каждый эпизод:
+_EPISODE_SYSTEM = """Ты — сценарист вирусного сериала для TikTok/Shorts. Пишешь по-русски (только кириллица, без иероглифов), от третьего лица, настоящим временем,
+короткими фразами — текст будет озвучен синтезатором. Каждый эпизод:
 - HOOK (первая фраза — шок/интрига, без вступлений)
 - развитие с конкретными деталями и хотя бы одним поворотом
 - обрыв на КЛИФФХЭНГЕРЕ (последняя фраза оставляет вопрос)
@@ -283,7 +284,13 @@ def write_episode(
         max_tokens=2400,
     )
 
-    full_script = (data.get("full_script") or "").strip()
+    # Модели иногда вставляют иероглифы посреди русского текста («Кейл试ается») —
+    # синтезатор их проглатывает или читает по-китайски
+    from agents.script_writer import _sanitize_script
+    full_script = _sanitize_script((data.get("full_script") or "").strip())
+    for key in ("hook", "cliffhanger", "summary", "title"):
+        if isinstance(data.get(key), str):
+            data[key] = _sanitize_script(data[key])
     scenes = [
         s for s in (data.get("scenes") or [])
         if isinstance(s, dict) and s.get("image_prompt")

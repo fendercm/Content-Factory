@@ -54,7 +54,7 @@ def _no_cloud_engines():
     return [
         patch("agents.voice_agent.KIE_API_KEY", ""),
         patch("agents.voice_agent.DASHSCOPE_API_KEY", ""),
-        patch.dict("os.environ", {"YANDEX_API_KEY": ""}),
+        patch.dict("os.environ", {"YANDEX_API_KEY": "", "GEMINI_TTS": "off"}),
         patch("agents.voice_agent.os.makedirs"),
         patch("agents.voice_agent._normalize_volume"),
         patch("agents.voice_agent.os.path.getsize", return_value=2048),
@@ -62,8 +62,10 @@ def _no_cloud_engines():
 
 
 def test_generate_voice_silero_happy_path():
+    # Silero — офлайн-резерв после edge-tts: имитируем недоступный edge-tts
     patches = _no_cloud_engines()
     with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], \
+         patch("agents.voice_agent._edge_tts", side_effect=RuntimeError("edge offline")), \
          patch("agents.voice_agent._silero") as mock_silero, \
          patch("agents.voice_agent.os.path.exists", return_value=True):
         result = generate_voice("Текст сценария", "tiktok")
@@ -80,6 +82,7 @@ def test_generate_voice_silero_happy_path():
 def test_generate_voice_all_platforms(platform):
     patches = _no_cloud_engines()
     with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], \
+         patch("agents.voice_agent._edge_tts"), \
          patch("agents.voice_agent._silero"), \
          patch("agents.voice_agent.os.path.exists", return_value=True):
         result = generate_voice("Текст", platform)
@@ -113,6 +116,7 @@ def test_generate_voice_edge_voice_override():
 def test_generate_voice_silero_speaker_override():
     patches = _no_cloud_engines()
     with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], \
+         patch("agents.voice_agent._edge_tts", side_effect=RuntimeError("edge offline")), \
          patch("agents.voice_agent._silero"), \
          patch("agents.voice_agent.os.path.exists", return_value=True):
         result = generate_voice("Текст", "tiktok", voice="aidar")

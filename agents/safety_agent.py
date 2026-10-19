@@ -1,15 +1,15 @@
 """
-Safety Agent — проверяет сценарий и метаданные на нарушения политик платформ.
+Safety Agent — проверяет сценарий и метаданные на нарушения политик платформ
+и стоп-категорий проекта перед производством видео.
 
 Вход:  script_text (str), title (str), hashtags (list[str]), platform (str)
-Выход: {"safe": True} или {"safe": False, "issue": "...", "category": "..."}
+Выход: {"safe": True, ...} или {"safe": False, "issue": "...", "category": "..."}
 
-Приоритет: Gemini (25s timeout) → Cerebras → Groq.
-Fail-closed: если ни один движок не дал разборчивый ответ — {"safe": False,
-"category": "unchecked"}; Orchestrator не пускает такой сценарий в публикацию.
+Движок: общая LLM-цепочка utils.llm_client.chat (Gemini Flash-Lite → Groq → … → Gemma).
+Fail-closed: если ни один провайдер не дал разборчивый ответ —
+{"safe": False, "category": "unchecked"}; Orchestrator не пускает такой сценарий дальше.
 """
 
-import concurrent.futures
 import json
 import logging
 import os
@@ -21,60 +21,66 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 logger = logging.getLogger(__name__)
 
-GEMINI_API_KEY   = os.getenv("GEMINI_API_KEY", "")
-CEREBRAS_API_KEY = os.getenv("CEREBRAS_API_KEY", "")
-GROQ_API_KEY     = os.getenv("GROQ_API_KEY", "")
-
-GEMINI_TIMEOUT = 25  # секунд — после этого переключаемся на fallback
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-
 _PLATFORM_RULES = {
     "tiktok": (
-        "TikTok Community Guidelines: запрещены hate speech, изображения насилия, "
-        "контент для взрослых, опасные челленджи, дезинформация о здоровье, "
-        "материалы связанные с террором или экстремизмом."
+        "TikTok Community Guidelines: запрещены hate speech, насилие, контент для взрослых, "
+        "опасные челленджи, дезинформация о здоровье, терроризм и экстремизм. "
+        "Реалистичный AI-контент должен быть помечен."
     ),
     "youtube": (
-        "YouTube Community Guidelines: запрещены hate speech, harassment, "
-        "контент для взрослых без age-gate, графическое насилие, "
-        "дезинформация о выборах или вакцинации, спам."
+        "YouTube Community Guidelines: запрещены hate speech, harassment, контент для взрослых, "
+        "графическое насилие, медицинская дезинформация, спам. Монетизация закрыта для "
+        "«inauthentic content»: шаблонного массового контента, контента, рассчитанного "
+        "на шок и эмоциональную манипуляцию, и AI-персонажей, рассуждающих о здоровье, "
+        "финансах и праве."
     ),
     "instagram": (
-        "Instagram Community Standards: запрещены hate speech, насилие, "
-        "сексуальный контент, травля, поддержка вредных организаций."
+        "Instagram Community Standards: запрещены hate speech, насилие, сексуальный контент, "
+        "травля, поддержка опасных организаций."
     ),
     "linkedin": (
-        "LinkedIn Professional Community Policies: запрещены оскорбления, "
-        "харассмент, дискриминация, дезинформация, контент не связанный с работой."
+        "LinkedIn Professional Community Policies: запрещены оскорбления, харассмент, "
+        "дискриминация, дезинформация."
     ),
     "twitter": (
-        "X/Twitter Rules: запрещены угрозы, hate speech, synthetic media без маркировки, "
+        "X Rules: запрещены угрозы, hate speech, вводящие в заблуждение синтетические медиа, "
         "координированное недостоверное поведение."
     ),
 }
 
-_PROMPT_TEMPLATE = """Ты — специалист по модерации контента для социальных сетей.
+_CATEGORIES = (
+    "politics | medical_advice | financial_advice | adult_content | self_harm | drugs | "
+    "dangerous_acts | hate_speech | harassment | violence | misinformation | "
+    "manipulative_shock | copyright | spam | safe"
+)
+
+_PROMPT_TEMPLATE = """Ты — модератор коротких видео перед публикацией. Решение бинарное: публиковать или нет.
 
 Платформа: {platform}
 Правила платформы: {rules}
 
-Проверь следующий контент на нарушения:
+СТОП-КАТЕГОРИИ ПРОЕКТА — safe=false при любом из пунктов:
+1. Политика: политики, выборы, войны и военные действия, санкции, геополитика, протесты.
+2. Медицинские советы: диагнозы, лечение конкретных болезней, лекарства и дозировки,
+   «замени врача», обещания вылечить. Общие факты о мозге, сне, привычках — допустимы.
+3. Финансовые советы: «купи/продай» конкретные активы, обещания дохода, схемы заработка.
+   Общие рассуждения о деньгах, карьере и поведении — допустимы.
+4. 18+: секс, эротика, наркотики, суицид и самоповреждение, жёсткое насилие.
+5. Опасные действия, которые зритель может повторить и пострадать.
+6. Вражда и унижение групп людей по признаку пола, национальности, религии, ориентации.
+7. Явная дезинформация: утверждения, которые ты точно знаешь как ложные.
+8. Шок ради шока: запугивание и эмоциональная манипуляция без пользы для зрителя.
+
+НЕ считается нарушением: дерзкий тон, провокационный вопрос, обращение на «ты»,
+популярная психология, критика вредных привычек, личная история рассказчика.
 
 ЗАГОЛОВОК: {title}
-
 ХЭШТЕГИ: {hashtags}
-
 ТЕКСТ СЦЕНАРИЯ:
 {script_text}
 
-Проанализируй контент и ответь строго JSON:
-{{
-  "safe": true/false,
-  "issue": "краткое описание проблемы или null если безопасно",
-  "category": "hate_speech | violence | adult_content | misinformation | copyright | spam | safe"
-}}
-
-Только JSON, без пояснений."""
+Ответь строго JSON:
+{{"safe": true/false, "issue": "какая фраза и какое правило нарушает, или null", "category": "{categories}"}}"""
 
 
 def _as_bool(value: Any) -> bool | None:
@@ -91,7 +97,8 @@ def _as_bool(value: Any) -> bool | None:
 
 
 def _parse_result(raw: str) -> dict[str, Any]:
-    """Разбирает ответ движка. Неоднозначный ответ → ValueError (пробуем следующий движок)."""
+    """Разбирает ответ движка. Неоднозначный ответ → ValueError."""
+    raw = raw.strip()
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):
@@ -110,82 +117,22 @@ def _parse_result(raw: str) -> dict[str, Any]:
     }
 
 
-def _log_result(engine: str, result: dict[str, Any], title: str, platform: str) -> None:
-    if result["safe"]:
-        logger.info("Safety OK (%s) '%s' / %s", engine, title, platform)
-    else:
-        logger.warning("Safety FAILED (%s) '%s' / %s: [%s] %s",
-                       engine, title, platform, result["category"], result["issue"])
-
-
-# ---------------------------------------------------------------------------
-# Engine 1: Gemini 2.0 Flash с жёстким таймаутом
-# ---------------------------------------------------------------------------
-
-def _gemini_call(prompt: str) -> dict[str, Any]:
-    """Вызов Gemini с таймаутом через ThreadPoolExecutor."""
-    from google import genai
-
-    def _do_request():
-        client = genai.Client(api_key=GEMINI_API_KEY)
-        return client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=prompt,
+def _llm_check(prompt: str) -> tuple[dict[str, Any], str]:
+    """Один вызов цепочки + один повтор, если ответ не разобрался."""
+    from utils.llm_client import chat
+    last_error: Exception | None = None
+    for _ in range(2):
+        resp = chat(
+            [{"role": "user", "content": prompt}],
+            tier="fast", temperature=0.0, max_tokens=300, json_mode=True, caller="safety_agent",
         )
+        try:
+            return _parse_result(resp.choices[0].message.content), f"{resp.provider}/{resp.model}"
+        except (ValueError, json.JSONDecodeError) as exc:
+            last_error = exc
+            logger.warning("Safety: неразборчивый ответ %s/%s: %s", resp.provider, resp.model, exc)
+    raise ValueError(f"неразборчивый ответ: {last_error}")
 
-    # Без with: выход из контекст-менеджера ждёт зависший запрос (shutdown(wait=True)),
-    # и таймаут фактически не работал
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-    future = executor.submit(_do_request)
-    try:
-        response = future.result(timeout=GEMINI_TIMEOUT)
-    except concurrent.futures.TimeoutError:
-        raise TimeoutError(f"Gemini не ответил за {GEMINI_TIMEOUT}с")
-    finally:
-        executor.shutdown(wait=False, cancel_futures=True)
-
-    return _parse_result(response.text.strip())
-
-
-# ---------------------------------------------------------------------------
-# Engine 2: Cerebras fallback
-# ---------------------------------------------------------------------------
-
-def _cerebras_call(prompt: str) -> dict[str, Any]:
-    if not CEREBRAS_API_KEY:
-        raise EnvironmentError("CEREBRAS_API_KEY не задан")
-    from utils.llm_client import cerebras_call
-    response = cerebras_call(
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.1,
-        max_tokens=256,
-        caller="safety_agent",
-    )
-    return _parse_result(response.choices[0].message.content.strip())
-
-
-# ---------------------------------------------------------------------------
-# Engine 3: Groq fallback
-# ---------------------------------------------------------------------------
-
-def _groq_call(prompt: str) -> dict[str, Any]:
-    if not GROQ_API_KEY:
-        raise EnvironmentError("GROQ_API_KEY не задан")
-    from groq import Groq
-    client = Groq(api_key=GROQ_API_KEY, max_retries=0)
-    response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.1,
-        max_tokens=256,
-        response_format={"type": "json_object"},
-    )
-    return _parse_result(response.choices[0].message.content.strip())
-
-
-# ---------------------------------------------------------------------------
-# Публичный API
-# ---------------------------------------------------------------------------
 
 def check(
     script_text: str,
@@ -200,8 +147,8 @@ def check(
         {"safe": bool, "issue": str|None, "category": str}
     """
     rules = _PLATFORM_RULES.get(platform, "Общие правила социальных сетей.")
-    hashtags_str = ", ".join(f"#{h}" for h in hashtags) if hashtags else "(нет)"
-    truncated_script = script_text[:2000] + ("\n...[обрезано]" if len(script_text) > 2000 else "")
+    hashtags_str = ", ".join(f"#{h.lstrip('#')}" for h in hashtags) if hashtags else "(нет)"
+    truncated_script = script_text[:3000] + ("\n...[обрезано]" if len(script_text) > 3000 else "")
 
     prompt = _PROMPT_TEMPLATE.format(
         platform=platform,
@@ -209,57 +156,26 @@ def check(
         title=title,
         hashtags=hashtags_str,
         script_text=truncated_script,
+        categories=_CATEGORIES,
     )
 
-    from utils.providers import is_enabled, mark_dead
+    try:
+        result, engine = _llm_check(prompt)
+    except Exception as exc:
+        # Fail-closed: непроверенный контент не публикуем
+        logger.error("Safety-check не выполнен (%s) — контент считается непроверенным", exc)
+        return {
+            "safe": False,
+            "issue": f"safety-check не выполнен: {str(exc)[:200]}",
+            "category": "unchecked",
+        }
 
-    # ── Engine 1: Gemini ──────────────────────────────────────────────────────
-    if GEMINI_API_KEY and is_enabled("gemini"):
-        try:
-            result = _gemini_call(prompt)
-            _log_result("Gemini", result, title, platform)
-            return result
-        except TimeoutError as exc:
-            logger.warning("Safety Agent: %s — переключаюсь на Cerebras", exc)
-        except Exception as exc:
-            err = str(exc)
-            if "429" in err or "RESOURCE_EXHAUSTED" in err or "quota" in err.lower():
-                # Квота free tier = 0 → выключаем Gemini до конца процесса
-                if "limit: 0" in err or "RESOURCE_EXHAUSTED" in err:
-                    mark_dead("gemini", err[:200])
-                logger.warning("Gemini 429/quota — переключаюсь на Cerebras")
-            else:
-                logger.warning("Gemini ошибка: %s — переключаюсь на Cerebras", exc)
+    if result["safe"]:
+        logger.info("Safety OK (%s) '%s' / %s", engine, title, platform)
     else:
-        logger.info("GEMINI_API_KEY не задан — пропускаю Gemini")
-
-    # ── Engine 2: Cerebras ────────────────────────────────────────────────────
-    if CEREBRAS_API_KEY:
-        try:
-            result = _cerebras_call(prompt)
-            _log_result("Cerebras", result, title, platform)
-            return result
-        except Exception as exc:
-            logger.warning("Cerebras ошибка: %s — переключаюсь на Groq", exc)
-    else:
-        logger.info("CEREBRAS_API_KEY не задан — пропускаю Cerebras")
-
-    # ── Engine 3: Groq ────────────────────────────────────────────────────────
-    if GROQ_API_KEY:
-        try:
-            result = _groq_call(prompt)
-            _log_result("Groq", result, title, platform)
-            return result
-        except Exception as exc:
-            logger.warning("Groq ошибка: %s", exc)
-
-    # ── Fail-closed: непроверенный контент не публикуем ──────────────────────
-    logger.error("Все движки safety-check недоступны — контент считается непроверенным")
-    return {
-        "safe": False,
-        "issue": "safety-check не выполнен: все движки недоступны",
-        "category": "unchecked",
-    }
+        logger.warning("Safety FAILED (%s) '%s' / %s: [%s] %s",
+                       engine, title, platform, result["category"], result["issue"])
+    return result
 
 
 if __name__ == "__main__":
@@ -268,15 +184,15 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
     sample_script = (
-        "Знаешь ли ты, что твой мозг принимает 35 000 решений в день? "
-        "Вот 3 лайфхака которые помогут принимать лучшие решения. "
+        "Знаешь ли ты, что твой мозг принимает тысячи решений в день? "
+        "Вот 3 приёма, которые помогут принимать лучшие решения. "
         "Первый: делай важные решения утром. Второй: записывай варианты. "
         "Третий: используй технику 10/10/10. Подписывайся!"
     )
     platform_arg = sys.argv[1] if len(sys.argv) > 1 else "tiktok"
     result = check(
         script_text=sample_script,
-        title="3 лайфхака для лучших решений",
+        title="3 приёма для лучших решений",
         hashtags=["психология", "лайфхак", "мозг"],
         platform=platform_arg,
     )

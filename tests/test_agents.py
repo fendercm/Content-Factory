@@ -36,7 +36,7 @@ def _groq_mock(payload: dict | list) -> MagicMock:
 
 
 def _llm_resp_mock(payload: dict | list | str) -> MagicMock:
-    """Mock response returned by groq_with_cerebras_fallback (not a client, just the response)."""
+    """Mock ответа utils.llm_client.chat / groq_with_cerebras_fallback (не клиент, а response)."""
     content = json.dumps(payload, ensure_ascii=False) if isinstance(payload, (dict, list)) else payload
     resp = MagicMock()
     resp.choices[0].message.content = content
@@ -73,9 +73,7 @@ def check_idea_generator() -> dict:
              "source_topic": "психология мышления", "virality": 0.85},
         ]
         topics = [{"topic": "психология мышления", "virality": 0.85, "source": "google_trends"}]
-        with patch.dict("os.environ", {"GROQ_API_KEY": "test-key"}), \
-             patch("utils.llm_client.groq_with_cerebras_fallback",
-                   return_value=_llm_resp_mock(payload)):
+        with patch("utils.llm_client.chat", return_value=_llm_resp_mock({"ideas": payload})):
             result = run(topics)
         ok = isinstance(result, list) and len(result) > 0 and "title" in result[0]
         title = result[0]["title"] if result else "—"
@@ -89,11 +87,8 @@ def check_topic_filter() -> dict:
         from agents.topic_filter import run
         ideas = [{"title": "5 ловушек мозга", "hook": "...", "angle": "...",
                   "hashtags": ["психология"], "source_topic": "психология", "virality": 0.85}]
-        with patch("agents.topic_filter.GEMINI_API_KEY", "test-key"), \
-             patch("utils.providers.is_enabled", return_value=True), \
-             patch("agents.topic_filter.genai") as mock_genai:
-            mock_genai.Client.return_value.models.generate_content.return_value = \
-                MagicMock(text='[{"id": 1, "safe": true, "reason": ""}]')
+        with patch("utils.llm_client.chat",
+                   return_value=_llm_resp_mock({"results": [{"id": 1, "safe": True, "reason": ""}]})):
             result = run(ideas, platform="tiktok", db_path=":memory:")
         return {"success": len(result) == 1, "message": f"{len(result)} идей прошли фильтр"}
     except Exception as e:
@@ -143,11 +138,7 @@ def check_fact_checker() -> dict:
 def check_safety_agent() -> dict:
     try:
         from agents.safety_agent import check
-        with patch("agents.safety_agent.GEMINI_API_KEY", "test-key"), \
-             patch("utils.providers.is_enabled", return_value=True), \
-             patch("google.genai.Client") as mock_client:
-            mock_client.return_value.models.generate_content.return_value = \
-                MagicMock(text='{"safe": true}')
+        with patch("utils.llm_client.chat", return_value=_llm_resp_mock({"safe": True})):
             result = check(
                 script_text="Привычки успешных людей помогают достигать целей",
                 title="5 привычек", hashtags=["психология"], platform="tiktok"
@@ -171,7 +162,7 @@ def check_voice_agent() -> dict:
         with patch("edge_tts.Communicate", return_value=mock_instance), \
              patch("agents.voice_agent.KIE_API_KEY", ""), \
              patch("agents.voice_agent.DASHSCOPE_API_KEY", ""), \
-             patch.dict("os.environ", {"YANDEX_API_KEY": ""}), \
+             patch.dict("os.environ", {"YANDEX_API_KEY": "", "GEMINI_TTS": "off"}), \
              patch("agents.voice_agent._normalize_volume"):
             result = generate_voice("Тестовый текст для синтеза голоса.", "tiktok")
         ok = "audio_path" in result
@@ -185,9 +176,7 @@ def check_voice_agent() -> dict:
 def check_music_agent() -> dict:
     try:
         from agents.music_agent import get_music
-        with patch.dict("os.environ", {"GROQ_API_KEY": "test-key"}), \
-             patch("utils.llm_client.groq_with_cerebras_fallback",
-                   return_value=_llm_resp_mock("upbeat")), \
+        with patch("utils.llm_client.chat", return_value=_llm_resp_mock("upbeat")), \
              patch("agents.music_agent.os.path.isdir", return_value=True), \
              patch("agents.music_agent.os.listdir", return_value=["mock.mp3"]), \
              patch("agents.music_agent.os.path.exists", return_value=True):

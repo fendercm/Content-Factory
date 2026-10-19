@@ -293,14 +293,36 @@ def step_topic_filter(ideas: list[dict], platform: str, niche: str = "") -> list
     return filtered
 
 
-def step_research_agent(topic: str) -> dict:
+def step_research_agent(topic: str, query: str | None = None) -> dict:
     """Исследует тему. При ошибке — возвращает пустой контекст, не блокирует пайплайн."""
     try:
         from agents.research_agent import research
-        return research(topic)
+        return research(topic, query=query)
     except Exception as exc:
         logger.warning("Research Agent ошибка: %s — продолжаем без контекста", exc)
         return {"facts": [], "summary": "research failed", "sources_used": []}
+
+
+def _recent_hooks(limit: int = 8) -> list[str]:
+    """Hook'и последних сценариев канала — Script Writer не должен их повторять."""
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=10)
+        rows = conn.execute(
+            "SELECT payload FROM pipeline_state WHERE step='script_writer' AND status='success' "
+            "ORDER BY id DESC LIMIT ?", (limit * 2,),
+        ).fetchall()
+        conn.close()
+    except sqlite3.Error:
+        return []
+    hooks: list[str] = []
+    for (payload,) in rows:
+        try:
+            hook = (json.loads(payload) or {}).get("hook", "").strip()
+        except (TypeError, ValueError):
+            continue
+        if hook and hook not in hooks:
+            hooks.append(hook)
+    return hooks[:limit]
 
 
 def step_script_writer(idea: dict, platform: str, research: dict | None = None) -> dict:
@@ -317,6 +339,9 @@ def step_script_writer(idea: dict, platform: str, research: dict | None = None) 
         platform=platform,
         research_context=research_context or None,
         target_duration_sec=target_sec,
+        idea_hook=idea.get("hook"),
+        idea_angle=idea.get("angle"),
+        avoid_hooks=_recent_hooks(),
     )
     script["target_duration_sec"] = target_sec
     return script
@@ -374,12 +399,14 @@ def step_music_agent(script: dict, niche: str = "") -> dict | None:
         return None
 
 
-def step_subtitle_agent(voice: dict, platform: str) -> dict | None:
-    """Генерирует субтитры. При ошибке — пайплайн продолжается без субтитров."""
+def step_subtitle_agent(voice: dict, platform: str, script_text: str | None = None) -> dict | None:
+    """Генерирует субтитры (текст — из сценария). При ошибке — пайплайн продолжается без субтитров."""
     try:
         from agents.subtitle_agent import generate_subtitles
-        result = generate_subtitles(audio_path=voice["audio_path"], platform=platform)
-        logger.info("Субтитры: %d сегментов", result.get("segment_count", 0))
+        result = generate_subtitles(audio_path=voice["audio_path"], platform=platform,
+                                    script_text=script_text)
+        logger.info("Субтитры: %d сегментов (по сценарию: %s)",
+                    result.get("segment_count", 0), result.get("aligned"))
         return result
     except EnvironmentError as exc:
         logger.warning("Subtitle Agent: %s — продолжаем без субтитров", exc)
@@ -680,7 +707,10 @@ def run_pipeline(
             logger.info("Генерирую сценарий для идеи: '%s'", candidate["title"])
 
             # 4a. Research — собираем факты до написания сценария
-            research_data = step_research_agent(candidate["title"])
+            research_data = step_research_agent(
+                candidate["title"],
+                candidate.get("research_query") or candidate.get("source_topic"),
+            )
             log_message("research_agent",
                 f"{research_data['summary']}",
                 "script_writer")
@@ -709,6 +739,18 @@ def run_pipeline(
             # 4.5. Проверка фактов — если провалена, пробуем следующую идею
             facts = research_data.get("facts") or []
             fact_result = retry("fact_checker", step_fact_checker, candidate_script, facts)
+            if not fact_result["valid"] and not fact_result.get("unverified"):
+                # Одна попытка исправить конкретные фразы, прежде чем выбрасывать идею
+                # вместе с собранными фактами
+                from agents.script_writer import fix_script
+                fixed = fix_script(candidate_script, fact_result.get("errors", []), facts)
+                if fixed is not None:
+                    recheck = retry("fact_checker", step_fact_checker, fixed, facts)
+                    if recheck["valid"]:
+                        logger.info("Fact-check: сценарий исправлен по замечаниям")
+                        log_message("fact_checker", "Сценарий исправлен по замечаниям и прошёл повторную проверку",
+                                    "script_writer")
+                        candidate_script, fact_result = fixed, recheck
             if not fact_result["valid"]:
                 errors = fact_result.get("errors", [])
                 err_msg = f"Фактические ошибки в «{candidate['title']}»: {errors}"
@@ -727,7 +769,8 @@ def run_pipeline(
             # попадает в публикацию в обход проверки.
             try:
                 from agents.script_writer import improve_hook
-                hook_ab = improve_hook(script.get("full_script", ""), idea["title"])
+                hook_ab = improve_hook(script.get("full_script", ""), idea["title"],
+                                       avoid_hooks=_recent_hooks())
                 if hook_ab.get("chosen_index", 0) != 0 and hook_ab.get("script"):
                     new_script = {**script, "full_script": hook_ab["script"], "hook": hook_ab["hook"]}
                     recheck = step_fact_checker(new_script, facts)
@@ -822,7 +865,7 @@ def run_pipeline(
         _idea_title = idea["title"]
 
         with ThreadPoolExecutor(max_workers=2, thread_name_prefix="media") as _ex:
-            _fut_sub = _ex.submit(step_subtitle_agent, voice, platform)
+            _fut_sub = _ex.submit(step_subtitle_agent, voice, platform, _full_script_text)
             _fut_photos = _ex.submit(step_get_photos, _idea_title, _full_script_text, platform, 17)
             subtitles = _fut_sub.result()
             all_photos = _fut_photos.result()
@@ -1040,7 +1083,7 @@ def run_story_pipeline(
         music_path = music["music_path"] if music else None
 
         # 4. Субтитры
-        subtitles = step_subtitle_agent(voice, platform)
+        subtitles = step_subtitle_agent(voice, platform, episode["full_script"])
         subtitle_path = subtitles["subtitle_path"] if subtitles else None
 
         # 5. Сборка: сцены в нарративном порядке, каждая — photo-клип с Ken Burns

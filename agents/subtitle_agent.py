@@ -1,12 +1,18 @@
 """
 Subtitle Agent — транскрибирует аудио через Whisper, генерирует стилизованные ASS субтитры.
 
-Вход:  audio_path (str), platform (str)
-Выход: {"subtitle_path": str, "segment_count": int}
+Вход:  audio_path (str), platform (str), script_text (str | None)
+Выход: {"subtitle_path": str, "segment_count": int, "words": [...], "aligned": bool}
+
+Если передан script_text, Whisper даёт только тайминги, а текст слов берётся
+из сценария (выравнивание difflib): озвучивается ровно сценарий, а Whisper base
+на русском ошибается в окончаниях и числах — в субтитрах это выглядит как брак.
 """
 
+import difflib
 import logging
 import os
+import re
 import uuid
 from datetime import datetime
 from typing import Literal
@@ -23,8 +29,9 @@ def _get_whisper_model():
             import whisper
         except ImportError:
             raise EnvironmentError("openai-whisper не установлен: pip install openai-whisper")
-        logger.info("Загружаю Whisper base (первый раз)...")
-        _whisper_model = whisper.load_model("base")
+        name = os.getenv("WHISPER_MODEL", "base")
+        logger.info("Загружаю Whisper %s (первый раз)...", name)
+        _whisper_model = whisper.load_model(name)
     return _whisper_model
 
 Platform = Literal["tiktok", "youtube", "instagram", "linkedin", "twitter"]
@@ -77,6 +84,68 @@ def _chunk_words(words: list[dict], max_chars: int) -> list[dict]:
     return chunks
 
 
+_MIN_ALIGN_RATIO = 0.6  # ниже — озвучка заметно разошлась со сценарием, верим Whisper
+
+
+def _norm(token: str) -> str:
+    return re.sub(r"[^\w]", "", token.lower().replace("ё", "е"))
+
+
+def _align_to_script(words: list[dict], script_text: str) -> list[dict] | None:
+    """
+    Переносит тайминги Whisper на слова сценария. Возвращает
+    [{"word", "start", "end"}] в написании сценария или None, если совпадение слабое.
+    """
+    script_tokens = [t for t in re.findall(r"\S+", script_text) if _norm(t)]
+    asr = [w for w in words if _norm(w.get("word", ""))]
+    if not script_tokens or not asr:
+        return None
+
+    a = [_norm(w["word"]) for w in asr]
+    b = [_norm(t) for t in script_tokens]
+    matcher = difflib.SequenceMatcher(None, a, b, autojunk=False)
+    if matcher.ratio() < _MIN_ALIGN_RATIO:
+        return None
+
+    timed: list[list[float] | None] = [None] * len(script_tokens)
+    for op, i1, i2, j1, j2 in matcher.get_opcodes():
+        if op == "equal":
+            for k in range(i2 - i1):
+                timed[j1 + k] = [float(asr[i1 + k]["start"]), float(asr[i1 + k]["end"])]
+        elif op == "replace":
+            # Например «120» ↔ «сто двадцать»: делим отрезок пропорционально длине слов
+            t0, t1 = float(asr[i1]["start"]), float(asr[i2 - 1]["end"])
+            lengths = [max(len(b[j]), 1) for j in range(j1, j2)]
+            total, cursor = sum(lengths), t0
+            for j, ln in zip(range(j1, j2), lengths):
+                step = (t1 - t0) * ln / total
+                timed[j] = [cursor, cursor + step]
+                cursor += step
+        # delete — лишние слова Whisper отбрасываем; insert — заполним ниже
+
+    # Слова сценария, которых Whisper не услышал, — в паузу между соседями
+    n = len(timed)
+    j = 0
+    while j < n:
+        if timed[j] is not None:
+            j += 1
+            continue
+        k = j
+        while k < n and timed[k] is None:
+            k += 1
+        left = timed[j - 1][1] if j > 0 else (timed[k][0] if k < n else 0.0)
+        right = timed[k][0] if k < n else left + 0.3 * (k - j)
+        step = max(right - left, 0.0) / (k - j)
+        for m in range(j, k):
+            timed[m] = [left + step * (m - j), left + step * (m - j + 1)]
+        j = k
+
+    return [
+        {"word": tok.strip("«»\"()"), "start": t[0], "end": max(t[1], t[0] + 0.05)}
+        for tok, t in zip(script_tokens, timed)
+    ]
+
+
 def _write_ass(chunks: list[dict], path: str, fontsize: int, margin_v: int) -> None:
     """
     Kinetic captions:
@@ -119,16 +188,22 @@ def _write_ass(chunks: list[dict], path: str, fontsize: int, margin_v: int) -> N
         f.write("\n".join(lines) + "\n")
 
 
-def generate_subtitles(audio_path: str, platform: Platform = "tiktok") -> dict:
+def generate_subtitles(
+    audio_path: str,
+    platform: Platform = "tiktok",
+    script_text: str | None = None,
+) -> dict:
     """
     Транскрибирует аудио через Whisper и генерирует ASS субтитры.
 
     Args:
-        audio_path: Путь к MP3
-        platform:   Платформа — определяет размер шрифта и позицию
+        audio_path:  Путь к MP3
+        platform:    Платформа — определяет размер шрифта и позицию
+        script_text: Текст, который озвучивался. Если задан — слова в субтитрах
+                     берутся из него, от Whisper только тайминги.
 
     Returns:
-        dict с полями: subtitle_path, segment_count
+        dict с полями: subtitle_path, segment_count, words, aligned
 
     Raises:
         EnvironmentError: если openai-whisper не установлен
@@ -143,9 +218,18 @@ def generate_subtitles(audio_path: str, platform: Platform = "tiktok") -> dict:
 
     model = _get_whisper_model()
     logger.info("Транскрибирую аудио: %s", os.path.basename(audio_path))
+    # initial_prompt со сценарием НЕ передаём: на Whisper base он вызывает
+    # галлюцинации (проверено 2026-10: совпадение со сценарием падает с 0.93 до 0.1)
     result = model.transcribe(audio_path, language="ru", word_timestamps=True)
 
     all_words = [w for seg in result["segments"] for w in seg.get("words", [])]
+    aligned = False
+    if script_text and all_words:
+        script_words = _align_to_script(all_words, script_text)
+        if script_words:
+            all_words, aligned = script_words, True
+        else:
+            logger.warning("Субтитры: озвучка слабо совпала со сценарием — оставляю текст Whisper")
 
     if all_words:
         chunks = _chunk_words(all_words, style["max_chars"])
@@ -172,6 +256,7 @@ def generate_subtitles(audio_path: str, platform: Platform = "tiktok") -> dict:
         "subtitle_path": subtitle_path,
         "segment_count": len(chunks),
         "words": words_out,
+        "aligned": aligned,
     }
 
 

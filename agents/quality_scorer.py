@@ -33,39 +33,41 @@ logger = logging.getLogger(__name__)
 DEFAULT_THRESHOLD = 6
 FRAMES_TO_SAMPLE = 5
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+# Веса критериев в итоговом score. Первый кадр (hook) весит больше всего:
+# 30-50% зрителей Shorts уходят в первые 1-3 секунды.
+_WEIGHTS = {
+    "hook_frame": 0.30,
+    "relevance": 0.20,
+    "subtitles": 0.20,
+    "composition": 0.15,
+    "variety": 0.15,
+}
 
+_SCORE_PROMPT = """Ты — продюсер коротких вертикальных видео (TikTok / Reels / Shorts).
+Перед тобой {n} кадров одного ролика в хронологическом порядке: кадр 1 — первая
+секунда (hook с крупным текстом), остальные — равномерно по таймлайну.
 
-_SCORE_PROMPT = """Ты — эксперт по виральному TikTok/Shorts контенту.
-Оцени видео по 5 кадрам ниже. Это короткое вертикальное видео для TikTok/Shorts.
+Hook ролика: "{hook_text}"
 
-Контекст:
-- Тема hook'а: "{hook_text}"
-- Целевая аудитория: широкая, эмоция — шок/инсайт
-- Длительность: ~45 секунд
+Оцени каждый критерий по шкале 1-10, используя якоря:
+- hook_frame — остановит ли кадр 1 скролл: крупный читаемый текст, контраст,
+  лицо/эмоция или яркий объект. 9: читается за полсекунды и интригует;
+  5: обычный стоковый кадр с мелким текстом; 2: тёмный/размытый/пустой.
+- relevance — связан ли видеоряд с hook и темой. 9: каждый кадр иллюстрирует мысль;
+  5: общий сток «про жизнь»; 2: случайные несвязанные кадры.
+- subtitles — субтитры: читаются на телефоне, не перекрывают лица, не вылезают
+  за край. 9: крупно и контрастно; 5: читаемо, но мелко/перекрывает; 2: не читаются
+  или отсутствуют.
+- composition — фокус, освещение, вертикальный кроп без чёрных полос и обрезанных голов.
+- variety — кадры разные по плану и содержанию; 2 — один и тот же кадр/сцена повторяются.
 
-КРИТЕРИИ ОЦЕНКИ (1-10):
-1. Визуальное разнообразие (нет ли повторов кадров)
-2. Релевантность визуала теме
-3. Качество композиции (фокус, лица, эмоции)
-4. Читаемость субтитров (контраст, размер, позиция)
-5. Hook-сила первого кадра (привлекает ли внимание)
-
-Дай общий score от 1 до 10:
-- 9-10: вирусный потенциал высокий, опубликовать обязательно
-- 7-8: хорошее видео, можно публиковать
-- 6: проходной, спорно
-- 4-5: слабое, рискованно публиковать
-- 1-3: брак, не публиковать
+В issues перечисли конкретные дефекты (номер кадра + что не так). Не выдумывай
+дефекты, которых не видно.
 
 Верни JSON:
-{{
-  "score": <число 1-10>,
-  "verdict": "approved"|"warning"|"rejected",
-  "reasoning": "<2-3 предложения почему этот score>"
-}}
-
-Только JSON, без markdown."""
+{{"criteria": {{"hook_frame": 7, "relevance": 7, "subtitles": 7, "composition": 7, "variety": 7}},
+  "issues": ["кадр 1: ..."],
+  "reasoning": "2-3 предложения"}}"""
 
 
 def _extract_frames(video_path: str, num_frames: int = 5) -> list[str]:
@@ -91,13 +93,12 @@ def _extract_frames(video_path: str, num_frames: int = 5) -> list[str]:
     if duration <= 0:
         return []
 
-    # Равномерно распределяем точки выборки: первый кадр на 1с (после hook), затем равномерно
+    # Кадр 1 — внутри hook (0.5с), остальные равномерно до конца без финальной заставки
     timestamps = []
     if num_frames == 1:
-        timestamps = [duration * 0.5]
+        timestamps = [min(0.5, duration * 0.1)]
     else:
-        # Начинаем с 1.5с (после hook), заканчиваем за 2с до конца
-        start = min(1.5, duration * 0.1)
+        start = min(0.5, duration * 0.05)
         end = max(duration - 2.0, duration * 0.9)
         if end <= start:
             end = duration * 0.9
@@ -124,32 +125,38 @@ def _extract_frames(video_path: str, num_frames: int = 5) -> list[str]:
     return paths
 
 
-_GROQ_VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
-
-
-def _groq_vision_score(prompt_text: str, frame_paths: list[str]) -> str:
-    """Оценка кадров через Groq Llama-4 Scout (мультимодальный, бесплатный tier).
-    Возвращает сырой текст ответа. Groq принимает до 5 изображений на запрос."""
-    from utils.llm_client import _get_groq
+def _vision_score(prompt_text: str, frame_paths: list[str]) -> str:
+    """
+    Оценка кадров через общую LLM-цепочку с картинками
+    (Gemini Flash-Lite → Gemini Flash → Groq qwen3.8 vision → Gemma).
+    Возвращает сырой текст ответа.
+    """
+    from utils.llm_client import chat
 
     content: list[dict[str, Any]] = [{"type": "text", "text": prompt_text}]
     for fp in frame_paths[:5]:
         with open(fp, "rb") as f:
             b64 = base64.b64encode(f.read()).decode()
-        content.append({
-            "type": "image_url",
-            "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
-        })
+        content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}})
 
-    resp = _get_groq().chat.completions.create(
-        model=_GROQ_VISION_MODEL,
-        messages=[{"role": "user", "content": content}],
-        temperature=0.2,
-        max_tokens=400,
-    )
-    raw = (resp.choices[0].message.content or "").strip()
-    logger.info("Quality Scorer: оценка через Groq %s", _GROQ_VISION_MODEL)
-    return raw
+    resp = chat([{"role": "user", "content": content}], tier="fast", temperature=0.2,
+                max_tokens=600, json_mode=True, caller="quality_scorer")
+    logger.info("Quality Scorer: оценка через %s/%s", resp.provider, resp.model)
+    return (resp.choices[0].message.content or "").strip()
+
+
+def _weighted_score(criteria: dict) -> int:
+    total, weight_sum = 0.0, 0.0
+    for name, weight in _WEIGHTS.items():
+        try:
+            value = float(criteria[name])
+        except (KeyError, TypeError, ValueError):
+            continue
+        total += max(1.0, min(10.0, value)) * weight
+        weight_sum += weight
+    if weight_sum < 0.5:  # модель вернула меньше половины критериев
+        raise ValueError("недостаточно критериев")
+    return int(round(total / weight_sum))
 
 
 def _skipped(reason: str, frames_analyzed: int) -> dict[str, Any]:
@@ -163,7 +170,8 @@ def score_video(
     threshold: int = DEFAULT_THRESHOLD,
 ) -> dict[str, Any]:
     """
-    Оценивает видео через Gemini Vision. Возвращает score + verdict.
+    Оценивает видео по кадрам через vision-LLM. Score — взвешенное среднее
+    критериев (_WEIGHTS), а не «общее впечатление» модели.
 
     Args:
         video_path: путь к финальному MP4
@@ -180,7 +188,7 @@ def score_video(
         оценка не получена → skipped, score=None (раньше подставлялось 7/approved,
         и статистика оценок была фиктивной)
     """
-    if not GEMINI_API_KEY and not os.getenv("GROQ_API_KEY", ""):
+    if not os.getenv("GEMINI_API_KEY", "") and not os.getenv("GROQ_API_KEY", ""):
         logger.warning("Quality Scorer: нет ни GEMINI_API_KEY, ни GROQ_API_KEY — пропускаем оценку")
         return _skipped("no API key", 0)
 
@@ -193,42 +201,13 @@ def score_video(
         logger.warning("Quality Scorer: не удалось извлечь кадры — пропускаем")
         return _skipped("frame extract failed", 0)
 
-    from utils.providers import is_enabled, mark_dead
-
-    prompt_text = _SCORE_PROMPT.format(hook_text=hook_text or "не указан")
-    raw = ""
+    prompt_text = _SCORE_PROMPT.format(hook_text=hook_text or "не указан", n=len(frames))
     try:
-        # ── Engine 1: Gemini Vision ──────────────────────────────────────────
-        if GEMINI_API_KEY and is_enabled("gemini"):
-            try:
-                from google import genai
-                from google.genai import types as genai_types
-
-                client = genai.Client(api_key=GEMINI_API_KEY)
-                parts: list[Any] = [prompt_text]
-                for fp in frames:
-                    with open(fp, "rb") as f:
-                        img_bytes = f.read()
-                    parts.append(genai_types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"))
-
-                resp = client.models.generate_content(
-                    model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
-                    contents=parts,
-                )
-                raw = (resp.text or "").strip()
-            except Exception as exc:
-                err = str(exc)
-                if "RESOURCE_EXHAUSTED" in err or "limit: 0" in err:
-                    mark_dead("gemini", err[:200])
-                logger.warning("Quality Scorer Gemini error: %s — пробую Groq vision", exc)
-
-        # ── Engine 2: Groq Llama-4 Scout (vision, бесплатный tier) ──────────
-        if not raw:
-            try:
-                raw = _groq_vision_score(prompt_text, frames)
-            except Exception as exc:
-                logger.warning("Quality Scorer Groq vision error: %s — оценка пропущена", exc)
-                return _skipped(f"scorer error: {exc}", len(frames))
+        try:
+            raw = _vision_score(prompt_text, frames)
+        except Exception as exc:
+            logger.warning("Quality Scorer: vision-LLM недоступен: %s — оценка пропущена", str(exc)[:200])
+            return _skipped(f"scorer error: {str(exc)[:200]}", len(frames))
     finally:
         # Cleanup temp frames directory (not just individual files)
         tmp_dir = getattr(_extract_frames, "_last_tmp_dir", None)
@@ -242,10 +221,14 @@ def score_video(
         return _skipped("json parse failed", len(frames))
     try:
         data = _json.loads(m.group())
-        score = int(data["score"])
+        if isinstance(data.get("criteria"), dict):
+            score = _weighted_score(data["criteria"])
+        else:
+            score = int(data["score"])  # совместимость со старым форматом ответа
     except (_json.JSONDecodeError, KeyError, TypeError, ValueError):
         return _skipped("json decode failed / no score", len(frames))
 
+    issues = [str(i) for i in (data.get("issues") or [])][:6]
     reasoning = str(data.get("reasoning", ""))[:300]
 
     if score >= 8:
@@ -255,14 +238,15 @@ def score_video(
     else:
         verdict = "rejected"
 
-    # Если LLM сам прислал verdict — учитываем но не выше нашего расчёта.
-    # rejected блокирует публикацию, поэтому он выставляется только по score:
-    # вердикт модели может понизить approved → warning, но не до rejected.
-    llm_verdict = data.get("verdict", "")
-    if llm_verdict in ("approved", "warning", "rejected"):
-        order = {"rejected": 0, "warning": 1, "approved": 2}
-        if order.get(llm_verdict, 2) < order.get(verdict, 2):
-            verdict = "warning" if verdict == "approved" else verdict
+    # rejected блокирует публикацию, поэтому выставляется только по score.
+    # Нечитаемые субтитры или пустой hook-кадр понижают approved → warning.
+    criteria = data.get("criteria") if isinstance(data.get("criteria"), dict) else {}
+    try:
+        weak = [k for k in ("hook_frame", "subtitles") if float(criteria.get(k, 10)) <= 4]
+    except (TypeError, ValueError):
+        weak = []
+    if weak and verdict == "approved":
+        verdict = "warning"
 
     logger.info(
         "Quality Scorer: score=%d/10 verdict=%s — %s",
@@ -272,6 +256,8 @@ def score_video(
         "score": score,
         "verdict": verdict,
         "reasoning": reasoning,
+        "criteria": criteria,
+        "issues": issues,
         "frames_analyzed": len(frames),
     }
 

@@ -81,9 +81,9 @@ _FMA_GENRE_IDS: dict[str, list[int]] = {
 _MOOD_PROMPT = """Проанализируй текст сценария и определи настроение для фоновой музыки.
 Ответь строго одним словом: upbeat, calm или dramatic.
 
-upbeat  — энергичный, мотивационный, позитивный
-calm    — спокойный, образовательный, медитативный
-dramatic — напряжённый, сенсационный, эмоциональный
+upbeat  — энергичный, мотивационный, позитивный; финал про решение и рост
+calm    — спокойный, объясняющий, медитативный; мягкая подача без нажима
+dramatic — напряжённый, разоблачающий, конфронтационный; шок-факты и «ты делаешь не так»
 
 Текст: {script_text}
 
@@ -92,18 +92,10 @@ dramatic — напряжённый, сенсационный, эмоциона�
 
 def detect_mood(script_text: str) -> Mood:
     """Определяет настроение сценария через Groq."""
-    if not GROQ_API_KEY:
-        logger.warning("GROQ_API_KEY не задан — настроение по умолчанию: upbeat")
-        return "upbeat"
-    mood_messages = [{"role": "user", "content": _MOOD_PROMPT.format(script_text=script_text[:500])}]
+    mood_messages = [{"role": "user", "content": _MOOD_PROMPT.format(script_text=script_text[:1200])}]
     try:
-        from utils.llm_client import groq_with_cerebras_fallback
-        response = groq_with_cerebras_fallback(
-            messages=mood_messages,
-            temperature=0.1,
-            max_tokens=10,
-            caller="music_agent",
-        )
+        from utils.llm_client import chat
+        response = chat(mood_messages, tier="fast", temperature=0.1, max_tokens=10, caller="music_agent")
     except Exception as exc:
         logger.warning("Mood detection ошибка: %s — upbeat по умолчанию", exc)
         return "upbeat"

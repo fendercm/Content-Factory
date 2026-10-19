@@ -33,6 +33,7 @@ PAID_PROVIDERS: frozenset[str] = frozenset({
     "yandex_llm",   # Yandex AI Studio (YandexGPT)
     "yandexart",    # YandexART thumbnail
     "dashscope",    # CosyVoice (бесплатный tier есть, но ключа нет)
+    "cerebras",     # с 2026 бесплатного tier нет (HTTP 402 payment_required)
 })
 
 _dead: dict[str, str] = {}

@@ -7,7 +7,7 @@ google-genai>=0.5.0       # Gemini 2.0 Flash (safety + quality scorer)
 python-dotenv>=1.0.0
 
 # ── Voice ────────────────────────────────────────────────────────────────────
-edge-tts>=6.1.9
+edge-tts>=7.3.1           # 7.2.x получают 403 от Microsoft (Sec-MS-GEC), исправлено в 7.3
 requests>=2.31.0
 
 # ── Subtitles ────────────────────────────────────────────────────────────────

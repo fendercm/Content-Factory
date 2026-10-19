@@ -194,40 +194,38 @@ def _llm_extract_numeric_facts(extract: str, topic: str, source_label: str, url:
     ТОЛЬКО факты с конкретными цифрами, процентами или датами.
     Возвращает пустой список при любой ошибке — не блокирует пайплайн.
     """
-    groq_key = os.environ.get("GROQ_API_KEY", "")
-    if not groq_key or not extract:
+    if not extract:
         return []
 
     prompt = (
         f"Тема видео: «{topic}»\n\n"
-        f"Текст:\n{extract[:2500]}\n\n"
-        "Из этого текста извлеки ТОЛЬКО факты с конкретными цифрами, процентами или датами. "
-        "Если цифр нет — не включай факт. "
-        "Каждый факт — одно законченное предложение на русском языке. "
-        "Верни JSON-массив строк: [\"67% людей делают X (исследование)\", \"Исследование 2400 человек...\"]\n"
-        "Если фактов с цифрами нет — верни пустой массив []."
+        f"Текст:\n{extract[:3000]}\n\n"
+        "Извлеки из текста факты с конкретными цифрами, процентами или датами, относящиеся к теме.\n"
+        "Правила:\n"
+        "1. Только то, что прямо написано в тексте. Ничего не додумывай и не округляй по-своему.\n"
+        "2. Если в тексте названо, КТО это установил (университет, организация, автор, год "
+        "исследования), сохрани это в предложении. Если не названо — не добавляй источник.\n"
+        "3. Каждый факт — одно законченное предложение на русском, понятное без контекста.\n"
+        "4. Не больше 5 фактов, самые неожиданные — первыми.\n"
+        'Верни JSON-объект: {"facts": ["Исследователи Калифорнийского университета в Ирвайне '
+        'установили, что после отвлечения к задаче возвращаются в среднем через 23 минуты."]}\n'
+        'Если фактов с цифрами нет — {"facts": []}.'
     )
     messages = [{"role": "user", "content": prompt}]
 
     raw = ""
     try:
-        from utils.llm_client import groq_with_cerebras_fallback
-        resp = groq_with_cerebras_fallback(
-            messages=messages,
-            temperature=0.1,
-            max_tokens=600,
-            caller="research_agent",
-        )
+        from utils.llm_client import chat
+        resp = chat(messages, tier="fast", temperature=0.1, max_tokens=700,
+                    json_mode=True, caller="research_agent")
         raw = resp.choices[0].message.content.strip()
     except Exception as exc:
         logger.warning("LLM fact extraction ошибка: %s", exc)
         return []
 
-    match = re.search(r"\[.*?\]", raw, re.DOTALL)
-    if not match:
-        return []
     try:
-        items = json.loads(match.group())
+        data = json.loads(raw)
+        items = data.get("facts", []) if isinstance(data, dict) else data
         return [
             {"text": s.strip(), "source": source_label, "url": url}
             for s in items
@@ -582,12 +580,48 @@ def _web_facts(topic: str) -> tuple[list[dict], str]:
 # Публичный API
 # ---------------------------------------------------------------------------
 
-def research(topic: str) -> dict[str, Any]:
+_RELEVANCE_PROMPT = """Тема ролика: «{topic}».
+Ниже факты, собранные поиском. Поиск ошибается: попадаются однофамильцы, фильмы
+и статьи с похожим названием, но про другое.
+
+Оставь только факты, которые сценарист может использовать в ролике на эту тему
+(они про тот же феномен, механизм, поведение или исследование).
+
+Факты:
+{facts}
+
+Верни JSON-объект: {{"relevant_ids": [1, 4]}}"""
+
+
+def _filter_relevant(topic: str, facts: list[dict]) -> list[dict]:
+    """Отсеивает нерелевантные факты через LLM. При сбое LLM возвращает все факты."""
+    if len(facts) < 2:
+        return facts
+    listing = "\n".join(f"{i}. {f.get('text', '')[:300]}" for i, f in enumerate(facts, 1))
+    try:
+        from utils.llm_client import chat
+        resp = chat([{"role": "user", "content": _RELEVANCE_PROMPT.format(topic=topic, facts=listing)}],
+                    tier="fast", temperature=0.0, max_tokens=300, json_mode=True,
+                    caller="research_relevance")
+        data = json.loads(resp.choices[0].message.content)
+        ids = {int(i) for i in (data.get("relevant_ids") or [])}
+    except Exception as exc:
+        logger.warning("Research Agent: фильтр релевантности недоступен (%s) — оставляю все факты",
+                       str(exc)[:150])
+        return facts
+    kept = [f for i, f in enumerate(facts, 1) if i in ids]
+    logger.info("Research Agent: релевантных фактов %d из %d", len(kept), len(facts))
+    return kept
+
+
+def research(topic: str, query: str | None = None) -> dict[str, Any]:
     """
-    Собирает факты по теме из трёх источников.
+    Собирает факты по теме из нескольких источников.
 
     Args:
-        topic: Тема видео (на русском)
+        topic: Тема/заголовок видео (на русском) — для оценки релевантности
+        query: Поисковый запрос (термин, 2-5 слов). Заголовки вроде «Почему вы не
+               ленитесь» дают в Wikipedia фильмы «Почему?» — поэтому ищем по query.
 
     Returns:
         dict с полями:
@@ -595,12 +629,13 @@ def research(topic: str) -> dict[str, Any]:
           summary      — строка-резюме для логов
           sources_used — список задействованных источников
     """
-    logger.info("Research Agent: исследую «%s»", topic)
+    q = (query or topic).strip()
+    logger.info("Research Agent: исследую «%s» (поиск: «%s»)", topic, q)
 
     all_facts: list[dict] = []
     sources_used: list[str] = []
 
-    wiki = _wiki_facts(topic)
+    wiki = _wiki_facts(q)
     if wiki:
         for f in wiki:
             f.setdefault("confidence", "high")
@@ -608,14 +643,14 @@ def research(topic: str) -> dict[str, Any]:
         sources_used.append("Wikipedia")
 
     # English Wikipedia — для тем с латинскими словами (iPhone, ChatGPT и т.п.)
-    wiki_en = _wiki_en_facts(topic)
+    wiki_en = _wiki_en_facts(q)
     if wiki_en:
         for f in wiki_en:
             f.setdefault("confidence", "high")
         all_facts.extend(wiki_en)
         sources_used.append("Wikipedia EN")
 
-    scholar = _scholar_facts(topic)
+    scholar = _scholar_facts(q)
     if scholar:
         for f in scholar:
             f.setdefault("confidence", "high")
@@ -624,12 +659,12 @@ def research(topic: str) -> dict[str, Any]:
 
     # Web search — всегда запускаем: Wikipedia+Scholar дают устоявшиеся факты,
     # веб-поиск с текущим годом добавляет свежие данные и актуальную статистику.
-    web, web_provider = _web_facts(topic)
+    web, web_provider = _web_facts(q)
     if web:
         all_facts.extend(web)
         sources_used.append(f"Web ({web_provider})")
 
-    news = _news_facts(topic)
+    news = _news_facts(q)
     if news:
         for f in news:
             f["confidence"] = "fresh"  # свежие новости — особый тег для script_writer
@@ -638,6 +673,8 @@ def research(topic: str) -> dict[str, Any]:
 
     # Numbers API намеренно убран: возвращает факты на английском языке,
     # которые загрязняют русскоязычный контекст сценаристу.
+
+    all_facts = _filter_relevant(f"{topic} ({q})" if q != topic else topic, all_facts)
 
     if len(all_facts) < 5:
         logger.warning(

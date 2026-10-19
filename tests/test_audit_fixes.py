@@ -67,11 +67,7 @@ def test_looks_like_no_credits(text, expected):
 
 def test_safety_agent_all_engines_down_is_unsafe():
     from agents import safety_agent
-    with patch.object(safety_agent, "GEMINI_API_KEY", ""), \
-         patch.object(safety_agent, "CEREBRAS_API_KEY", "k"), \
-         patch.object(safety_agent, "GROQ_API_KEY", "k"), \
-         patch.object(safety_agent, "_cerebras_call", side_effect=RuntimeError("down")), \
-         patch.object(safety_agent, "_groq_call", side_effect=RuntimeError("down")):
+    with patch("utils.llm_client.chat", side_effect=RuntimeError("all providers down")):
         result = safety_agent.check("текст", "заголовок", [], "tiktok")
     assert result["safe"] is False
     assert result["category"] == "unchecked"
@@ -98,17 +94,15 @@ _IDEAS = [
 
 def test_topic_filter_idea_without_verdict_is_dropped():
     from agents import topic_filter
-    with patch.object(topic_filter, "GEMINI_API_KEY", ""), \
-         patch("utils.llm_client.groq_with_cerebras_fallback",
-               return_value=_resp('[{"id": 1, "safe": true}]')):
+    with patch("utils.llm_client.chat", return_value=_resp('{"results": [{"id": 1, "safe": true}]}')) as llm:
         result = topic_filter.run(_IDEAS, platform="tiktok", db_path=":memory:")
+    assert llm.call_count == 2  # неполный ответ → переспросили один раз
     assert [i["title"] for i in result] == ["Идея A"]
 
 
 def test_topic_filter_all_engines_down_raises():
     from agents import topic_filter
-    with patch.object(topic_filter, "GEMINI_API_KEY", ""), \
-         patch("utils.llm_client.groq_with_cerebras_fallback", side_effect=RuntimeError("down")):
+    with patch("utils.llm_client.chat", side_effect=RuntimeError("down")):
         with pytest.raises(RuntimeError):
             topic_filter.run(_IDEAS, platform="tiktok", db_path=":memory:")
 
@@ -141,10 +135,9 @@ def test_quality_scorer_error_is_skipped_not_fake_score(tmp_path):
     from agents import quality_scorer
     video = tmp_path / "v.mp4"
     video.write_bytes(b"0" * 100)
-    with patch.object(quality_scorer, "GEMINI_API_KEY", ""), \
-         patch.dict("os.environ", {"GROQ_API_KEY": "k"}), \
+    with patch.dict("os.environ", {"GEMINI_API_KEY": "k"}), \
          patch.object(quality_scorer, "_extract_frames", return_value=["a.jpg", "b.jpg"]), \
-         patch.object(quality_scorer, "_groq_vision_score", side_effect=RuntimeError("429")):
+         patch.object(quality_scorer, "_vision_score", side_effect=RuntimeError("429")):
         result = quality_scorer.score_video(str(video))
     assert result["verdict"] == "skipped"
     assert result["score"] is None

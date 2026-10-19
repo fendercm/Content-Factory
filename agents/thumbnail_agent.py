@@ -411,43 +411,29 @@ def ab_test_thumbnails(
         # взаимную рекурсию generate_thumbnail ↔ ab_test_thumbnails.
         raise RuntimeError("A/B: получилось меньше 2 Pillow-вариантов")
 
-    from utils.providers import is_enabled, mark_dead, looks_like_no_credits
-
-    gemini_key = os.getenv("GEMINI_API_KEY", "")
     chosen_idx = 0
-    if gemini_key and is_enabled("gemini"):
-        try:
-            from google import genai
-            from google.genai import types as genai_types
-            client = genai.Client(api_key=gemini_key)
+    try:
+        from utils.llm_client import chat, image_to_data_url
 
-            parts: list[Any] = [
-                f"""Ты — эксперт по YouTube Shorts thumbnail'ам.
-Сравни {len(candidates)} варианта thumbnail для видео: "{title}"
-Выбери САМЫЙ кликабельный (максимум CTR на мобильном экране).
-Критерии: читаемость текста, контраст, эмоциональный отклик, нестандартность.
-Верни ТОЛЬКО число: 0, 1 или {"2" if len(candidates) > 2 else "1"} (индекс лучшего варианта)."""
-            ]
-            for fp in candidates:
-                with open(fp, "rb") as f:
-                    img_bytes = f.read()
-                parts.append(genai_types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"))
+        last = len(candidates) - 1
+        content: list[dict[str, Any]] = [{"type": "text", "text": f"""Ты — дизайнер обложек YouTube Shorts.
+Перед тобой {len(candidates)} варианта обложки (по порядку: 0..{last}) для видео «{title}».
+Обложку увидят мелко, на экране телефона в ленте. Выбери вариант с максимальным CTR:
+1) текст читается с первого взгляда, 2) сильный контраст, 3) понятна эмоция/интрига,
+4) нет обрезанного текста и мелких деталей.
+Верни JSON: {{"best": <индекс 0..{last}>, "reason": "кратко"}}"""}]
+        for fp in candidates:
+            content.append({"type": "image_url", "image_url": {"url": image_to_data_url(fp)}})
 
-            resp = client.models.generate_content(
-                model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
-                contents=parts,
-            )
-            raw = (resp.text or "").strip()
-            m = re.search(r"\b([012])\b", raw)
-            if m:
-                chosen_idx = int(m.group(1))
-                if chosen_idx >= len(candidates):
-                    chosen_idx = 0
-            logger.info("Thumbnail A/B: Gemini выбрал вариант %d из %d", chosen_idx, len(candidates))
-        except Exception as exc:
-            if looks_like_no_credits(exc) or "RESOURCE_EXHAUSTED" in str(exc):
-                mark_dead("gemini", str(exc)[:200])
-            logger.warning("Thumbnail A/B: Gemini ошибка (%s) — берём вариант 0", exc)
+        resp = chat([{"role": "user", "content": content}], tier="fast", temperature=0.0,
+                    max_tokens=200, json_mode=True, caller="thumbnail_ab")
+        m = re.search(r'"best"\s*:\s*(\d+)', resp.choices[0].message.content or "")
+        if m and int(m.group(1)) < len(candidates):
+            chosen_idx = int(m.group(1))
+        logger.info("Thumbnail A/B: %s/%s выбрал вариант %d из %d",
+                    resp.provider, resp.model, chosen_idx, len(candidates))
+    except Exception as exc:
+        logger.warning("Thumbnail A/B: vision-LLM недоступен (%s) — берём вариант 0", str(exc)[:200])
 
     chosen_path = candidates[chosen_idx]
 

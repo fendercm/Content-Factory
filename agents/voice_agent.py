@@ -73,6 +73,18 @@ EDGE_PERSONA_MAP: dict[str, str] = {
     "ermil":  "ru-RU-DmitryNeural",
 }
 
+# Yandex-персона → голос Gemini TTS (бесплатный tier, заметно живее edge-tts).
+# Kore — твёрдый женский, Sulafat — тёплый женский, Zephyr — яркий женский,
+# Orus — уверенный мужской, Charon — размеренный мужской.
+GEMINI_PERSONA_MAP: dict[str, str] = {
+    "alena":  "Sulafat",
+    "jane":   "Zephyr",
+    "lea":    "Kore",
+    "filipp": "Orus",
+    "ermil":  "Charon",
+}
+GEMINI_TTS_DEFAULT_VOICE = "Kore"
+
 # Per-niche personas — Yandex SpeechKit голоса под характер ниши.
 # alena    — мягкий женский, эмпатия (психология, отношения)
 # filipp   — уверенный мужской (бизнес, финансы, карьера, продуктивность)
@@ -477,14 +489,14 @@ def _silero(text: str, gender: str, output_path: str) -> None:
 
 
 def _wav_to_mp3(wav_path: str, mp3_path: str) -> None:
-    """Конвертирует WAV → MP3 через ffmpeg."""
-    result = subprocess.run(
-        ["ffmpeg", "-y", "-i", wav_path, "-codec:a", "libmp3lame", "-q:a", "4", mp3_path],
-        capture_output=True, timeout=300,
-    )
-    os.remove(wav_path)
-    if result.returncode != 0:
-        raise RuntimeError(f"ffmpeg WAV→MP3 ошибка: {result.stderr.decode(errors='replace')}")
+    """Конвертирует WAV → MP3 через ffmpeg (WAV удаляется в любом случае)."""
+    from utils.ffmpeg import run_ffmpeg
+    try:
+        run_ffmpeg(["ffmpeg", "-y", "-i", wav_path, "-codec:a", "libmp3lame", "-q:a", "4", mp3_path],
+                   timeout=300, what="ffmpeg WAV→MP3")
+    finally:
+        if os.path.exists(wav_path):
+            os.remove(wav_path)
 
 
 def _split_text_chunks(text: str, max_chars: int = 900) -> list[str]:
@@ -661,6 +673,87 @@ def _yandex(text: str, voice: str, output_path: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Engine 2b: Gemini TTS (бесплатный tier Gemini API)
+# ---------------------------------------------------------------------------
+# Проверено 2026-10: русский текст читается дословно (Whisper распознаёт
+# без ошибок). ВАЖНО: передаём только сам текст — инструкция по стилю
+# («Read ... as a confident narrator:») зачитывается вслух вместе с текстом.
+
+def _gemini_tts_models() -> list[str]:
+    raw = os.getenv("GEMINI_TTS_MODEL", "gemini-3.8-flash-tts,gemini-3.8-flash-lite-tts")
+    return [m.strip() for m in raw.split(",") if m.strip()]
+
+
+def _gemini_tts(text: str, voice_name: str, output_path: str) -> str:
+    """Синтез через Gemini TTS → MP3 по output_path. Возвращает имя модели."""
+    import base64
+    import io
+    import wave
+
+    from utils.providers import is_enabled, mark_dead
+
+    api_key = os.getenv("GEMINI_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY не задан")
+    last_error = "нет доступных моделей"
+    for model in _gemini_tts_models():
+        gate = f"gemini_tts:{model}"
+        if not is_enabled(gate):
+            continue
+        try:
+            resp = requests.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                headers={"X-Goog-Api-Key": api_key},
+                json={
+                    "contents": [{"parts": [{"text": text}]}],
+                    "generationConfig": {
+                        "responseModalities": ["AUDIO"],
+                        "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": voice_name}}},
+                    },
+                },
+                timeout=90,
+            )
+        except requests.Timeout:
+            # Перегруженная модель отвечает минутами — до конца прогона её не ждём
+            last_error = f"{model}: таймаут 90с"
+            mark_dead(gate, last_error)
+            continue
+        if resp.status_code != 200:
+            last_error = f"{model}: HTTP {resp.status_code} {resp.text[:150]}"
+            if resp.status_code in (401, 403, 404) or (resp.status_code == 429 and "PerDay" in resp.text):
+                mark_dead(gate, last_error)
+            continue
+        try:
+            part = resp.json()["candidates"][0]["content"]["parts"][0]["inlineData"]
+            audio = base64.b64decode(part["data"])
+        except (KeyError, IndexError, ValueError) as exc:
+            last_error = f"{model}: нет аудио в ответе ({exc})"
+            continue
+
+        wav_path = output_path + ".gemini.wav"
+        if audio[:4] == b"RIFF":
+            with open(wav_path, "wb") as f:
+                f.write(audio)
+        else:
+            # audio/L16;codec=pcm;rate=24000 — сырой PCM без заголовка
+            rate = 24000
+            mime = part.get("mimeType", "")
+            if "rate=" in mime:
+                try:
+                    rate = int(mime.split("rate=")[1].split(";")[0])
+                except ValueError:
+                    pass
+            with wave.open(wav_path, "wb") as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(rate)
+                w.writeframes(audio)
+        _wav_to_mp3(wav_path, output_path)
+        return model
+    raise RuntimeError(f"Gemini TTS: {last_error}")
+
+
+# ---------------------------------------------------------------------------
 # Engine 3: edge-tts (резерв)
 # ---------------------------------------------------------------------------
 
@@ -790,6 +883,29 @@ def generate_voice(
             logger.warning("Voice Agent: Yandex ошибка (%s) — пробую edge-tts", exc)
     else:
         logger.info("Voice Agent: Yandex SpeechKit выключен (budget mode или нет ключа) — пропускаю")
+
+    # ── Engine 2b: Gemini TTS (бесплатный, самый живой из бесплатных) ───────
+    # GEMINI_TTS=off в .env — если важна одинаковость голоса между роликами
+    # (при исчерпании дневной квоты Gemini цепочка переходит на edge-tts).
+    if os.getenv("GEMINI_API_KEY", "") and os.getenv("GEMINI_TTS", "on").strip().lower() != "off":
+        try:
+            if voice in GEMINI_PERSONA_MAP:
+                gemini_voice = GEMINI_PERSONA_MAP[voice]
+            elif voice and voice[:1].isupper() and not voice.startswith("ru-RU"):
+                gemini_voice = voice  # явное имя голоса Gemini (Kore, Puck, …)
+            else:
+                gemini_voice = GEMINI_TTS_DEFAULT_VOICE
+            logger.info("Voice Agent: Gemini TTS (voice=%s)", gemini_voice)
+            # Оригинальный текст: _inject_pauses («...») Gemini читает как паузы-заминки
+            tts_model = _gemini_tts(full_script, gemini_voice, output_path)
+            if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
+                raise RuntimeError("Gemini TTS не создал файл")
+            _normalize_volume(output_path)
+            logger.info("Voice Agent: Gemini TTS ✓ (%s) → %s", tts_model, output_path)
+            return {"audio_path": output_path, "voice": gemini_voice, "platform": platform,
+                    "engine": "gemini-tts"}
+        except Exception as exc:
+            logger.warning("Voice Agent: Gemini TTS ошибка (%s) — пробую edge-tts", str(exc)[:200])
 
     # ── Engine 3: edge-tts (бесплатный, качество выше Silero) ────────────────
     try:
