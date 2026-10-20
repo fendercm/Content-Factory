@@ -1,0 +1,52 @@
+{
+  "id": "kabinet7",
+  "name": "Кабинет 7",
+  "format": "антология: каждый эпизод — законченная история одного клиента",
+  "logline": "Петербургский психолог Вера Соколова одним неожиданным вопросом помогает людям услышать то, о чём они молчат даже себе.",
+  "heroine": {
+    "role": "ВЕРА",
+    "name": "Вера Соколова",
+    "bio": "34 года, частный психолог, кабинет №7 в старом доме на Петроградке.",
+    "voice_ru": "Говорит мало и коротко, на «вы»; сухая ирония; замечает детали (как человек держит телефон, что повторяет дважды); не даёт советов «сделайте так» — задаёт вопрос, после которого человек сам слышит ответ. Её фирменный ход — один неожиданный, почти бытовой вопрос. Не ставит диагнозов, не говорит о лекарствах и лечении.",
+    "visual_en": "Vera, a 34-year-old Russian woman psychologist: shoulder-length straight dark-chestnut hair tucked behind one ear, calm grey-green eyes, a few freckles, minimal makeup, thin silver ring on her right hand; wears a soft charcoal knit turtleneck and a dark-green wool cardigan; holds a small red notebook.",
+    "reference": "assets/series/kabinet7/vera_ref.jpg",
+    "gemini_voice": "Gacrux",
+    "edge_voice": "ru-RU-SvetlanaNeural@-12Hz",
+    "intro": "Вера Соколова · психолог"
+  },
+  "season_arc": "Кто-то оставляет Вере анонимные записки с её же вопросами. Максимум одна фраза за эпизод и только если она естественно ложится в финал.",
+  "location_en": "a cozy psychologist's office in an old Saint Petersburg apartment building: tall window with rain streaks, grey city light, bookshelves, parquet floor, two vintage armchairs facing each other, a brass desk lamp, a small round table with a glass of water and a box of tissues",
+  "style_en": "Photorealistic cinematic still, vertical 9:16 composition, 35mm lens, shallow depth of field, warm desk-lamp light mixed with cold daylight from the window, muted teal and amber palette, natural skin texture, realistic hands with five fingers, consistent character appearance. No text, no captions, no watermark.",
+  "voices": {
+    "НАРРАТОР": {
+      "gemini": "Charon",
+      "edge": "ru-RU-DmitryNeural@-10Hz"
+    },
+    "client_female": {
+      "gemini": "Leda",
+      "edge": "ru-RU-SvetlanaNeural@+18Hz"
+    },
+    "client_male": {
+      "gemini": "Orus",
+      "edge": "ru-RU-DmitryNeural@+10Hz"
+    }
+  },
+  "subtitle_colors": {
+    "ВЕРА": "&H00FFFFFF&",
+    "client": "&H0000E5FF&",
+    "РАССКАЗЧИК": "&H00F0D080&"
+  },
+  "hashtags": [
+    "психология",
+    "кабинет7",
+    "сериал",
+    "психолог",
+    "историиизжизни"
+  ],
+  "words_min": 125,
+  "words_max": 150,
+  "lines_min": 12,
+  "lines_max": 18,
+  "animated_key": 2,
+  "animated_simple": 2
+}

@@ -46,3 +46,6 @@ pipeline.db
 *.db-wal
 *.db-shm
 *.db.bak*
+
+# черновики портретов героинь (scripts/series_setup.py); референс vera_ref.jpg коммитится
+assets/series/*/candidates/

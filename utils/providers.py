@@ -33,6 +33,8 @@ PAID_PROVIDERS: frozenset[str] = frozenset({
     "yandex_llm",   # Yandex AI Studio (YandexGPT)
     "yandexart",    # YandexART thumbnail
     "dashscope",    # CosyVoice (бесплатный tier есть, но ключа нет)
+    "kie_series",   # KIE для сериала (utils/kie_client). Отдельно от "kie": разрешение сериала
+                    # не должно включать старые платные пути (Kling в visual_agent, ElevenLabs, Suno)
     "cerebras",     # с 2026 бесплатного tier нет (HTTP 402 payment_required)
 })
 
@@ -50,10 +52,16 @@ def _disabled_by_env() -> set[str]:
     return {p.strip().lower() for p in raw.split(",") if p.strip()}
 
 
+def _budget_allow() -> set[str]:
+    """BUDGET_ALLOW=kie_series — платные провайдеры, разрешённые даже в BUDGET_MODE=free."""
+    raw = os.getenv("BUDGET_ALLOW", "")
+    return {p.strip().lower() for p in raw.split(",") if p.strip()}
+
+
 def is_enabled(provider: str) -> bool:
     """Можно ли звать провайдера прямо сейчас."""
     name = provider.strip().lower()
-    if budget_mode() and name in PAID_PROVIDERS:
+    if budget_mode() and name in PAID_PROVIDERS and name not in _budget_allow():
         return False
     if name in _disabled_by_env():
         return False

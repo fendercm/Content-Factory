@@ -63,12 +63,13 @@ PLATFORM_SETTINGS = {
 SILERO_SPEAKER = {"male": "aidar", "female": "baya"}
 SILERO_SAMPLE_RATE = 48000
 
-# Yandex-персона → edge-tts голос: в budget mode персоны ниш продолжают работать
-# (Svetlana — мягкий женский, Dariya — энергичный женский, Dmitry — мужской)
+# Yandex-персона → edge-tts голос: в budget mode персоны ниш продолжают работать.
+# В edge-tts осталось два русских голоса (Svetlana, Dmitry): DariyaNeural с 2026-10 отвечает
+# NoAudioReceived. Разные персоны — сдвигом высоты: "<голос>@<pitch>".
 EDGE_PERSONA_MAP: dict[str, str] = {
     "alena":  "ru-RU-SvetlanaNeural",
-    "jane":   "ru-RU-DariyaNeural",
-    "lea":    "ru-RU-DariyaNeural",
+    "jane":   "ru-RU-SvetlanaNeural@+15Hz",
+    "lea":    "ru-RU-SvetlanaNeural@+15Hz",
     "filipp": "ru-RU-DmitryNeural",
     "ermil":  "ru-RU-DmitryNeural",
 }
@@ -759,7 +760,8 @@ def _gemini_tts(text: str, voice_name: str, output_path: str) -> str:
 
 async def _edge_tts_async(text: str, voice: str, rate: str, output_path: str) -> None:
     import edge_tts
-    communicate = edge_tts.Communicate(text, voice, rate=rate, volume="+0%")
+    voice, _, pitch = voice.partition("@")  # "ru-RU-SvetlanaNeural@+15Hz" — голос со сдвигом высоты
+    communicate = edge_tts.Communicate(text, voice, rate=rate, volume="+0%", pitch=pitch or "+0Hz")
     await communicate.save(output_path)
 
 

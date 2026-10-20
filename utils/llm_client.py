@@ -12,6 +12,8 @@ LLM-клиент: единая цепочка провайдеров с авто
   - NVIDIA NIM / OpenRouter :free — подключаются, если заданы ключи.
 
 Порядок цепочки:
+  tier="premium": KIE writer (Gemini 4 Argon) → KIE fallback (GPT-6 Astra) → далее как quality
+                  (сценарии сериала; модели выбраны слепым тестом 2026-10-19, см. scripts/model_bakeoff.py)
   tier="quality": Yandex* → Gemini quality → Groq → Gemini fast → NVIDIA → OpenRouter → Gemma → Cerebras*
   tier="fast":    Yandex* → Gemini fast → Groq → NVIDIA → OpenRouter → Gemma → Cerebras*
   (* — платные, пропускаются в BUDGET_MODE=free)
@@ -62,6 +64,12 @@ def groq_model() -> str:
 
 def groq_vision_model() -> str:
     return _env("GROQ_VISION_MODEL", "qwen/qwen3.8-27b")
+
+
+def kie_writer_models() -> list[str]:
+    """Сценаристы сериала через KIE: основной и резерв (формат <адаптер>:<модель>)."""
+    return [_env("SERIES_WRITER_MODEL", "gemini:gemini-4-argon"),
+            _env("SERIES_WRITER_FALLBACK", "codex:gpt-6-astra")]
 
 
 _REASONING_HEADROOM = 1024  # gpt-oss тратит часть max_tokens на рассуждение
@@ -363,8 +371,23 @@ def _chain(tier: str, needs_vision: bool) -> list[tuple[str, str, object]]:
     def compat(name, model=None):
         return lambda m, t, mt, j: openai_compat_call(name, m, model, t, mt, j)
 
+    def kie(spec):
+        def call(m, t, mt, j):
+            from utils import kie_client
+            try:
+                text, _credits = kie_client.chat(spec, m, max_tokens=mt, json_mode=j)
+            except Exception as exc:  # KieError, сеть, таймаут шлюза — переходим к резерву
+                raise _ProviderError(str(exc)[:200], "skip") from exc
+            if j:
+                text = _strip_code_fence(text)
+            return _wrap(text, "kie", spec)
+        return call
+
     groq = ("groq", "groq", compat("groq", groq_vision_model() if needs_vision else None))
     chain: list[tuple[str, str, object]] = []
+    if tier == "premium" and not needs_vision:
+        chain += [("kie_series", f"kie:{spec}", kie(spec)) for spec in kie_writer_models()]
+        tier = "quality"
     if not needs_vision:
         chain.append(("yandex_llm", "yandex", None))  # обрабатывается отдельно (свои модели)
     if tier == "quality":

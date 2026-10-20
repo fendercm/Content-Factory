@@ -273,3 +273,84 @@ if __name__ == "__main__":
     print(f"Генерирую субтитры: {audio} для {plat}...\n")
     result = generate_subtitles(audio, plat)
     print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+# ---------------------------------------------------------------------------
+# Диалоговые субтитры сериала: тайминги известны из озвучки по ролям
+# ---------------------------------------------------------------------------
+
+def _dialogue_chunks(text: str, start: float, end: float, max_chars: int) -> list[dict]:
+    """Режет реплику на куски по 1-3 слова; время делится пропорционально длине."""
+    words = text.split()
+    groups: list[list[str]] = []
+    for w in words:
+        if groups and len(" ".join(groups[-1] + [w])) <= max_chars and len(groups[-1]) < 3:
+            groups[-1].append(w)
+        else:
+            groups.append([w])
+    total = sum(len(" ".join(g)) for g in groups) or 1
+    out, t = [], start
+    for g in groups:
+        chunk = " ".join(g)
+        dur = (end - start) * len(chunk) / total
+        out.append({"text": chunk, "start": t, "end": t + dur})
+        t += dur
+    return out
+
+
+def write_dialogue_ass(
+    lines: list[dict],
+    path: str,
+    colors: dict[str, str],
+    default_color: str = "&H00FFFFFF&",
+    brand_text: str | None = None,
+    brand_seconds: float = 3.0,
+    fontsize: int = 92,
+    margin_v: int = 620,
+    max_chars: int = 14,
+    labels: dict[str, str] | None = None,
+    intro_labels: dict[str, str] | None = None,
+    label_fontsize: int = 46,
+) -> int:
+    """
+    lines: [{role, text, start, end}] — из dialogue_voice. Цвет — по роли (ASS BGR, «&HAABBGGRR&»).
+    brand_text: плашка сериала вверху кадра на первые brand_seconds секунд.
+    labels: {роль: подпись} — имя говорящего над субтитрами, пока звучит его реплика;
+    intro_labels: подпись при первом появлении роли (имя + кто это). Роль без подписи — без плашки.
+    Возвращает число событий.
+    """
+    labels, intro_labels = labels or {}, intro_labels or {}
+    label_margin = margin_v + fontsize + 40
+    header = (
+        "[Script Info]\nScriptType: v4.00+\nPlayResX: 1080\nPlayResY: 1920\nScaledBorderAndShadow: yes\n\n"
+        "[V4+ Styles]\n"
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, "
+        "Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, "
+        "MarginL, MarginR, MarginV, Encoding\n"
+        f"Style: Default,Impact,{fontsize},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,2,0,1,8,0,2,60,60,{margin_v},1\n"
+        "Style: Brand,Arial,46,&H00FFFFFF,&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,6,0,3,4,0,8,60,60,150,1\n"
+        f"Style: Speaker,Arial,{label_fontsize},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,4,0,1,5,0,2,60,60,{label_margin},1\n\n"
+        "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+    )
+    pop = r"\fscx85\fscy85\t(0,90,\fscx112\fscy112)\t(90,170,\fscx100\fscy100)"
+    events = []
+    if brand_text:
+        events.append(f"Dialogue: 1,{_ts(0)},{_ts(brand_seconds)},Brand,,0,0,0,,{{\\fad(200,300)}}{brand_text.upper()}")
+    introduced: set[str] = set()
+    for line in lines:
+        color = colors.get(line["role"], default_color)
+        label = labels.get(line["role"])
+        if line["role"] in intro_labels and line["role"] not in introduced:
+            label = intro_labels[line["role"]]
+            introduced.add(line["role"])
+        if label:
+            events.append(f"Dialogue: 2,{_ts(line['start'])},{_ts(line['end'])},Speaker,,0,0,{label_margin},,"
+                          f"{{\\fad(120,120)\\c{color}}}{label.upper()}")
+        for c in _dialogue_chunks(line["text"], line["start"], line["end"], max_chars):
+            events.append(
+                f"Dialogue: 0,{_ts(c['start'])},{_ts(c['end'])},Default,,0,0,{margin_v},,"
+                f"{{{pop}\\c{color}}}{c['text'].upper()}"
+            )
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(header + "\n".join(events) + "\n")
+    return len(events)

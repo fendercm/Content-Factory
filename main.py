@@ -1151,6 +1151,181 @@ def run_story_pipeline(
 
 
 # ---------------------------------------------------------------------------
+# Series-пайплайн (--format series): сериал-антология «Кабинет 7» через KIE
+# ---------------------------------------------------------------------------
+
+def _case_as_idea(case: dict, series: dict) -> dict:
+    """Кейс в формате идеи — для topic_filter (дедуп 30 дней по механизму + safety)."""
+    return {"title": case["title"], "hook": case["surface_complaint"], "angle": case["real_reason"],
+            "source_topic": f"{series['id']}:{case['psych_concept']}".lower(),
+            "hashtags": series["hashtags"], "virality": 0.5, "_case": case}
+
+
+def _series_episode_for_case(series: dict, case: dict, episode_no: int, platform: str,
+                             conn, run_id: str) -> tuple[dict | None, list[dict], str]:
+    """Факты → сценарий → fact-check (+1 правка) → safety. → (episode | None, facts, причина отказа)"""
+    from agents.anthology_agent import spoken_text, write_episode
+
+    research = step_research_agent(case["title"], case.get("research_query"))
+    facts = research.get("facts") or []
+    log_message("research_agent", research.get("summary", ""), "anthology_agent")
+
+    episode = _run_with_retry("anthology_episode", write_episode, conn, run_id,
+                              series, case, facts, episode_no, max_retries=2)
+    fact = step_fact_checker({"full_script": spoken_text(episode)}, facts)
+    if not fact["valid"] and not fact.get("unverified"):
+        errors = "; ".join(str(e) for e in fact.get("errors", []))
+        logger.warning("Series fact-check: %s — переписываю эпизод", errors)
+        episode = write_episode(series, case, facts, episode_no, feedback=f"фактические ошибки: {errors}")
+        fact = step_fact_checker({"full_script": spoken_text(episode)}, facts)
+    if not fact["valid"]:
+        return None, facts, f"fact-check: {fact.get('errors')}"
+
+    from agents.safety_agent import check as safety_check
+    safety = safety_check(spoken_text(episode), episode["title"] or case["title"], series["hashtags"], platform)
+    if not safety["safe"]:
+        return None, facts, f"safety [{safety.get('category')}]: {safety.get('issue')}"
+    return episode, facts, ""
+
+
+def run_series_pipeline(
+    series_id: str,
+    platform: str,
+    dry_run: bool,
+    trend_niche: str = "психология",
+    account_id_override: str | None = None,
+) -> None:
+    """
+    Эпизод сериала: кейс (premium LLM) → факты → сценарий с репликами по ролям → fact-check/safety →
+    раскадровка → (кадры Nano Banana 2 + анимация Kling/Wan ∥ озвучка по ролям ∥ музыка) →
+    диалоговые субтитры → монтаж → оценка качества → QA → публикация.
+    """
+    from agents.anthology_agent import (load_series, next_episode_number, plan_shots, propose_cases,
+                                        recent_episodes, save_episode, spoken_text)
+
+    series = load_series(series_id)
+    run_id = f"{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_series_{series_id}"
+    set_run_id(run_id)
+    from utils.cost_tracker import set_run_id as set_cost_run_id, total_for_run
+    set_cost_run_id(run_id)
+    logger.info("=== Series-пайплайн run_id=%s ===", run_id)
+
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    _init_db(conn)
+    out_dir = os.path.join("output", "series", run_id)
+    os.makedirs(out_dir, exist_ok=True)
+
+    def retry(name, fn, *args, **kwargs):
+        return _run_with_retry(name, fn, conn, run_id, *args, **kwargs)
+
+    try:
+        episode_no = next_episode_number(series, DB_PATH)
+        log_message("orchestrator", f"«{series['name']}», эпизод {episode_no}", "anthology_agent")
+
+        # 1. Кейсы: тренды ниши — как необязательное вдохновение
+        try:
+            topics = [t["topic"] for t in step_trend_scout(trend_niche)][:5]
+        except Exception as exc:
+            logger.warning("Trend Scout для сериала: %s — без трендов", exc)
+            topics = []
+        cases = retry("anthology_cases", propose_cases, series, topics,
+                      recent_episodes(series, DB_PATH), 3, max_retries=2)
+        ideas = retry("topic_filter", step_topic_filter, [_case_as_idea(c, series) for c in cases],
+                      platform, trend_niche)
+        log_message("anthology_agent", f"Кейсов после фильтра: {len(ideas)}", "script_writer")
+
+        # 2. Сценарий: первый кейс, прошедший факт-чек и safety
+        episode, facts, idea = None, [], None
+        for candidate in ideas:
+            case = candidate["_case"]
+            episode, facts, reason = _series_episode_for_case(series, case, episode_no, platform, conn, run_id)
+            if episode:
+                idea = candidate
+                break
+            logger.warning("Кейс «%s» отклонён: %s", case["title"], reason)
+            log_message("orchestrator", f"Кейс «{case['title']}» отклонён: {reason}", "anthology_agent")
+        if episode is None:
+            raise ValueError("Ни один кейс не прошёл fact-check/safety — эпизод не собран")
+        _save_step(conn, run_id, "anthology_episode", "success",
+                   {"title": episode["title"], "case": episode["case"], "lines": episode["lines"]})
+        log_message("anthology_agent", f"Эпизод {episode_no}: «{episode['title']}», "
+                    f"{len(episode['lines'])} реплик, {len(spoken_text(episode).split())} слов", "scene_agent")
+
+        # 3. Раскадровка
+        plan = retry("anthology_shots", plan_shots, series, episode, max_retries=2)
+
+        # 4. Кадры+анимация ∥ озвучка ∥ музыка
+        from concurrent.futures import ThreadPoolExecutor
+        from agents import dialogue_voice, scene_agent
+
+        with ThreadPoolExecutor(max_workers=3, thread_name_prefix="series") as ex:
+            f_scenes = ex.submit(retry, "scene_agent", scene_agent.render, series, plan, out_dir, max_retries=1)
+            f_voice = ex.submit(retry, "dialogue_voice", dialogue_voice.synthesize, series, episode, out_dir)
+            f_music = ex.submit(step_music_agent, {"full_script": spoken_text(episode)}, trend_niche)
+            scenes, dialogue, music = f_scenes.result(), f_voice.result(), f_music.result()
+        log_message("scene_agent", f"Кадры и анимация: {[s.get('engine', 'still') for s in scenes['shots']]}, "
+                    f"{scenes['credits']} кр. KIE", "series_assembly")
+
+        # 5. Субтитры по ролям + монтаж
+        from agents.anthology_agent import speaker_labels
+        from agents.series_assembly import assemble
+        from agents.subtitle_agent import write_dialogue_ass
+
+        colors = series["subtitle_colors"]
+        role_colors = {"ВЕРА": colors["ВЕРА"], episode["client_role"]: colors["client"],
+                       "РАССКАЗЧИК": colors["РАССКАЗЧИК"]}
+        labels, intro_labels = speaker_labels(series, episode)
+        subtitle_path = os.path.abspath(os.path.join(out_dir, "subtitles.ass"))
+        write_dialogue_ass(dialogue["lines"], subtitle_path, role_colors,
+                           brand_text=f"{series['name']} · эпизод {episode_no}",
+                           labels=labels, intro_labels=intro_labels)
+        video_path = os.path.abspath(os.path.join(
+            "output", "video", f"{run_id}_ep{episode_no:03d}.mp4"))
+        os.makedirs(os.path.dirname(video_path), exist_ok=True)
+        video = retry("series_assembly", assemble, scenes["shots"], dialogue, subtitle_path, video_path,
+                      plan["assignment"], music["music_path"] if music else None, max_retries=2)
+        log_message("series_assembly", f"Эпизод собран: {video['duration']} с", "qa_agent")
+
+        # 6. Качество и QA
+        _quality_gate(conn, run_id, video, dialogue["lines"][0]["text"], dry_run)
+        retry("qa_agent", step_qa_agent, video, platform)
+
+        # 7. Публикация
+        title = f"{series['name']} · {episode_no}. {episode['title'] or episode['case']['title']}"[:95]
+        description = f"{dialogue['lines'][-1]['text']}\n\n{series['logline']}"
+        pub_idea = {"title": title, "hashtags": series["hashtags"]}
+        pub_result = retry("publisher_agent", step_publisher_agent, video, pub_idea, {"body": description},
+                           platform, dry_run, None, account_id_override, max_retries=1)
+
+        if not dry_run:
+            save_episode(series, episode, run_id, pub_result.get("post_id", ""), DB_PATH)
+            step_mark_published(idea)
+        try:
+            step_notify_success(pub_idea, pub_result, platform, video, dry_run=dry_run)
+        except Exception as exc:
+            logger.warning("Уведомление не отправлено: %s", exc)
+
+        cost = total_for_run(run_id)
+        _save_step(conn, run_id, "pipeline", "completed", {
+            "idea": title, "post_id": pub_result.get("post_id"), "platform": platform,
+            "niche": trend_niche, "format": "series", "series": series_id, "episode": episode_no,
+            "cost_usd": round(cost, 3), "voice_engine": dialogue["engine"],
+        })
+        logger.info("=== Эпизод %d «%s» готов: %s (≈ $%.2f) ===", episode_no, title, video["video_path"], cost)
+
+    except Exception as exc:
+        tb = traceback.format_exc()
+        logger.critical("Series-пайплайн упал: %s\n%s", exc, tb)
+        _save_step(conn, run_id, "pipeline", "failed", error=redact(exc))
+        if not isinstance(exc, StepFailedError):
+            _alert("series_pipeline", f"[{series_id}] {exc}")
+        sys.exit(1)
+
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -1182,10 +1357,20 @@ def main() -> None:
         "--format",
         dest="video_format",
         default="clips",
-        choices=["clips", "story"],
-        help="Формат видео: clips — стоковый монтаж, story — серийная история с лором",
+        choices=["clips", "story", "series"],
+        help="Формат видео: clips — стоковый монтаж, story — серийная история с лором, "
+             "series — сериал-антология через KIE (config/series/<id>.json)",
     )
+    parser.add_argument("--series", default="kabinet7", help="ID сериала для --format series")
     args = parser.parse_args()
+
+    if args.video_format == "series":
+        if args.niches:
+            parser.error("--format series поддерживает только одну нишу (--niche — тренды для кейсов)")
+        env_key = f"ZERNIO_ACCOUNT_ID_{args.series.upper()}"
+        run_series_pipeline(series_id=args.series, platform=args.platform, dry_run=args.dry_run,
+                            trend_niche=args.niche, account_id_override=os.getenv(env_key) or None)
+        return
 
     if args.video_format == "story":
         if args.niches:
