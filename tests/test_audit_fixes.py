@@ -266,6 +266,7 @@ def run(dry_run, fact=None, publisher=None):
         patch.object(main, "step_script_writer", return_value=dict(script)),
         patch.object(main, "step_fact_checker", return_value=fact or {"valid": True}),
         patch("agents.script_writer.improve_hook", return_value={"chosen_index": 0}),
+        patch("agents.script_writer.fix_script", return_value=None),  # без живого LLM
         patch.object(main, "step_series_check", return_value=None),
         patch.object(main, "step_safety_agent", return_value={"safe": True}),
         patch.object(main, "step_voice_agent", return_value={"audio_path": "a.mp3"}),
@@ -311,7 +312,8 @@ open(%(result)r, "w", encoding="utf-8").write(json.dumps(out))
 def test_run_pipeline_dry_run_fact_check_and_single_publish(tmp_path):
     result_file = tmp_path / "result.json"
     code = _PIPELINE_HARNESS % {"db": str(tmp_path / "p.db"), "root": str(ROOT), "result": str(result_file)}
-    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, cwd=str(ROOT), timeout=300)
+    # cwd=tmp_path: main.py пишет logs/ относительно cwd — тест не должен мусорить в проекте
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, cwd=str(tmp_path), timeout=300)
     assert result_file.exists(), proc.stderr.decode("utf-8", "replace")[-3000:]
     out = json.loads(result_file.read_text(encoding="utf-8"))
 

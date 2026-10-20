@@ -112,7 +112,7 @@ def _extract_frames(video_path: str, num_frames: int = 5) -> list[str]:
         try:
             subprocess.run(
                 [ffmpeg, "-y", "-ss", f"{t:.2f}", "-i", video_path,
-                 "-vframes", "1", "-q:v", "3", out_path],
+                 "-vframes", "1", "-q:v", "3", "-strict", "unofficial", out_path],
                 capture_output=True, check=True, timeout=15,
             )
             if os.path.exists(out_path) and os.path.getsize(out_path) > 1000:

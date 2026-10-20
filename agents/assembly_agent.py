@@ -37,17 +37,9 @@ PLATFORM_RESOLUTION = {
     "twitter":   (1080, 1920),
 }
 
-_SUBTITLE_STYLE = (
-    "FontName=Arial,"
-    "FontSize=48,"
-    "PrimaryColour=&H00FFFFFF,"
-    "OutlineColour=&H00000000,"
-    "BorderStyle=1,"
-    "Outline=3,"
-    "Shadow=1,"
-    "Alignment=2,"
-    "MarginV=60"
-)
+# Стиль субтитров задаёт сам ASS-файл (subtitle_agent: Impact 96, обводка 8, pop-анимация).
+# Раньше здесь был force_style с Arial 48 — он перебивал стиль файла, и субтитры
+# выходили в ~3 раза мельче задуманного (оценщик качества отмечал «мелкие субтитры»).
 
 # --- Viral pacing ---
 SEG_SIZE = 2.0        # средняя длина сегмента (TikTok ~2-2.3 сек)
@@ -1261,8 +1253,7 @@ def _assemble_with_clips(
     if subtitle_path:
         delayed_sub = _delay_subtitle_past_hook(subtitle_path, HOOK_DUR)
         filter_parts.append(
-            f"[vcat_vig]subtitles='{_esc(delayed_sub)}'"
-            f":force_style='{_SUBTITLE_STYLE}'[vwithsub]"
+            f"[vcat_vig]subtitles='{_esc(delayed_sub)}'[vwithsub]"
         )
         pre_sub_label = "[vwithsub]"
 
@@ -1366,8 +1357,7 @@ def _assemble_black(
 
     if subtitle_path:
         filter_parts.append(
-            f"[vgrad_vig]subtitles='{_esc(subtitle_path)}'"
-            f":force_style='{_SUBTITLE_STYLE}'[vout]"
+            f"[vgrad_vig]subtitles='{_esc(subtitle_path)}'[vout]"
         )
         video_map = "[vout]"
     else:

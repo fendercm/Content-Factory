@@ -20,8 +20,11 @@ def _gemini_http(status: int, payload: dict) -> MagicMock:
 @pytest.fixture(autouse=True)
 def _fresh_providers(monkeypatch):
     """Каждый тест — с чистым circuit breaker и предсказуемым окружением."""
+    import utils.llm_client as llm_client
     import utils.providers as providers
     providers._dead.clear()
+    # Учёт стоимости пишет в боевой pipeline.db — в тестах не нужен
+    monkeypatch.setattr(llm_client, "_track", lambda *a, **k: None)
     monkeypatch.setenv("BUDGET_MODE", "free")
     monkeypatch.setenv("GEMINI_API_KEY", "g-key")
     monkeypatch.setenv("GROQ_API_KEY", "q-key")

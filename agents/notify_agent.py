@@ -65,7 +65,7 @@ def _extract_frame(video_path: str) -> bytes | None:
             [
                 ffmpeg, "-y", "-i", video_path,
                 "-ss", "2", "-vframes", "1",
-                "-vf", "scale=540:-2",
+                "-vf", "scale=540:-2", "-strict", "unofficial",
                 tmp_path,
             ],
             capture_output=True, check=True, timeout=30,
