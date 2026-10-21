@@ -587,6 +587,332 @@ def write_episode(series: dict, case: dict, facts: list[dict], episode_no: int,
     raise ValueError(f"Anthology: эпизод не удался: {'; '.join(problems)}")
 
 
+# ── Лаборатория v2: завязка → история прозой → диалог по тактам → критик ─────
+# Почему так: сценарии, написанные сразу диалогом по общему брифу, автор браковал (скучно, тяжело,
+# неживая речь). Принятый «Бублик» держится на четырёх вещах: ложь живёт в предмете, ставки — сегодня,
+# поворот — один вопрос героини, финал — поступок. Интересность решается на завязке, поэтому автор
+# отбирает завязки, а не готовые тексты; сюжет строится прозой, речь — отдельным шагом (2026-10-21).
+
+_PITCHES_PROMPT = """{bible}
+
+Придумай {n} завязок для новых эпизодов. Это питч: по нему автор решает, писать ли серию.
+
+СИЛЬНАЯ ЗАВЯЗКА:
+- Ложь или тайна, которую можно показать: человек давно делает что-то конкретное, чтобы скрыть правду
+  от близкого — вещь, ритуал, привычка. Её можно снять камерой.
+- Сейчас: правда вот-вот вскроется — сегодня, в эту минуту; близкий человек рядом, едет или уже знает.
+- Поворот — в людях: в конце всплывает факт про другого человека или про самого клиента, после
+  которого первая фраза эпизода звучит иначе. Не улики, не документы, не совпадения.
+- Финал — поступок клиента, а не вывод.
+- Пересказывается одной фразой; зритель узнаёт себя или своих близких.
+- Темы: семья, пары, родители и взрослые дети, дружба, деньги в семье, утраты, зависть, ревность.
+  Без политики, медицины и диагнозов, 18+, насилия, самоповреждения. Офис, гаджеты и учёба — скучно.
+- Завязки разные: возраст, пол, жизнь клиента, кому он врёт и почему.
+{taste}{recent}{idea}
+Верни JSON: {{"pitches": [{{
+  "title": "до 30 символов, без спойлера",
+  "logline": "одна-две фразы: кто, что скрывает и что происходит сегодня",
+  "object": "вещь или действие, в котором живёт ложь",
+  "now": "что случилось сегодня",
+  "twist": "что всплывёт в конце, одной фразой",
+  "ending": "поступок клиента в финале",
+  "client_name": "русское имя", "age": 30, "gender": "female|male", "occupation": "кто по жизни"
+}}]}}"""
+
+_STORY_PROMPT = """{bible}
+
+ЗАВЯЗКА: {logline}
+Вещь/действие: {object}. Сегодня: {now}. Поворот: {twist}. Финал: {ending}.
+Клиент: {client_name}, {age}, {occupation}.
+
+Расскажи эту историю прозой, 120-180 слов, как пересказывают другу: что клиент делает и зачем, как
+началась ложь, что случилось сегодня, о чём он молчит и почему, какой факт в конце переворачивает
+историю и каким поступком всё кончается. Причины и чувства — простыми словами, без психологических
+терминов. Проверь логику: каждый поступок объясним, поворот следует из фактов, а не из совпадения.
+
+Верни JSON: {{"story": "проза",
+  "title": "название эпизода до 30 символов", "surface_complaint": "с чем пришёл, одной фразой",
+  "stakes": "что клиент теряет и когда", "secret": "что скрывает", "real_reason": "настоящая причина",
+  "hook": "первая фраза клиента", "signature_detail": "вещь в кадре, связанная с тайной",
+  "psych_concept": "механизм по-русски, 1-3 слова", "research_query": "2-5 слов"}}"""
+
+_BEATS_PROMPT = """{bible}
+
+ИСТОРИЯ ЭПИЗОДА:
+{story}
+
+Клиент: {client_name}, {age}, {occupation}. Вещь в кадре: {signature_detail}.
+
+Напиши сцену {setting}: {words_min}-{words_max} слов во всех репликах вместе, {lines_min}-{lines_max} реплик.
+
+ТАКТЫ (порядок обязателен, формулировки — свои):
+1. Клиент: признание в лоб — что он делает или скрывает. Понятно без контекста, до 20 слов.
+2. {hero_name}: имя клиента и короткий вопрос о близком человеке — до 6 слов.
+3. Клиент: как он поддерживает ложь — конкретная привычка или вещь.
+4. Клиент: «а сегодня…» — что случилось сегодня, ставки здесь и сейчас.
+5. {hero_name}: короткий вопрос о том, что знает или думает близкий.
+6. Клиент: ответ, от которого ставки становятся выше.
+7. {hero_name}: прямой вопрос «почему» о главном поступке — до 6 слов.
+8. Клиент: настоящая причина — коротко, простыми словами, голос срывается.
+9. {hero_name}: вопрос, который смотрит с другой стороны — о другом человеке или о времени.
+10. Клиент: ответ, в котором всплывает факт, переворачивающий историю (одна-две реплики).
+11. {hero_name}: одна тёплая фраза, после которой всё видно иначе — до 15 слов. Не мораль и не совет.
+12. Клиент: поступок или решение — до 6 слов.
+
+РЕЧЬ:
+- Короткие фразы, как говорят вслух. Реплика клиента — до 25 слов, у {hero_name} — до 15.
+- Ни одного книжного оборота, канцелярита, психологического термина; фамилий нет.
+- Ни одна мысль не повторяется. Близких называют как в жизни: «мама», «Лёша».
+- Каждой реплике — пометка, как её сыграть: 2-4 слова в квадратных скобках.
+
+РОЛИ: {hero}, {client_role}.
+
+ФОРМАТ ОТВЕТА (строго):
+НАЗВАНИЕ: <до 30 символов>
+СЦЕНАРИЙ:
+<РОЛЬ>: [как сказать] <реплика>
+..."""
+
+_CRITIC_CHECKS = {
+    "clear_start": "Первая реплика понятна без контекста и цепляет — хочется узнать, что дальше",
+    "object": "Ложь или тайна живёт в конкретной вещи или действии, которые можно показать",
+    "now": "Ставки — сегодня: что-то случилось прямо сейчас",
+    "hero_short": "Героиня говорит коротко, задаёт простые вопросы о людях, не читает лекций и не ставит диагнозов",
+    "turn": "Поворот всплывает из ответа на вопрос героини и меняет смысл первой реплики",
+    "ending_action": "Финал — поступок или решение клиента, а не вывод и не мораль",
+    "live_speech": "Речь живая: короткие фразы, нет книжных оборотов, канцелярита и терминов",
+    "no_repeats": "Мысли и фразы не повторяются, каждая реплика добавляет новое",
+    "logic": "История логична: поступки объяснимы, нет натяжек и совпадений",
+}
+
+_CRITIC_PROMPT = """Ты — строгий редактор вертикального сериала. Зрителю 25-45 лет, он смотрит в ленте вполуха
+и пролистывает на третьей секунде скуки. Оцени сценарий по пунктам.
+
+ПУНКТЫ:
+{checks}
+
+СЦЕНАРИЙ (номер. РОЛЬ: реплика):
+{lines}
+
+Верни JSON: {{"checks": {{"<код пункта>": true|false, ...}},
+  "watch": <1-10: досмотрит ли зритель до конца и захочет ли следующую серию>,
+  "fixes": ["реплика N: что именно не так и как исправить", ...]}}
+Fixes — только по проваленным пунктам и по самым слабым местам, не больше пяти."""
+
+_REWRITE_PROMPT = """Перепиши сценарий по замечаниям редактора. Сохрани историю, роли, такты и пометки
+в квадратных скобках; меняй только то, на что указали. Объём {words_min}-{words_max} слов.
+
+ИСТОРИЯ:
+{story}
+
+СЦЕНАРИЙ:
+{lines}
+
+ЗАМЕЧАНИЯ:
+{fixes}
+
+ФОРМАТ ОТВЕТА (строго):
+НАЗВАНИЕ: {title}
+СЦЕНАРИЙ:
+<РОЛЬ>: [как сказать] <реплика>
+..."""
+
+_LAB_NGRAMS = _ngrams(_PITCHES_PROMPT + _STORY_PROMPT + _BEATS_PROMPT + _REWRITE_PROMPT, 4)
+CRITIC_PASS = 7       # «досмотрит» от 7 из 10 и все пункты — сценарий принят без переписки
+CRITIC_ROUNDS = 2     # переписок по замечаниям
+
+
+def _pitch_conn(db_path: str) -> sqlite3.Connection:
+    conn = sqlite3.connect(db_path, timeout=10)
+    conn.execute("CREATE TABLE IF NOT EXISTS lab_pitches (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                 "series_id TEXT NOT NULL, batch TEXT, data TEXT NOT NULL, vote INTEGER NOT NULL DEFAULT 0, "
+                 "used INTEGER NOT NULL DEFAULT 0, created_at TEXT)")
+    return conn
+
+
+def save_pitches(series: dict, pitches: list[dict], batch: str, db_path: str) -> list[int]:
+    from datetime import datetime, timezone
+    conn = _pitch_conn(db_path)
+    try:
+        ids = [conn.execute("INSERT INTO lab_pitches (series_id, batch, data, created_at) VALUES (?,?,?,?)",
+                            (series["id"], batch, json.dumps(p, ensure_ascii=False),
+                             datetime.now(timezone.utc).isoformat())).lastrowid for p in pitches]
+        conn.commit()
+        return ids
+    finally:
+        conn.close()
+
+
+def list_pitches(series_id: str, db_path: str, limit: int = 60, ids: list[int] | None = None) -> list[dict]:
+    conn = _pitch_conn(db_path)
+    try:
+        sql = "SELECT id, batch, data, vote, used, created_at FROM lab_pitches WHERE series_id=?"
+        args: list = [series_id]
+        if ids:
+            sql += f" AND id IN ({','.join('?' * len(ids))})"
+            args += ids
+        rows = conn.execute(sql + " ORDER BY id DESC LIMIT ?", (*args, limit)).fetchall()
+    finally:
+        conn.close()
+    return [{"id": r[0], "batch": r[1], **json.loads(r[2]), "vote": r[3], "used": bool(r[4]), "created_at": r[5]}
+            for r in rows]
+
+
+def set_pitch(pitch_id: int, db_path: str, vote: int | None = None, used: bool | None = None) -> bool:
+    conn = _pitch_conn(db_path)
+    try:
+        cur = None
+        if vote is not None:
+            cur = conn.execute("UPDATE lab_pitches SET vote=? WHERE id=?", (vote, pitch_id))
+        if used is not None:
+            cur = conn.execute("UPDATE lab_pitches SET used=? WHERE id=?", (int(used), pitch_id))
+        conn.commit()
+        return bool(cur and cur.rowcount)
+    finally:
+        conn.close()
+
+
+def _taste_text(series_id: str, db_path: str) -> str:
+    """Вкус автора по его отметкам: последние понравившиеся и забракованные завязки."""
+    voted = [p for p in list_pitches(series_id, db_path, limit=200) if p["vote"]]
+    liked = [p["logline"] for p in voted if p["vote"] > 0][:8]
+    disliked = [p["logline"] for p in voted if p["vote"] < 0][:8]
+    if not liked and not disliked:
+        return ""
+    out = "\nВКУС АВТОРА СЕРИАЛА (не повторяй эти сюжеты, ориентируйся на то, что ему нравится):\n"
+    if liked:
+        out += "Понравились:\n" + "\n".join(f"  + {t}" for t in liked) + "\n"
+    if disliked:
+        out += "Не понравились:\n" + "\n".join(f"  - {t}" for t in disliked) + "\n"
+    return out
+
+
+def propose_pitches(series: dict, recent: list[dict], n: int, db_path: str, idea: str | None = None) -> list[dict]:
+    recent_txt = ("\nУже вышли (не повторяй):\n" + "\n".join(f"  - «{e['title']}»" for e in recent)) if recent else ""
+    idea_txt = (f"\nИДЕЯ АВТОРА — строй все завязки на ней, каждая со своим поворотом:\n{idea.strip()}\n"
+                if idea else "")
+    raw = _llm([{"role": "system", "content": _CRAFT.format(**hero_fields(series))},
+                {"role": "user", "content": _PITCHES_PROMPT.format(
+                    bible=bible_text(series), n=n, taste=_taste_text(series["id"], db_path),
+                    recent=recent_txt, idea=idea_txt)}],
+               tier="premium", json_mode=True, max_tokens=4000, caller="anthology_pitches")
+    required = {"title", "logline", "object", "now", "twist", "ending", "client_name", "age", "gender", "occupation"}
+    pitches = [p for p in _json(raw).get("pitches") or [] if required <= set(p)]
+    if not pitches:
+        raise ValueError(f"Anthology: LLM не вернул завязок: {raw[:200]}")
+    return pitches[:n]
+
+
+def develop_story(series: dict, pitch: dict) -> dict:
+    """Завязка → история прозой + поля кейса (совместимы с write_episode и производством)."""
+    raw = _llm([{"role": "system", "content": _CRAFT.format(**hero_fields(series))},
+                {"role": "user", "content": _STORY_PROMPT.format(bible=bible_text(series), **pitch)}],
+               tier="premium", json_mode=True, max_tokens=2000, caller="anthology_story")
+    data = _json(raw)
+    if not str(data.get("story", "")).strip():
+        raise ValueError(f"Anthology: история не написана: {raw[:200]}")
+    case = {k: pitch[k] for k in ("client_name", "age", "gender", "occupation")}
+    case.update({k: str(data.get(k) or "").strip() for k in
+                 ("title", "surface_complaint", "stakes", "secret", "real_reason", "hook", "signature_detail",
+                  "psych_concept", "research_query")})
+    case["title"] = case["title"] or pitch["title"]
+    case["signature_detail"] = case["signature_detail"] or pitch["object"]
+    return {"case": case, "story": data["story"].strip()}
+
+
+def _lines_numbered(lines: list[dict]) -> str:
+    return "\n".join(f"{i}. {l['role']}: " + (f"[{l['emotion']}] " if l.get("emotion") else "") + l["text"]
+                     for i, l in enumerate(lines, 1))
+
+
+def critique_episode(episode: dict) -> dict:
+    """Оценка по чек-листу (другой моделью, не сценаристом). Сбой критика — None в score."""
+    checks_txt = "\n".join(f"- {k}: {v}" for k, v in _CRITIC_CHECKS.items())
+    try:
+        data = _json(_llm([{"role": "user", "content": _CRITIC_PROMPT.format(
+            checks=checks_txt, lines=_lines_numbered(episode["lines"]))}],
+            tier="quality", json_mode=True, max_tokens=1200, caller="anthology_critic"))
+    except Exception as exc:
+        logger.warning("Anthology: критик не ответил (%s)", str(exc)[:120])
+        return {"score": None, "failed": [], "fixes": []}
+    checks = data.get("checks") or {}
+    failed = [k for k in _CRITIC_CHECKS if checks.get(k) is False]
+    try:
+        score = max(1, min(int(data.get("watch")), 10))
+    except (TypeError, ValueError):
+        score = None
+    return {"score": score, "failed": failed, "fixes": [str(f) for f in data.get("fixes") or []][:5]}
+
+
+def _lab_problems(ep: dict, series: dict) -> list[str]:
+    problems = validate_episode(ep, series)
+    for line in ep["lines"]:
+        if _ngrams(line["text"], 4) & (_BRIEF_NGRAMS | _LAB_NGRAMS):
+            problems.append(f"реплика «{line['text']}» скопирована из инструкции")
+            break
+    return problems
+
+
+def write_from_pitch(series: dict, pitch: dict, episode_no: int = 1) -> dict:
+    """
+    Завязка → история → диалог по тактам → критик → до CRITIC_ROUNDS переписок.
+    Возвращает лучший вариант (по оценке критика среди прошедших проверки) с историей и замечаниями.
+    """
+    dev = develop_story(series, pitch)
+    case, story = dev["case"], dev["story"]
+    client_role = case["client_name"].upper()
+    hero = series["heroine"]["role"]
+    fields = dict(bible=bible_text(series), story=story, client_name=case["client_name"], age=case["age"],
+                  occupation=case["occupation"], signature_detail=case["signature_detail"],
+                  words_min=series["words_min"], words_max=series["words_max"], client_role=client_role,
+                  lines_min=series.get("lines_min", 10), lines_max=series.get("lines_max", 18),
+                  **hero_fields(series))
+    system = {"role": "system", "content": _CRAFT.format(**hero_fields(series))}
+
+    def parse(raw: str, title: str = "") -> dict:
+        ep = parse_screenplay(raw, client_role, hero)
+        ep["title"] = re.sub(rf"^\W*{re.escape(series['name'])}\W*", "", ep["title"], flags=re.I) or title or case["title"]
+        ep.update({"episode_no": episode_no, "case": case, "client_role": client_role})
+        return ep
+
+    prompt = _BEATS_PROMPT.format(**fields)
+    ep, problems = None, []
+    for _ in range(2):
+        ep = parse(_llm([system, {"role": "user", "content": prompt}], tier="premium", json_mode=False,
+                        max_tokens=3000, caller="anthology_episode"))
+        problems = _lab_problems(ep, series)
+        if not problems:
+            break
+        logger.warning("Anthology lab: диалог не прошёл проверку (%s)", "; ".join(problems))
+        prompt += f"\n\nПРЕДЫДУЩАЯ ВЕРСИЯ ОТКЛОНЕНА: {'; '.join(problems)}. Исправь это."
+    if problems:
+        raise ValueError(f"диалог не удался: {'; '.join(problems)}")
+
+    best, rounds = None, []
+    for rnd in range(CRITIC_ROUNDS + 1):
+        review = critique_episode(ep)
+        rounds.append({"score": review["score"], "failed": review["failed"], "fixes": review["fixes"]})
+        if best is None or (review["score"] or 0) > (best[1]["score"] or 0):
+            best = (ep, review)
+        passed = review["score"] is None or (review["score"] >= CRITIC_PASS and not review["failed"])
+        if passed or rnd == CRITIC_ROUNDS or not review["fixes"]:
+            break
+        raw = _llm([system, {"role": "user", "content": _REWRITE_PROMPT.format(
+            story=story, lines=_lines_numbered(ep["lines"]), fixes="\n".join(f"- {f}" for f in review["fixes"]),
+            title=ep["title"], words_min=series["words_min"], words_max=series["words_max"])}],
+            tier="premium", json_mode=False, max_tokens=3000, caller="anthology_episode")
+        candidate = parse(raw, ep["title"])
+        bad = _lab_problems(candidate, series)
+        if bad:
+            logger.warning("Anthology lab: переписка не прошла проверку (%s) — оставляю прошлую", "; ".join(bad))
+            break
+        ep = candidate
+    ep, review = best
+    return {**ep, "story": story, "pitch": pitch,
+            "critic": {"score": review["score"], "failed": review["failed"], "fixes": review["fixes"],
+                       "rounds": rounds}}
+
+
 # ── Раскадровка: монтаж по говорящему ────────────────────────────────────────
 
 def _line_no(value, n: int) -> int | None:

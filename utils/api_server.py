@@ -489,7 +489,8 @@ _procs: dict[str, subprocess.Popen] = {}
 _jobs_lock = threading.Lock()
 _JOB_TITLES = {"prepare": "Собрать эпизоды", "script": "Собрать по сценарию", "resume": "Доделать сборку",
                "publish_next": "Опубликовать следующий", "lab": "Лаборатория сценариев",
-               "analytics": "Обновить аналитику", "heroine": "Портреты героини", "scheduler": "Планировщик"}
+               "analytics": "Обновить аналитику", "heroine": "Портреты героини", "scheduler": "Планировщик",
+               "pitches": "Завязки серий"}
 
 
 def _job_command(kind: str, series: dict | None, data: dict) -> list[str]:
@@ -503,6 +504,17 @@ def _job_command(kind: str, series: dict | None, data: dict) -> list[str]:
     sid = series["id"]
     if kind == "heroine":
         return py + [str(ROOT_DIR / "scripts" / "series_setup.py"), sid]
+    if kind == "pitches":
+        n = max(3, min(int(data.get("n", 12)), 20))
+        idea = str(data.get("idea") or "").strip()[:2000]
+        return py + [str(ROOT_DIR / "scripts" / "script_lab.py"), "--series", sid, "--pitches", "--n", str(n)] + \
+            (["--idea", idea] if idea else [])
+    if kind == "lab" and data.get("pitch_ids"):
+        ids = [int(i) for i in data["pitch_ids"] if str(i).isdigit()][:6]
+        if not ids:
+            raise ValueError("отметьте завязки")
+        return py + [str(ROOT_DIR / "scripts" / "script_lab.py"), "--series", sid, "--same",
+                     "--from-pitches", ",".join(map(str, ids))]
     if kind == "lab":
         n = max(1, min(int(data.get("n", 4)), 8))
         idea = str(data.get("idea") or "").strip()
@@ -724,6 +736,27 @@ def api_overview():
 
 
 # ── Лаборатория и сценарии ────────────────────────────────────────────────────
+
+@app.get("/api/pitches")
+def api_pitches():
+    from agents.anthology_agent import list_pitches
+    series_id = request.args.get("series", "")
+    if not _ID_RE.match(series_id):
+        return jsonify({"error": "нужен сериал"}), 400
+    return jsonify(list_pitches(series_id, DB_PATH, limit=_int_arg("limit", 60, hi=200)))
+
+
+@app.post("/api/pitches/<int:pitch_id>")
+def api_pitch_vote(pitch_id: int):
+    """Отметка автора: 1 — нравится, -1 — нет, 0 — снять. Отметки учатся в следующих завязках."""
+    from agents.anthology_agent import set_pitch
+    vote = _body().get("vote")
+    if vote not in (1, 0, -1):
+        return jsonify({"error": "vote: 1, 0 или -1"}), 400
+    if not set_pitch(pitch_id, DB_PATH, vote=vote):
+        return jsonify({"error": "завязка не найдена"}), 404
+    return jsonify({"ok": True})
+
 
 @app.get("/api/lab")
 def api_lab_list():

@@ -60,6 +60,16 @@ def _write(series: dict, case: dict, writers: list[str]) -> dict:
         return {"case": case, "error": str(exc)[:300], "model": _tls.answered}
 
 
+def _write_pitch(series: dict, pitch: dict, writers: list[str]) -> dict:
+    _tls.writers, _tls.answered = writers, writers[0]
+    try:
+        ep = aa.write_from_pitch(series, pitch)
+        return {"case": ep["case"], "episode": ep, "model": _tls.answered, "pitch_id": pitch["id"]}
+    except Exception as exc:
+        case = {"title": pitch["title"], **{k: pitch[k] for k in ("client_name", "age", "occupation")}}
+        return {"case": case, "error": str(exc)[:300], "model": _tls.answered, "pitch_id": pitch["id"]}
+
+
 def main() -> None:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -70,11 +80,40 @@ def main() -> None:
     parser.add_argument("--same", action="store_true",
                         help="все сценарии пишет первый из --writers, остальные — резерв (без чередования)")
     parser.add_argument("--idea", default="", help="замысел автора: кейсы строятся на нём")
+    parser.add_argument("--pitches", action="store_true",
+                        help="только завязки (--n штук) — автор отмечает 👍/👎 в панели")
+    parser.add_argument("--from-pitches", default="",
+                        help="id завязок через запятую: история → диалог по тактам → критик")
     args = parser.parse_args()
 
     aa._llm = _llm_by_thread
     series = aa.load_series(args.series)
     writers = [w.strip() for w in args.writers.split(",") if w.strip()]
+    stamp = datetime.now().strftime("%Y%m%d_%H%M")
+
+    if args.pitches:
+        print(f"Завязки ({args.n})...", flush=True)
+        pitches = aa.propose_pitches(series, aa.recent_episodes(series, DB_PATH), args.n, DB_PATH,
+                                     idea=args.idea or None)
+        aa.save_pitches(series, pitches, stamp, DB_PATH)
+        for p in pitches:
+            print(f"- {p['title']}: {p['logline']}")
+        return
+
+    results = None
+    if args.from_pitches:
+        ids = [int(x) for x in args.from_pitches.split(",") if x.strip().isdigit()]
+        pitches = aa.list_pitches(series["id"], DB_PATH, limit=len(ids), ids=ids)
+        if not pitches:
+            sys.exit("завязки не найдены")
+        print(f"Сценарии по завязкам: {len(pitches)} шт. параллельно...", flush=True)
+        with ThreadPoolExecutor(max_workers=len(pitches)) as ex:
+            results = list(ex.map(lambda p: _write_pitch(series, p, writers), pitches))
+        for r in results:
+            if "episode" in r:
+                aa.set_pitch(r["pitch_id"], DB_PATH, used=True)
+        _save(series, results, stamp, args.idea)
+        return
     print(f"Кейсы ({args.n})...", flush=True)
     cases = aa.propose_cases(series, [], aa.recent_episodes(series, DB_PATH), args.n, idea=args.idea or None)
 
@@ -84,13 +123,15 @@ def main() -> None:
     print(f"Сценарии: {len(jobs)} шт. параллельно...", flush=True)
     with ThreadPoolExecutor(max_workers=len(jobs)) as ex:
         results = list(ex.map(lambda job: _write(series, *job), jobs))
+    _save(series, results, stamp, args.idea)
 
-    stamp = datetime.now().strftime("%Y%m%d_%H%M")
+
+def _save(series: dict, results: list[dict], stamp: str, idea: str = "") -> None:
     out_dir = ROOT / "output" / "script_lab"
     out_dir.mkdir(parents=True, exist_ok=True)
     md, key = [f"# Лаборатория сценариев «{series['name']}» — {stamp}\n"], {}
-    if args.idea:
-        md.append(f"Идея: {args.idea}\n")
+    if idea:
+        md.append(f"Идея: {idea}\n")
     for i, r in enumerate(results):
         label = chr(ord("A") + i)
         key[label] = r["model"]
@@ -110,7 +151,11 @@ def main() -> None:
     (out_dir / f"{stamp}_key.json").write_text(json.dumps(key, ensure_ascii=False, indent=1), encoding="utf-8")
     # Кейсы и сценарии целиком — чтобы удачный доработать или собрать в видео
     saved = {chr(ord("A") + i): {"case": r["case"], "model": r["model"],
-                                 "episode": {k: r["episode"][k] for k in ("title", "lines")} if "episode" in r else None}
+                                 "episode": {k: r["episode"][k] for k in ("title", "lines")} if "episode" in r else None,
+                                 **({k: r["episode"][k] for k in ("story", "critic") if k in r["episode"]}
+                                    if "episode" in r else {}),
+                                 **({"pitch_id": r["pitch_id"]} if "pitch_id" in r else {}),
+                                 **({"error": r["error"]} if "error" in r else {})}
              for i, r in enumerate(results)}
     (out_dir / f"{stamp}.json").write_text(json.dumps(saved, ensure_ascii=False, indent=1), encoding="utf-8")
     print(path)

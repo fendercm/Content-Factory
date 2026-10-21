@@ -151,6 +151,14 @@ textarea.inp{min-height:90px;resize:vertical;font-family:inherit}
 <!-- СЦЕНАРИИ -->
 <section class="page" id="p-scripts">
   <h1>Сценарии</h1><div class="sub">Лаборатория вариантов и сценарии для производства</div>
+  <div class="card"><h2>💡 Завязки <span class="small dim" style="font-weight:400">— отберите идеи, сценарии напишутся только по ним</span></h2>
+    <div class="row"><span class="muted">Придумать</span><select class="sel" id="pitchN"><option>8</option><option selected>12</option><option>16</option></select><span class="muted">завязок</span>
+      <button class="btn pri" onclick="startPitches()">Придумать</button><span class="small dim">≈1 минута, копейки. Ваши 👍/👎 учатся: следующие завязки будут ближе к вашему вкусу</span></div>
+    <textarea class="inp" id="pitchIdea" rows="2" style="margin-top:10px" placeholder="Идея (необязательно): тема или ситуация — завязки построятся на ней"></textarea>
+    <div id="pitchList" style="margin-top:12px"></div>
+    <div class="row" style="margin-top:10px"><button class="btn pri" id="pitchWrite" onclick="writeLiked()" disabled>✍️ Написать сценарии по 👍</button>
+      <span class="small dim">по каждой: история прозой → диалог по тактам → проверка критиком и переписка; ≈5 минут</span></div>
+  </div>
   <div class="card"><h2>🧪 Лаборатория</h2>
     <div class="row"><span class="muted">Написать</span><select class="sel" id="labN"><option>2</option><option selected>4</option><option>6</option></select><span class="muted">сценария текстом</span>
       <button class="btn pri" onclick="startLab()">Запустить</button><span class="small dim">≈3–5 минут, копейки; видео не собирается</span></div>
@@ -316,7 +324,35 @@ function resumeRun(runId) { if (confirm('Доделать сборку? Гото
 
 // ── сценарии ──
 function renderLines(lines) { return `<div class="script">${lines.map(l => `<div><span class="role">${esc(l.role)}:</span> ${l.emotion ? `<span class="emo">[${esc(l.emotion)}]</span> ` : ''}${esc(l.text)}</div>`).join('')}</div>`; }
+// ── завязки ──
+let pitches = [];
+const PITCH_FRESH = p => p.vote > 0 && !p.used;
+async function loadPitches() {
+  pitches = await api('/pitches?series=' + S);
+  const shown = pitches.filter(p => p.vote >= 0 || Date.now() - new Date(p.created_at) < 864e5).slice(0, 24);
+  const html = shown.length ? shown.map(p => `<div class="card" style="background:var(--panel2);margin-bottom:8px;padding:12px;${p.vote > 0 ? 'border-color:var(--ok)' : p.vote < 0 ? 'opacity:.5' : ''}">
+    <div class="row"><b>${esc(p.title)}</b>${p.used ? '<span class="badge b-acc">написан</span>' : ''}<span style="flex:1"></span>
+      <button class="btn sm ${p.vote > 0 ? 'pri' : ''}" onclick="votePitch(${p.id},${p.vote > 0 ? 0 : 1})">👍</button>
+      <button class="btn sm ${p.vote < 0 ? 'danger' : ''}" onclick="votePitch(${p.id},${p.vote < 0 ? 0 : -1})">👎</button></div>
+    <div style="margin:6px 0">${esc(p.logline)}</div>
+    <div class="small dim">${esc(p.client_name)}, ${esc(p.age)}, ${esc(p.occupation)} · вещь: ${esc(p.object)} · сегодня: ${esc(p.now)}</div>
+    <details class="small dim" style="margin-top:4px"><summary>поворот и финал</summary>${esc(p.twist)} → ${esc(p.ending)}</details></div>`).join('')
+    : '<div class="empty">Завязок пока нет — нажмите «Придумать»</div>';
+  if (html !== $('pitchList').dataset.html) { $('pitchList').innerHTML = html; $('pitchList').dataset.html = html; }
+  const n = pitches.filter(PITCH_FRESH).length;
+  $('pitchWrite').disabled = !n; $('pitchWrite').textContent = `✍️ Написать сценарии по 👍 (${n})`;
+}
+async function votePitch(id, vote) { try { await api('/pitches/' + id, {method: 'POST', body: {vote}}); loadPitches(); } catch (e) { toast(e.message, true); } }
+function startPitches() { const idea = $('pitchIdea').value.trim(); startJob('pitches', {n: +$('pitchN').value, ...(idea ? {idea} : {})}); }
+function writeLiked() { const ids = pitches.filter(PITCH_FRESH).map(p => p.id).slice(0, 6);
+  if (ids.length && confirm(`Написать ${ids.length} сценари${ids.length === 1 ? 'й' : 'я/ев'} по отмеченным завязкам?`)) startJob('lab', {pitch_ids: ids}); }
+function criticBadge(c) { if (!c || c.score == null) return '';
+  const cls = c.score >= 7 && !c.failed.length ? 'b-ok' : c.score >= 5 ? 'b-warn' : 'b-err';
+  return `<span class="badge ${cls}" title="${esc((c.fixes || []).join(' · '))}">критик ${c.score}/10${c.failed.length ? ' · ' + c.failed.length + ' замеч.' : ''}</span>`; }
+const CRITIC_LABELS = {clear_start: 'начало', object: 'предмет', now: 'сегодня', hero_short: 'героиня', turn: 'поворот', ending_action: 'финал', live_speech: 'речь', no_repeats: 'повторы', logic: 'логика'};
+
 async function loadScripts() {
+  loadPitches().catch(() => {});
   const [lab, scripts] = await Promise.all([api('/lab'), api('/scripts?series=' + S)]);
   $('labList').innerHTML = lab.length ? `<table><tbody>${lab.slice(0, 8).map(l => `<tr><td class="small dim">${esc(l.stamp.replace(/^(\d{4})(\d\d)(\d\d)_(\d\d)(\d\d)$/, '$3.$2 $4:$5'))}</td><td>${l.titles.map(esc).join(' · ')}</td><td><button class="btn sm" onclick="openLab('${l.stamp}')">Открыть</button></td></tr>`).join('')}</tbody></table>` : '<div class="empty">Запусков ещё не было</div>';
   $('scriptList').innerHTML = scripts.length ? `<table><tbody>${scripts.map(s => `<tr><td>${esc(s.title)}</td><td class="small dim">${s.lines} реплик · ${ago(s.modified)}</td><td><div class="row"><button class="btn sm" onclick="viewScript('${esc(s.file)}')">Открыть</button><button class="btn sm pri" onclick="buildScript('${esc(s.file)}')">Собрать</button></div></td></tr>`).join('')}</tbody></table>` : '<div class="empty">Нет сохранённых сценариев</div>';
@@ -325,8 +361,11 @@ async function openLab(stamp) {
   const d = await api('/lab/' + stamp); window._lab = d;
   $('labView').style.display = '';
   $('labView').innerHTML = `<h2>Лаборатория ${esc(stamp)} <button class="btn sm" style="margin-left:auto" onclick="$('labView').style.display='none'">Закрыть</button></h2>` +
-    d.items.map((it, i) => `<div class="card" style="background:var(--panel2)"><h2>${esc(it.label)}. ${esc((it.episode || {}).title || it.case.title)} <span class="badge">${esc(it.model || '')}</span></h2>
+    d.items.map((it, i) => `<div class="card" style="background:var(--panel2)"><h2>${esc(it.label)}. ${esc((it.episode || {}).title || it.case.title)} <span class="badge">${esc(it.model || '')}</span> ${criticBadge(it.critic)}</h2>
     <div class="small dim" style="margin-bottom:8px">${esc(it.case.client_name)}, ${esc(it.case.age)}, ${esc(it.case.occupation)} · ${esc(it.case.stakes || '')}</div>
+    ${it.story ? `<details class="small" style="margin-bottom:8px"><summary class="dim">история прозой</summary><div style="margin-top:6px">${esc(it.story)}</div></details>` : ''}
+    ${it.critic && (it.critic.failed.length || it.critic.fixes.length) ? `<details class="small" style="margin-bottom:8px"><summary class="dim">замечания критика${it.critic.failed.length ? ': ' + it.critic.failed.map(k => CRITIC_LABELS[k] || k).join(', ') : ''}</summary><ul style="margin:6px 0 0 18px">${it.critic.fixes.map(f => `<li>${esc(f)}</li>`).join('')}</ul></details>` : ''}
+    ${it.error ? `<div class="err small">${esc(it.error)}</div>` : ''}
     ${it.episode ? renderLines(it.episode.lines) + `<div class="row" style="margin-top:10px"><button class="btn sm pri" onclick="labToProduction(${i})">В производство</button></div>` : '<div class="err small">не получился</div>'}</div>`).join('');
   $('labView').scrollIntoView({behavior: 'smooth'});
 }
@@ -512,7 +551,7 @@ async function refresh(force) {
   busy = false;
 }
 document.querySelectorAll('nav.side a').forEach(a => a.addEventListener('click', () => { window._scriptsLoaded = false; }));
-setInterval(() => { if (page !== 'series' && page !== 'scripts') refresh(); else loadOverview().catch(() => {}); }, 5000);
+setInterval(() => { if (page !== 'series' && page !== 'scripts') refresh(); else { loadOverview().catch(() => {}); if (page === 'scripts') loadPitches().catch(() => {}); } }, 5000);
 loadSeriesList().then(() => refresh(true)).catch(() => refresh());
 </script>
 </body>
