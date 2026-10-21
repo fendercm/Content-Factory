@@ -392,7 +392,7 @@ def api_video(row_id: int):
 SERIES_STAGES = [
     ("anthology_cases", "Кейсы"), ("topic_filter", "Фильтр тем"), ("anthology_episode", "Сценарий"),
     ("anthology_shots", "Раскадровка"), ("dialogue_voice", "Озвучка"), ("scene_agent", "Кадры"),
-    ("series_assembly", "Монтаж"), ("quality_scorer", "Оценка"), ("qa_agent", "QA"),
+    ("series_assembly", "Монтаж"), ("series_qa", "Проверка"), ("quality_scorer", "Оценка"), ("qa_agent", "QA"),
     ("publisher_agent", "Публикация"),
 ]
 _STALL_SECONDS = 20 * 60  # без новых записей дольше — процесс, скорее всего, умер

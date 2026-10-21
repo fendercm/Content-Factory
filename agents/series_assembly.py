@@ -146,5 +146,9 @@ def assemble(shots: list[dict], dialogue: dict, subtitle_path: str, out_path: st
         "series final", timeout=1800)
 
     logger.info("Series assembly: %d сегментов, %.1f с → %s", len(timeline), total, out_path)
+    placed, t = [], 0.0  # где какой кадр стоит в ролике — для проверки липсинка в Series QA
+    for seg in timeline:
+        placed.append({"shot": seg["index"], "start": round(t, 3), "duration": round(seg["duration"], 3)})
+        t += seg["duration"]
     return {"video_path": str(out_path), "duration": round(total, 2), "resolution": f"{W}x{H}",
-            "segments": len(timeline)}
+            "segments": len(timeline), "timeline": placed}

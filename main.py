@@ -58,6 +58,7 @@ logger = logging.getLogger("orchestrator")
 DB_PATH = os.getenv("DB_PATH", "pipeline.db")
 MAX_RETRIES = 3
 RETRY_DELAY = 5  # секунды между попытками
+SERIES_QA_REVOICE = 1  # переозвучек эпизода сериала, если Series QA нашёл брак голоса
 
 # conn шарится между потоками ThreadPoolExecutor (voice/visual/music) —
 # execute+commit должны быть атомарны, иначе «cannot commit - no transaction is active»
@@ -1424,27 +1425,52 @@ def run_series_pipeline(
                        "РАССКАЗЧИК": colors["РАССКАЗЧИК"]}
         labels, intro_labels = speaker_labels(series, episode)
         subtitle_path = os.path.abspath(os.path.join(out_dir, "subtitles.ass"))
-        write_dialogue_ass(dialogue["lines"], subtitle_path, role_colors,
-                           brand_text=f"{series['name']} · эпизод {episode_no}",
-                           labels=labels, intro_labels=intro_labels)
         video_path = os.path.abspath(os.path.join(
             "output", "video", f"{run_id}_ep{episode_no:03d}.mp4"))
         os.makedirs(os.path.dirname(video_path), exist_ok=True)
-        # Говорящие лица на ключевых репликах (липсинк по готовой озвучке); сбой — статичный кадр
-        from agents import lipsync_agent
-        lips = lipsync_agent.render(series, plan, scenes["shots"], dialogue, out_dir)
-        assignment = lipsync_agent.apply(plan["assignment"], scenes["shots"], lips)
-        if lips:
-            log_message("lipsync_agent", f"Липсинк: реплики {sorted(lips)}", "series_assembly")
-        video = retry("series_assembly", assemble, scenes["shots"], dialogue, subtitle_path, video_path,
-                      assignment, music["music_path"] if music else None, max_retries=2)
-        log_message("series_assembly", f"Эпизод собран: {video['duration']} с", "qa_agent")
+        from agents import lipsync_agent, series_qa
 
-        # 6. Качество и QA
+        def produce(dialogue: dict) -> tuple[dict, list[dict]]:
+            write_dialogue_ass(dialogue["lines"], subtitle_path, role_colors,
+                               brand_text=f"{series['name']} · эпизод {episode_no}",
+                               labels=labels, intro_labels=intro_labels)
+            # Говорящие лица на ключевых репликах (липсинк по готовой озвучке); сбой — статичный кадр
+            shots = [dict(s) for s in scenes["shots"] if not s.get("lipsync")]
+            lips = lipsync_agent.render(series, plan, shots, dialogue, out_dir)
+            assignment = lipsync_agent.apply(plan["assignment"], shots, lips)
+            if lips:
+                log_message("lipsync_agent", f"Липсинк: реплики {sorted(lips)}", "series_assembly")
+            video = retry("series_assembly", assemble, shots, dialogue, subtitle_path, video_path,
+                          assignment, music["music_path"] if music else None, max_retries=2)
+            log_message("series_assembly", f"Эпизод собран: {video['duration']} с", "series_qa")
+            return video, shots
+
+        # 6. Series QA: синхрон, речь, голоса, субтитры, звук, чёрные кадры, липсинк. Сбой озвучки
+        #    (реплика не слышна / не тем голосом) — одна переозвучка; остальное — ошибка сборки, не выпускаем
+        video, shots = produce(dialogue)
+        for attempt in range(1, SERIES_QA_REVOICE + 2):
+            _save_step(conn, run_id, "series_qa", "running")
+            qa = series_qa.check(video["video_path"], dialogue, subtitle_path, video.get("timeline"), shots)
+            if qa["passed"]:
+                _save_step(conn, run_id, "series_qa", "success", qa)
+                break
+            reason = "; ".join(p["text"] for p in qa["problems"])
+            voice_only = all(p["category"] in series_qa.VOICE_CATEGORIES for p in qa["problems"])
+            if voice_only and attempt <= SERIES_QA_REVOICE:
+                _save_step(conn, run_id, "series_qa", f"failed_attempt_{attempt}", qa, error=reason)
+                log_message("series_qa", f"Брак озвучки: {reason} — переозвучиваю", "dialogue_voice")
+                dialogue = retry("dialogue_voice", dialogue_voice.synthesize, series, episode, out_dir)
+                video, shots = produce(dialogue)
+                continue
+            _save_step(conn, run_id, "series_qa", "failed", qa, error=reason)
+            raise RuntimeError(f"Series QA: {reason}")
+        log_message("series_qa", "Проверка пройдена", "qa_agent")
+
+        # 7. Качество и QA
         _quality_gate(conn, run_id, video, dialogue["lines"][0]["text"], dry_run)
         retry("qa_agent", step_qa_agent, video, platform)
 
-        # 7. Публикация (или очередь для --prepare)
+        # 8. Публикация (или очередь для --prepare)
         title = f"{series['name']} · {episode_no}. {episode['title'] or episode['case']['title']}"[:95]
         description = "\n\n".join(p for p in (title, dialogue["lines"][-1]["text"], series["logline"],
                                                  series.get("disclaimer", "")) if p)
