@@ -532,6 +532,7 @@ def step_publisher_agent(
     dry_run: bool,
     thumbnail: dict | None = None,
     account_id_override: str | None = None,
+    ai_generated: bool = False,
 ) -> dict:
     if dry_run:
         logger.info("[publisher] DRY RUN — публикация пропущена")
@@ -551,6 +552,7 @@ def step_publisher_agent(
         platform=platform,
         account_id=account_id,
         thumbnail_path=thumbnail_path,
+        ai_generated=ai_generated,
     )
     return result
 
@@ -1188,27 +1190,140 @@ def _series_episode_for_case(series: dict, case: dict, episode_no: int, platform
     return episode, facts, ""
 
 
+def _load_series_run(conn: sqlite3.Connection, run_id: str, series: dict) -> tuple[dict, dict, dict, dict | None]:
+    """
+    Артефакты упавшего запуска сериала из pipeline_state: сценарий с кейсом, идея (для topics_used),
+    раскадровка и — если шаг кадров успел пройти и файлы на месте — оплаченные кадры с анимацией.
+    → (episode, idea, plan, scenes | None)
+    """
+    def last(step: str, ok=lambda data: True):
+        rows = conn.execute("SELECT payload FROM pipeline_state WHERE run_id=? AND step=? AND status='success' "
+                            "ORDER BY id DESC", (run_id, step)).fetchall()
+        for (payload,) in rows:
+            data = json.loads(payload) if payload else None
+            if data is not None and ok(data):
+                return data
+        return None
+
+    saved = last("anthology_episode", lambda d: isinstance(d, dict) and "case" in d and "lines" in d)
+    plan = last("anthology_shots", lambda d: isinstance(d, dict) and "assignment" in d)
+    if not saved or not plan:
+        raise ValueError(f"В запуске {run_id} нет сценария или раскадровки — возобновлять нечего")
+    episode = {"title": saved["title"], "case": saved["case"], "lines": saved["lines"]}
+    ideas = last("topic_filter", lambda d: isinstance(d, list)) or []
+    idea = next((i for i in ideas if (i.get("_case") or {}).get("title") == episode["case"]["title"]), None) \
+        or _case_as_idea(episode["case"], series)
+
+    scenes = last("scene_agent", lambda d: isinstance(d, dict) and d.get("shots"))
+    if scenes:
+        missing = [p for s in scenes["shots"] for p in (s.get("image_path"), s.get("video_path"))
+                   if p and not os.path.exists(p)]
+        if missing:
+            logger.warning("Возобновление: нет %d файлов кадров (%s…) — кадры будут сгенерированы заново",
+                           len(missing), missing[0])
+            scenes = None
+    return episode, idea, plan, scenes
+
+
+def _publish_series_extra(series: dict, video: dict, title: str, description: str, dry_run: bool) -> dict:
+    """
+    Дополнительные площадки сериала. "also_publish": VK — своим публикатором (нужен ключ с правом video),
+    tiktok/instagram/youtube — через Zernio с аккаунтом ZERNIO_ACCOUNT_ID_<ПЛОЩАДКА>; площадка без ключа
+    или аккаунта пропускается. "manual_publish": площадки, куда автор загружает сам (Wibes, VK) —
+    одно сообщение в Telegram с роликом и подписью на все сразу. Основная публикация уже прошла,
+    поэтому сбой здесь не роняет эпизод: алерт в Telegram. Одна попытка — повтор дал бы дубль.
+    → {площадка | "manual": {"status": published|manual|failed|not_configured|skipped|unsupported, ...}}
+    """
+    results: dict[str, dict] = {}
+    manual = series.get("manual_publish", [])
+    if manual:
+        if dry_run:
+            results["manual"] = {"status": "skipped"}
+        else:
+            from agents.notify_agent import send_manual_upload
+            tags = " ".join(f"#{h.lstrip('#')}" for h in series["hashtags"])
+            try:
+                sent = send_manual_upload(", ".join(manual), video["video_path"], f"{description}\n\n{tags}")
+                if not sent.get("ok"):
+                    raise RuntimeError(f"Telegram: {sent.get('error')}")
+                results["manual"] = {"status": "manual", "platforms": manual}
+            except Exception as exc:
+                logger.error("Ручная публикация: ролик в Telegram не отправлен: %s", exc)
+                results["manual"] = {"status": "failed", "error": redact(str(exc))}
+                _alert("publish_manual", f"«{title}»: ролик для {', '.join(manual)} не отправлен: {exc}")
+
+    for name in series.get("also_publish", []):
+        if dry_run:
+            results[name] = {"status": "skipped"}
+            continue
+        if name == "vk":
+            from agents import vk_publisher
+            if not vk_publisher.is_configured():
+                logger.warning("VK: нет VK_USER_TOKEN / VK_GROUP_ID — публикация в VK пропущена")
+                results[name] = {"status": "not_configured"}
+                continue
+
+            def publish():
+                return vk_publisher.publish_video(video["video_path"], title, description, series["hashtags"])
+        elif name in ("tiktok", "instagram", "youtube"):
+            account = os.getenv(f"ZERNIO_ACCOUNT_ID_{name.upper()}")
+            if not account:
+                logger.warning("%s: нет ZERNIO_ACCOUNT_ID_%s — публикация пропущена", name, name.upper())
+                results[name] = {"status": "not_configured"}
+                continue
+
+            def publish(name=name, account=account):
+                return step_publisher_agent(video, {"title": title, "hashtags": series["hashtags"]},
+                                            {"body": description}, name, False, None, account,
+                                            ai_generated=True)
+        else:
+            logger.warning("also_publish: площадка %s не поддерживается — пропуск", name)
+            results[name] = {"status": "unsupported"}
+            continue
+        try:
+            results[name] = publish()
+            log_message("publisher_agent", f"{name}: {results[name].get('post_id')}", "notify_agent")
+        except Exception as exc:
+            logger.error("%s: публикация не удалась: %s", name, exc)
+            results[name] = {"status": "failed", "error": redact(str(exc))}
+            _alert(f"publish_{name}", f"«{title}»: {exc}")
+    return results
+
+
 def run_series_pipeline(
     series_id: str,
     platform: str,
     dry_run: bool,
     trend_niche: str = "психология",
     account_id_override: str | None = None,
+    prepare_only: bool = False,
+    resume_run: str | None = None,
+    script_file: str | None = None,
 ) -> None:
     """
     Эпизод сериала: кейс (premium LLM) → факты → сценарий с репликами по ролям → fact-check/safety →
-    раскадровка → (кадры Nano Banana 2 + анимация Kling/Wan ∥ озвучка по ролям ∥ музыка) →
+    раскадровка → озвучка по ролям → (кадры Nano Banana 2 + анимация Kling/Wan ∥ музыка) →
     диалоговые субтитры → монтаж → оценка качества → QA → публикация.
+
+    prepare_only: всё до QA, затем эпизод встаёт в очередь (status=ready) вместо публикации —
+    его выпустит publish_next_series_episode() по расписанию.
+    resume_run: доделать упавший запуск — сценарий, раскадровка и оплаченные кадры берутся из
+    pipeline_state и с диска, заново делается только недостающее. Всегда в очередь (prepare_only).
     """
     from agents.anthology_agent import (load_series, next_episode_number, plan_shots, propose_cases,
-                                        recent_episodes, save_episode, spoken_text)
+                                        queue_episode, recent_episodes, save_episode, spoken_text)
+
+    if prepare_only and dry_run:
+        raise ValueError("--prepare пишет очередь в БД и несовместим с --dry-run")
 
     series = load_series(series_id)
-    run_id = f"{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_series_{series_id}"
+    if resume_run or script_file:
+        prepare_only = True  # готовый/возобновлённый эпизод не публикуется сразу — сначала просмотр в очереди
+    run_id = resume_run or f"{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_series_{series_id}"
     set_run_id(run_id)
     from utils.cost_tracker import set_run_id as set_cost_run_id, total_for_run
     set_cost_run_id(run_id)
-    logger.info("=== Series-пайплайн run_id=%s ===", run_id)
+    logger.info("=== Series-пайплайн run_id=%s%s ===", run_id, " (возобновление)" if resume_run else "")
 
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     _init_db(conn)
@@ -1221,48 +1336,80 @@ def run_series_pipeline(
     try:
         episode_no = next_episode_number(series, DB_PATH)
         log_message("orchestrator", f"«{series['name']}», эпизод {episode_no}", "anthology_agent")
+        scenes = None
 
-        # 1. Кейсы: тренды ниши — как необязательное вдохновение
-        try:
-            topics = [t["topic"] for t in step_trend_scout(trend_niche)][:5]
-        except Exception as exc:
-            logger.warning("Trend Scout для сериала: %s — без трендов", exc)
-            topics = []
-        cases = retry("anthology_cases", propose_cases, series, topics,
-                      recent_episodes(series, DB_PATH), 3, max_retries=2)
-        ideas = retry("topic_filter", step_topic_filter, [_case_as_idea(c, series) for c in cases],
-                      platform, trend_niche)
-        log_message("anthology_agent", f"Кейсов после фильтра: {len(ideas)}", "script_writer")
+        if resume_run:
+            episode, idea, plan, scenes = _load_series_run(conn, resume_run, series)
+            if script_file:  # новая редакция реплик (например, с пометками эмоций) поверх готовых кадров
+                episode["lines"] = json.loads(open(script_file, encoding="utf-8").read())["lines"]
+            episode.update({"episode_no": episode_no, "client_role": episode["case"]["client_name"].upper()})
+            logger.info("Возобновляю «%s»: %s", episode["title"],
+                        "кадры и анимация с диска" if scenes else "кадры заново")
+        elif script_file:
+            # Сценарий, написанный или одобренный автором: {"title", "case", "lines"} — без сценариста
+            data = json.loads(open(script_file, encoding="utf-8").read())
+            case = data["case"]
+            episode = {"title": data["title"], "case": case, "lines": data["lines"], "episode_no": episode_no,
+                       "client_role": case["client_name"].upper()}
+            idea = _case_as_idea(case, series)
+            _save_step(conn, run_id, "anthology_episode", "success",
+                       {"title": episode["title"], "case": case, "lines": episode["lines"]})
+            from agents.safety_agent import check as safety_check
+            safety = safety_check(spoken_text(episode), episode["title"], series["hashtags"], platform)
+            if not safety["safe"]:
+                raise ValueError(f"safety [{safety.get('category')}]: {safety.get('issue')}")
+            plan = retry("anthology_shots", plan_shots, series, episode, max_retries=2)
+        else:
+            # 1. Кейсы: тренды ниши — как необязательное вдохновение
+            try:
+                topics = [t["topic"] for t in step_trend_scout(trend_niche)][:5]
+            except Exception as exc:
+                logger.warning("Trend Scout для сериала: %s — без трендов", exc)
+                topics = []
+            cases = retry("anthology_cases", propose_cases, series, topics,
+                          recent_episodes(series, DB_PATH), 3, max_retries=2)
+            ideas = retry("topic_filter", step_topic_filter, [_case_as_idea(c, series) for c in cases],
+                          platform, trend_niche)
+            log_message("anthology_agent", f"Кейсов после фильтра: {len(ideas)}", "script_writer")
 
-        # 2. Сценарий: первый кейс, прошедший факт-чек и safety
-        episode, facts, idea = None, [], None
-        for candidate in ideas:
-            case = candidate["_case"]
-            episode, facts, reason = _series_episode_for_case(series, case, episode_no, platform, conn, run_id)
-            if episode:
-                idea = candidate
-                break
-            logger.warning("Кейс «%s» отклонён: %s", case["title"], reason)
-            log_message("orchestrator", f"Кейс «{case['title']}» отклонён: {reason}", "anthology_agent")
-        if episode is None:
-            raise ValueError("Ни один кейс не прошёл fact-check/safety — эпизод не собран")
-        _save_step(conn, run_id, "anthology_episode", "success",
-                   {"title": episode["title"], "case": episode["case"], "lines": episode["lines"]})
-        log_message("anthology_agent", f"Эпизод {episode_no}: «{episode['title']}», "
-                    f"{len(episode['lines'])} реплик, {len(spoken_text(episode).split())} слов", "scene_agent")
+            # 2. Сценарий: первый кейс, прошедший факт-чек и safety
+            episode, facts, idea = None, [], None
+            for candidate in ideas:
+                case = candidate["_case"]
+                episode, facts, reason = _series_episode_for_case(series, case, episode_no, platform, conn, run_id)
+                if episode:
+                    idea = candidate
+                    break
+                logger.warning("Кейс «%s» отклонён: %s", case["title"], reason)
+                log_message("orchestrator", f"Кейс «{case['title']}» отклонён: {reason}", "anthology_agent")
+            if episode is None:
+                raise ValueError("Ни один кейс не прошёл fact-check/safety — эпизод не собран")
+            _save_step(conn, run_id, "anthology_episode", "success",
+                       {"title": episode["title"], "case": episode["case"], "lines": episode["lines"]})
+            log_message("anthology_agent", f"Эпизод {episode_no}: «{episode['title']}», "
+                        f"{len(episode['lines'])} реплик, {len(spoken_text(episode).split())} слов", "scene_agent")
 
-        # 3. Раскадровка
-        plan = retry("anthology_shots", plan_shots, series, episode, max_retries=2)
+            # 3. Раскадровка
+            plan = retry("anthology_shots", plan_shots, series, episode, max_retries=2)
 
-        # 4. Кадры+анимация ∥ озвучка ∥ музыка
+        # 4. Озвучка — до платных кадров: бесплатный TTS упирается в дневную квоту, и если голоса нет,
+        #    эпизод останавливается до трат на KIE. Затем кадры+анимация ∥ музыка
         from concurrent.futures import ThreadPoolExecutor
         from agents import dialogue_voice, scene_agent
 
-        with ThreadPoolExecutor(max_workers=3, thread_name_prefix="series") as ex:
-            f_scenes = ex.submit(retry, "scene_agent", scene_agent.render, series, plan, out_dir, max_retries=1)
-            f_voice = ex.submit(retry, "dialogue_voice", dialogue_voice.synthesize, series, episode, out_dir)
+        dialogue = retry("dialogue_voice", dialogue_voice.synthesize, series, episode, out_dir)
+        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="series") as ex:
+            f_scenes = None if scenes else ex.submit(retry, "scene_agent", scene_agent.render, series, plan,
+                                                     out_dir, max_retries=1)
             f_music = ex.submit(step_music_agent, {"full_script": spoken_text(episode)}, trend_niche)
-            scenes, dialogue, music = f_scenes.result(), f_voice.result(), f_music.result()
+            scenes, music = scenes or f_scenes.result(), f_music.result()
+        # Кадры прошлых запусков могли оживлять лица — такие клипы не берём: губы не в такт речи
+        from agents.anthology_agent import ANIMATE_ORDER
+        allowed = set(ANIMATE_ORDER[:series["animated_key"] + series["animated_simple"]])
+        for shot in scenes["shots"]:
+            if shot.get("video_path") and shot.get("slot") not in allowed:
+                logger.info("Монтаж: клип кадра %s не используется (лицо) — статичный кадр", shot.get("slot"))
+                shot.pop("video_path")
         log_message("scene_agent", f"Кадры и анимация: {[s.get('engine', 'still') for s in scenes['shots']]}, "
                     f"{scenes['credits']} кр. KIE", "series_assembly")
 
@@ -1272,7 +1419,8 @@ def run_series_pipeline(
         from agents.subtitle_agent import write_dialogue_ass
 
         colors = series["subtitle_colors"]
-        role_colors = {"ВЕРА": colors["ВЕРА"], episode["client_role"]: colors["client"],
+        hero = series["heroine"]["role"]
+        role_colors = {hero: colors.get("hero") or colors.get(hero) or "&H00FFFFFF&", episode["client_role"]: colors["client"],
                        "РАССКАЗЧИК": colors["РАССКАЗЧИК"]}
         labels, intro_labels = speaker_labels(series, episode)
         subtitle_path = os.path.abspath(os.path.join(out_dir, "subtitles.ass"))
@@ -1282,26 +1430,53 @@ def run_series_pipeline(
         video_path = os.path.abspath(os.path.join(
             "output", "video", f"{run_id}_ep{episode_no:03d}.mp4"))
         os.makedirs(os.path.dirname(video_path), exist_ok=True)
+        # Говорящие лица на ключевых репликах (липсинк по готовой озвучке); сбой — статичный кадр
+        from agents import lipsync_agent
+        lips = lipsync_agent.render(series, plan, scenes["shots"], dialogue, out_dir)
+        assignment = lipsync_agent.apply(plan["assignment"], scenes["shots"], lips)
+        if lips:
+            log_message("lipsync_agent", f"Липсинк: реплики {sorted(lips)}", "series_assembly")
         video = retry("series_assembly", assemble, scenes["shots"], dialogue, subtitle_path, video_path,
-                      plan["assignment"], music["music_path"] if music else None, max_retries=2)
+                      assignment, music["music_path"] if music else None, max_retries=2)
         log_message("series_assembly", f"Эпизод собран: {video['duration']} с", "qa_agent")
 
         # 6. Качество и QA
         _quality_gate(conn, run_id, video, dialogue["lines"][0]["text"], dry_run)
         retry("qa_agent", step_qa_agent, video, platform)
 
-        # 7. Публикация
+        # 7. Публикация (или очередь для --prepare)
         title = f"{series['name']} · {episode_no}. {episode['title'] or episode['case']['title']}"[:95]
-        description = f"{dialogue['lines'][-1]['text']}\n\n{series['logline']}"
+        description = "\n\n".join(p for p in (title, dialogue["lines"][-1]["text"], series["logline"],
+                                                 series.get("disclaimer", "")) if p)
         pub_idea = {"title": title, "hashtags": series["hashtags"]}
+        if prepare_only:
+            row_id = queue_episode(series, episode, run_id, DB_PATH, video_path=video["video_path"],
+                                   publish_title=title, description=description,
+                                   source_topic=idea.get("source_topic", title))
+            try:
+                from agents.notify_agent import alert_queued
+                alert_queued(title, episode_no, video["video_path"], video.get("duration"))
+            except Exception as exc:
+                logger.warning("Уведомление не отправлено: %s", exc)
+            cost = total_for_run(run_id)
+            _save_step(conn, run_id, "pipeline", "completed", {
+                "idea": title, "status": "queued", "queue_id": row_id, "platform": platform,
+                "niche": trend_niche, "format": "series", "series": series_id, "episode": episode_no,
+                "cost_usd": round(cost, 3), "voice_engine": dialogue["engine"],
+            })
+            logger.info("=== Эпизод %d «%s» в очереди: %s (≈ $%.2f) ===", episode_no, title, video["video_path"], cost)
+            return
+
         pub_result = retry("publisher_agent", step_publisher_agent, video, pub_idea, {"body": description},
-                           platform, dry_run, None, account_id_override, max_retries=1)
+                           platform, dry_run, None, account_id_override, ai_generated=True, max_retries=1)
+        extra = _publish_series_extra(series, video, title, description, dry_run)
 
         if not dry_run:
             save_episode(series, episode, run_id, pub_result.get("post_id", ""), DB_PATH)
             step_mark_published(idea)
+        published_on = ", ".join([platform] + [p for p, r in extra.items() if r.get("status") == "published"])
         try:
-            step_notify_success(pub_idea, pub_result, platform, video, dry_run=dry_run)
+            step_notify_success(pub_idea, pub_result, published_on, video, dry_run=dry_run)
         except Exception as exc:
             logger.warning("Уведомление не отправлено: %s", exc)
 
@@ -1309,7 +1484,7 @@ def run_series_pipeline(
         _save_step(conn, run_id, "pipeline", "completed", {
             "idea": title, "post_id": pub_result.get("post_id"), "platform": platform,
             "niche": trend_niche, "format": "series", "series": series_id, "episode": episode_no,
-            "cost_usd": round(cost, 3), "voice_engine": dialogue["engine"],
+            "cost_usd": round(cost, 3), "voice_engine": dialogue["engine"], "also_published": extra,
         })
         logger.info("=== Эпизод %d «%s» готов: %s (≈ $%.2f) ===", episode_no, title, video["video_path"], cost)
 
@@ -1319,6 +1494,63 @@ def run_series_pipeline(
         _save_step(conn, run_id, "pipeline", "failed", error=redact(exc))
         if not isinstance(exc, StepFailedError):
             _alert("series_pipeline", f"[{series_id}] {exc}")
+        sys.exit(1)
+
+    finally:
+        conn.close()
+
+
+def publish_next_series_episode(series_id: str, platform: str, account_id_override: str | None = None) -> None:
+    """
+    Выпускает самый ранний эпизод из очереди (--prepare): основная площадка через Zernio, затем
+    also_publish. Публикация — одна попытка (повтор дал бы дубль); статус published ставится сразу
+    после основной площадки, чтобы сбой дальше не привёл к повторной публикации завтра.
+    Пустая очередь — алерт и выход без ошибки.
+    """
+    from agents.anthology_agent import load_series, next_ready, set_episode_status
+
+    series = load_series(series_id)
+    run_id = f"{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_series_{series_id}_publish"
+    set_run_id(run_id)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    _init_db(conn)
+    try:
+        row = next_ready(series, DB_PATH)
+        if row is None:
+            logger.warning("Очередь «%s» пуста — публиковать нечего", series["name"])
+            _alert("series_queue", f"Очередь «{series['name']}» пуста — подготовьте эпизоды: --prepare N")
+            return
+        if not row["video_path"] or not os.path.exists(row["video_path"]):
+            set_episode_status(row["id"], "rejected", DB_PATH)
+            raise FileNotFoundError(f"Эпизод {row['episode_no']}: нет файла {row['video_path']} — снят с очереди")
+
+        video = {"video_path": row["video_path"]}
+        _run_with_retry("qa_agent", step_qa_agent, conn, run_id, video, platform)
+        title, description = row["publish_title"], row["description"]
+        pub_idea = {"title": title, "hashtags": series["hashtags"]}
+        pub_result = _run_with_retry("publisher_agent", step_publisher_agent, conn, run_id, video, pub_idea,
+                                     {"body": description}, platform, False, None, account_id_override,
+                                     ai_generated=True, max_retries=1)
+        set_episode_status(row["id"], "published", DB_PATH, pub_result.get("post_id", ""))
+        step_mark_published({"title": title, "source_topic": row["source_topic"] or title})
+
+        extra = _publish_series_extra(series, video, title, description, dry_run=False)
+        published_on = ", ".join([platform] + [p for p, r in extra.items() if r.get("status") == "published"])
+        try:
+            step_notify_success(pub_idea, pub_result, published_on, video)
+        except Exception as exc:
+            logger.warning("Уведомление не отправлено: %s", exc)
+        _save_step(conn, run_id, "pipeline", "completed", {
+            "idea": title, "post_id": pub_result.get("post_id"), "platform": platform, "format": "series",
+            "series": series_id, "episode": row["episode_no"], "also_published": extra,
+        })
+        logger.info("=== Эпизод %d «%s» опубликован: %s ===", row["episode_no"], title, published_on)
+
+    except Exception as exc:
+        logger.critical("Публикация эпизода из очереди упала: %s\n%s", exc, traceback.format_exc())
+        _save_step(conn, run_id, "pipeline", "failed", error=redact(exc))
+        if not isinstance(exc, StepFailedError):
+            _alert("series_publish", f"[{series_id}] {exc}")
         sys.exit(1)
 
     finally:
@@ -1362,14 +1594,47 @@ def main() -> None:
              "series — сериал-антология через KIE (config/series/<id>.json)",
     )
     parser.add_argument("--series", default="kabinet7", help="ID сериала для --format series")
+    parser.add_argument("--prepare", type=int, default=0, metavar="N",
+                        help="--format series: собрать N эпизодов в очередь без публикации")
+    parser.add_argument("--publish-next", action="store_true",
+                        help="--format series: опубликовать следующий эпизод из очереди")
+    parser.add_argument("--script", metavar="FILE",
+                        help="--format series: собрать эпизод по готовому сценарию (JSON: title, case, lines) в очередь")
+    parser.add_argument("--resume", metavar="RUN_ID",
+                        help="--format series: доделать упавший запуск (готовые кадры берутся с диска) в очередь")
     args = parser.parse_args()
 
     if args.video_format == "series":
         if args.niches:
             parser.error("--format series поддерживает только одну нишу (--niche — тренды для кейсов)")
-        env_key = f"ZERNIO_ACCOUNT_ID_{args.series.upper()}"
+        if args.prepare and (args.dry_run or args.publish_next):
+            parser.error("--prepare несовместим с --dry-run и --publish-next")
+        account = os.getenv(f"ZERNIO_ACCOUNT_ID_{args.series.upper()}") or None
+        if args.publish_next:
+            publish_next_series_episode(args.series, args.platform, account)
+            return
+        if args.script and not args.resume:
+            run_series_pipeline(series_id=args.series, platform=args.platform, dry_run=False,
+                                trend_niche=args.niche, account_id_override=account, script_file=args.script)
+            return
+        if args.resume:
+            run_series_pipeline(series_id=args.series, platform=args.platform, dry_run=False,
+                                trend_niche=args.niche, account_id_override=account, resume_run=args.resume,
+                                script_file=args.script)
+            return
+        if args.prepare:
+            failed = 0
+            for i in range(args.prepare):
+                logger.info("=== Подготовка эпизода %d из %d ===", i + 1, args.prepare)
+                try:
+                    run_series_pipeline(series_id=args.series, platform=args.platform, dry_run=False,
+                                        trend_niche=args.niche, account_id_override=account, prepare_only=True)
+                except SystemExit as exc:
+                    failed += 1 if exc.code else 0
+            logger.info("Подготовлено %d из %d эпизодов", args.prepare - failed, args.prepare)
+            sys.exit(1 if failed == args.prepare else 0)
         run_series_pipeline(series_id=args.series, platform=args.platform, dry_run=args.dry_run,
-                            trend_niche=args.niche, account_id_override=os.getenv(env_key) or None)
+                            trend_niche=args.niche, account_id_override=account)
         return
 
     if args.video_format == "story":

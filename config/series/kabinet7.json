@@ -3,6 +3,7 @@
   "name": "Кабинет 7",
   "format": "антология: каждый эпизод — законченная история одного клиента",
   "logline": "Петербургский психолог Вера Соколова одним неожиданным вопросом помогает людям услышать то, о чём они молчат даже себе.",
+  "disclaimer": "Персонажи и истории вымышлены. Не является психологической консультацией.",
   "heroine": {
     "role": "ВЕРА",
     "name": "Вера Соколова",
@@ -12,7 +13,9 @@
     "reference": "assets/series/kabinet7/vera_ref.jpg",
     "gemini_voice": "Gacrux",
     "edge_voice": "ru-RU-SvetlanaNeural@-12Hz",
-    "intro": "Вера Соколова · психолог"
+    "intro": "Вера Соколова · психолог",
+    "profession": "психолог",
+    "setting": "в кабинете психолога"
   },
   "season_arc": "Кто-то оставляет Вере анонимные записки с её же вопросами. Максимум одна фраза за эпизод и только если она естественно ложится в финал.",
   "location_en": "a cozy psychologist's office in an old Saint Petersburg apartment building: tall window with rain streaks, grey city light, bookshelves, parquet floor, two vintage armchairs facing each other, a brass desk lamp, a small round table with a glass of water and a box of tissues",
@@ -31,8 +34,11 @@
       "edge": "ru-RU-DmitryNeural@+10Hz"
     }
   },
+  "tts_mode": "dialogue",
+  "voice_fallback": "none",
+  "tts_direction": "Сыграй сцену в кабинете психолога как актёры кино, с живыми эмоциями, но в темпе настоящего разговора: паузы короткие, без растягивания слов, вся сцена — около минуты.",
   "subtitle_colors": {
-    "ВЕРА": "&H00FFFFFF&",
+    "hero": "&H00FFFFFF&",
     "client": "&H0000E5FF&",
     "РАССКАЗЧИК": "&H00F0D080&"
   },
@@ -43,10 +49,19 @@
     "психолог",
     "историиизжизни"
   ],
-  "words_min": 125,
-  "words_max": 150,
-  "lines_min": 12,
-  "lines_max": 18,
-  "animated_key": 2,
-  "animated_simple": 2
+  "also_publish": [
+    "tiktok",
+    "instagram"
+  ],
+  "manual_publish": [
+    "Wibes",
+    "VK Клипы"
+  ],
+  "words_min": 115,
+  "words_max": 140,
+  "lines_min": 8,
+  "lines_max": 12,
+  "animated_key": 0,
+  "animated_simple": 3,
+  "lipsync_lines": "key"
 }

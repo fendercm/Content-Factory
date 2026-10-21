@@ -88,7 +88,8 @@ def test_build_plan_puts_speaker_on_screen():
     # кадры — только используемые слоты, анимация — по одному клипу на анимированный слот
     assert {s["slot"] for s in plan["shots"]} == set(slots)
     animated = {s["slot"]: s["priority"] for s in plan["shots"] if s["animate"]}
-    assert animated == {"client_turn": "key", "client_open": "key", "detail": "simple", "vera_ask": "simple"}
+    # оживляются только кадры без говорящих лиц: первые key — Kling, следующие — Wan
+    assert animated == {"detail": "key", "wide": "key", "story": "simple"}
     clips = [a for a in plan["assignment"] if a["clip"]]
     assert len({a["slot"] for a in clips}) == len(clips)
     assert plan["assignment"][5]["clip"] and plan["assignment"][6]["clip"]
@@ -172,12 +173,73 @@ def test_dialogue_voice_timings_and_pauses(tmp_path, monkeypatch):
     monkeypatch.setenv("GEMINI_TTS", "on")
     tone = lambda text, voice: np.ones(int(0.5 * dv.SAMPLE_RATE), dtype=np.float32) * 0.5  # noqa: E731
     with patch.object(dv, "_gemini_pcm", side_effect=tone):
-        res = dv.synthesize(SERIES, _episode(), tmp_path)
+        res = dv.synthesize({**SERIES, "tts_mode": "lines"}, _episode(), tmp_path)
     lines = res["lines"]
     assert res["engine"] == "gemini" and len(lines) == 10
     assert lines[1]["start"] - lines[0]["end"] == pytest.approx(dv.PAUSE_AFTER_COLD_OPEN, abs=0.01)
     assert lines[2]["start"] - lines[1]["end"] == pytest.approx(dv.PAUSE_SPEAKER_CHANGE, abs=0.01)
     assert (tmp_path / "dialogue.wav").exists()
+
+
+def _tone(seconds):
+    return np.ones(int(seconds * 24000), dtype=np.float32) * 0.5
+
+
+def test_dialogue_mode_one_request_plus_narrator(tmp_path, monkeypatch):
+    from agents import dialogue_voice as dv
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    episode = _episode()                       # 9 реплик Алины и Веры + рассказчик последним
+    spoken = [l for l in episode["lines"] if l["role"] != "РАССКАЗЧИК"]
+    # Реплики по 1 с подряд, между первой и второй — 0.2 с тишины
+    bounds = [(0.0, 1.0)] + [(1.2 + i * 1.1, 2.2 + i * 1.1) for i in range(len(spoken) - 1)]
+    words = [[{"word": "слово", "start": s, "end": e}] for s, e in bounds]
+    tts = MagicMock(side_effect=[_tone(12.0), _tone(2.0)])
+    with patch.object(dv, "_gemini_tts", tts), patch.object(dv, "_line_words", return_value=words):
+        res = dv.synthesize(SERIES, episode, tmp_path)
+    assert res["engine"] == "gemini-dialogue" and tts.call_count == 2   # диалог + рассказчик
+    text, config = tts.call_args_list[0].args
+    speakers = config["multiSpeakerVoiceConfig"]["speakerVoiceConfigs"]
+    assert {s["speaker"] for s in speakers} == {"Алина", "Вера"}
+    assert text.startswith(SERIES["tts_direction"])                       # режиссёрское вступление
+    assert text.split("\n\n", 1)[1].startswith("Алина: ") and "РАССКАЗЧИК" not in text
+    lines = res["lines"]
+    assert lines[1]["start"] - lines[0]["end"] == pytest.approx(dv.PAUSE_AFTER_COLD_OPEN, abs=0.01)
+    assert lines[-1]["role"] == "РАССКАЗЧИК" and lines[-1]["end"] == pytest.approx(res["duration"], abs=0.01)
+    # слова для субтитров сдвинуты вместе с репликой на паузу после cold open
+    assert lines[1]["words"][0]["start"] == pytest.approx(lines[1]["start"], abs=0.01)
+    assert "words" not in lines[-1]
+
+
+def test_dialogue_mode_falls_back_to_lines_when_alignment_fails(tmp_path, monkeypatch):
+    from agents import dialogue_voice as dv
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    with patch.object(dv, "_gemini_tts", return_value=_tone(5.0)), \
+         patch.object(dv, "_line_words", side_effect=dv._AlignError("не совпало")), \
+         patch.object(dv, "_gemini_pcm", return_value=_tone(0.5)) as per_line:
+        res = dv.synthesize(SERIES, _episode(), tmp_path)
+    assert res["engine"] == "gemini" and per_line.call_count == 10
+
+
+def test_series_without_fallback_stops_on_gemini_failure(tmp_path, monkeypatch):
+    from agents import dialogue_voice as dv
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    with patch.object(dv, "_gemini_tts", side_effect=RuntimeError("429 PerDay")), \
+         patch.object(dv, "_edge_pcm") as edge:
+        with pytest.raises(RuntimeError, match="voice_fallback=none"):
+            dv.synthesize(SERIES, _episode(), tmp_path)
+    assert not edge.called
+
+
+def test_line_bounds_maps_whisper_words_to_lines(tmp_path):
+    from agents import dialogue_voice as dv
+    lines = [{"role": "А", "text": "Добрый день, Вера."}, {"role": "Б", "text": "Садитесь."}]
+    words = [{"word": " Добрый", "start": 0.1, "end": 0.4}, {"word": " день,", "start": 0.4, "end": 0.7},
+             {"word": " Вера.", "start": 0.7, "end": 1.1}, {"word": " Садитесь.", "start": 1.6, "end": 2.2}]
+    model = MagicMock()
+    model.transcribe.return_value = {"segments": [{"words": words}]}
+    with patch("agents.subtitle_agent._get_whisper_model", return_value=model):
+        bounds = dv._line_bounds(_tone(2.5), lines, tmp_path)
+    assert bounds == [(0.1, 1.1), (1.6, 2.2)]
 
 
 def test_dialogue_voice_switches_whole_episode_to_edge(tmp_path, monkeypatch):
@@ -193,7 +255,7 @@ def test_dialogue_voice_switches_whole_episode_to_edge(tmp_path, monkeypatch):
 
     edge = MagicMock(return_value=np.ones(1200, dtype=np.float32) * 0.3)
     with patch.object(dv, "_gemini_pcm", side_effect=flaky), patch.object(dv, "_edge_pcm", edge):
-        res = dv.synthesize(SERIES, _episode(), tmp_path)
+        res = dv.synthesize({**SERIES, "tts_mode": "lines", "voice_fallback": "edge"}, _episode(), tmp_path)
     assert res["engine"] == "edge"
     assert edge.call_count == 10  # переозвучен весь эпизод, а не только упавшая реплика
 
@@ -211,3 +273,126 @@ def test_premium_tier_falls_back_from_kie(monkeypatch):
         out = llm_client.chat([{"role": "user", "content": "x"}], tier="premium")
     assert kie_chat.call_count == 2  # Argon, затем Astra
     assert out.provider == "gemini" and out.choices[0].message.content == "резерв"
+
+
+def test_build_plan_animates_only_faceless_shots():
+    episode, data = _plan_input()
+    plan = aa.build_plan(data, episode, key=0, simple=4)
+    animated = {s["slot"]: s["priority"] for s in plan["shots"] if s["animate"]}
+    assert animated == {"detail": "simple", "wide": "simple", "story": "simple"}
+    assert not any(s["animate"] for s in plan["shots"] if s["slot"].startswith(("client_", "vera_")))
+
+
+def test_kie_download_retries_network_errors(tmp_path):
+    import requests
+    from utils import kie_client
+    calls = {"n": 0}
+
+    def flaky(url, dest, timeout, min_bytes):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise requests.ConnectionError("reset")
+        open(dest, "wb").write(b"x" * 2000)
+        return dest
+
+    with patch("utils.download.download_to", side_effect=flaky), patch.object(kie_client.time, "sleep"):
+        out = kie_client.download("https://cdn/x.jpg", tmp_path / "x.jpg")
+    assert out.exists() and calls["n"] == 3
+
+
+def test_copied_from_brief_catches_phrases_from_instructions():
+    ep = {"lines": [{"role": "ВЕРА", "text": "Марина, с чем вы пришли?"},
+                    {"role": "МАРИНА", "text": "Мне нужен был простой человеческий вопрос и всё."}]}
+    assert aa.copied_from_brief(ep) == "Мне нужен был простой человеческий вопрос и всё."
+    ep["lines"].pop()
+    assert aa.copied_from_brief(ep) is None
+
+
+def test_dialogue_chunks_follow_spoken_words():
+    from agents.subtitle_agent import _dialogue_chunks
+    words = [{"word": w, "start": s, "end": s + 0.3} for w, s in
+             [("Игорь,", 1.0), ("с", 1.4), ("чем", 1.6), ("вы", 1.9), ("пришли?", 2.2)]]
+    chunks = _dialogue_chunks("Игорь, с чем вы пришли?", 1.0, 2.6, 18, words=words)
+    assert [c["text"] for c in chunks] == ["Игорь,", "с чем вы", "пришли?"]      # разрыв после запятой
+    assert [c["start"] for c in chunks] == [1.0, 1.4, 2.2]                       # по реальным словам
+    assert chunks[-1]["end"] == 2.6
+
+
+def test_repeated_phrase_blocks_lines_that_say_the_same():
+    lines = [{"role": "ИГОРЬ", "text": "Сотрудники уже всё без меня могут."},
+             {"role": "ВЕРА", "text": "Игорь, кто встаёт, когда вы входите?"},
+             {"role": "ИГОРЬ", "text": "Тогда зачем... Сотрудники уже всё без меня могут."}]
+    assert aa.repeated_phrase(lines) == "сотрудники уже все без"
+    assert aa.repeated_phrase(lines[:2]) is None
+    ep = {"lines": lines * 4, "case": {"client_name": "Игорь"}}
+    assert any("повторяется" in p for p in aa.validate_episode(ep, SERIES))
+
+
+def _confession():
+    roles = ["ДЕНИС", "ВЕРА", "ДЕНИС", "ДЕНИС", "ВЕРА", "ДЕНИС", "ДЕНИС", "ВЕРА", "ДЕНИС", "ВЕРА"]
+    lines = [{"role": r, "text": " ".join(f"слово{i}_{k}" for k in range(13))} for i, r in enumerate(roles)]
+    lines[1]["text"] = "Денис, " + lines[1]["text"]
+    return {"lines": lines, "case": {"client_name": "Денис", "occupation": "столяр"}, "client_role": "ДЕНИС"}
+
+
+def test_polish_keeps_original_when_editor_breaks_roles():
+    ep = _confession()
+    swapped = "\n".join(f"{'ВЕРА' if l['role'] == 'ДЕНИС' else 'ДЕНИС'}: {l['text']}" for l in ep["lines"])
+    with patch.object(aa, "_llm", return_value=swapped):
+        assert aa.polish_episode(SERIES, ep) is ep
+
+
+def test_polish_accepts_valid_rewrite():
+    ep = _confession()
+    rewritten = "\n".join(f"{l['role']}: {l['text'].replace('слово', 'речь')}" for l in ep["lines"])
+    with patch.object(aa, "_llm", return_value=rewritten):
+        out = aa.polish_episode(SERIES, ep)
+    assert out is not ep and out["lines"][0]["text"].startswith("речь0_0")
+    assert [l["role"] for l in out["lines"]] == [l["role"] for l in ep["lines"]]
+
+
+def test_roles_mixed_reports_lines_and_fails_open():
+    ep = _confession()
+    with patch.object(aa, "_llm", return_value='{"ok": false, "lines": [4, 7]}'):
+        assert aa.roles_mixed(SERIES, ep) == [4, 7]
+    with patch.object(aa, "_llm", side_effect=RuntimeError("503")):
+        assert aa.roles_mixed(SERIES, ep) == []          # проверка недоступна — эпизод не блокируем
+
+
+def test_screenplay_emotion_tags_go_to_voice_not_subtitles():
+    ep = aa.parse_screenplay("НАЗВАНИЕ: Т\nСЦЕНАРИЙ:\nИГОРЬ: [устало, тихо] Я дома.\nВЕРА: Игорь?", "ИГОРЬ")
+    assert ep["lines"][0] == {"role": "ИГОРЬ", "text": "Я дома.", "emotion": "устало, тихо"}
+    assert "emotion" not in ep["lines"][1]
+    from agents import dialogue_voice as dv
+    with patch.object(dv, "_gemini_tts", return_value=np.zeros(10, dtype=np.float32)) as tts:
+        dv._gemini_dialogue_pcm(ep["lines"], {"ИГОРЬ": {"gemini": "Orus"}, "ВЕРА": {"gemini": "Gacrux"}}, "Сыграй.")
+    assert tts.call_args.args[0] == "Сыграй.\n\nИгорь: [устало, тихо] Я дома.\nВера: Игорь?"
+
+
+def test_lipsync_key_lines_and_apply():
+    from agents import lipsync_agent as ls
+    lines = [{"role": r, "text": "x"} for r in ["АРТЁМ", "ВЕРА", "АРТЁМ", "ВЕРА", "АРТЁМ", "РАССКАЗЧИК"]]
+    plan = {"turn_line": 2, "assignment": [{"slot": s, "shot": i} for i, s in
+            enumerate(["client_open", "wide", "client_turn", "vera_ask", "client_talk", "story"])]}
+    assert ls.key_lines(lines, plan) == [0, 2, 4]          # первая, поворот, последняя реплика героев
+    plan["assignment"][0]["slot"] = "detail"               # без лица — не оживляем
+    assert ls.key_lines(lines, plan) == [2, 4]
+    shots = [{"slot": a["slot"], "image_path": f"{i}.jpg"} for i, a in enumerate(plan["assignment"])]
+    out = ls.apply(plan["assignment"], shots, {2: "lip_02.mp4"})
+    assert out[2]["slot"] == "lipsync_2" and out[2]["clip"] is True
+    assert shots[out[2]["shot"]] == {"slot": "lipsync_2", "image_path": "2.jpg", "video_path": "lip_02.mp4",
+                                     "engine": "lipsync", "lipsync": True}
+    assert plan["assignment"][2]["slot"] == "client_turn"  # исходное назначение не тронуто
+
+
+def test_dialogue_turns_merge_same_speaker_and_extra_speech_detected():
+    from agents import dialogue_voice as dv
+
+    lines = [{"role": "АРТЁМ", "text": "Сегодня два года."},
+             {"role": "АРТЁМ", "text": "Утром пришло фото.", "emotion": "шёпотом"},
+             {"role": "ВЕРА", "text": "Она знает."}]
+    assert [len(t) for t in dv._turns(lines)] == [2, 1]
+    words = lambda s: [{"word": w} for w in s.split()]
+    assert dv._extra_speech(words("Сегодня два года шёпотом со слезами утром пришло фото она знает"), lines) \
+        == "шепотом со слезами"
+    assert dv._extra_speech(words("Сегодня два года утром пришла фото она знает"), lines) == ""

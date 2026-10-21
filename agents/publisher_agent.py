@@ -93,6 +93,25 @@ def _upload_file(presign_url: str, video_path: str, mime_type: str) -> None:
     resp.raise_for_status()
 
 
+def _tiktok_settings(ai_generated: bool) -> dict:
+    """
+    Обязательные поля TikTok в Zernio (docs.zernio.com/platforms/tiktok/fields). Уровень приватности —
+    из разрешённых для аккаунта (creator-info); у бизнес-аккаунтов есть только PUBLIC_TO_EVERYONE.
+    content_preview_confirmed / express_consent_given — требование TikTok: публикуем только то,
+    что автор посмотрел и согласовал (сериал проходит просмотр в очереди --prepare).
+    """
+    return {
+        "privacy_level": os.getenv("TIKTOK_PRIVACY_LEVEL", "PUBLIC_TO_EVERYONE"),
+        "allow_comment": True,
+        "allow_duet": False,
+        "allow_stitch": False,
+        "content_preview_confirmed": True,
+        "express_consent_given": True,
+        "video_made_with_ai": ai_generated,
+        "commercialContentType": "none",
+    }
+
+
 def _create_post(
     media_url: str,
     filename: str,
@@ -104,6 +123,7 @@ def _create_post(
     platform: str,
     account_id: str,
     thumbnail_url: str | None = None,
+    ai_generated: bool = False,
 ) -> dict:
     """Создаёт пост через Zernio API."""
     media_item = {
@@ -118,6 +138,11 @@ def _create_post(
     platform_specific: dict = {}
     if thumbnail_url and platform == "youtube":
         platform_specific["thumbnailUrl"] = thumbnail_url
+    if platform == "youtube" and ai_generated:
+        # Реалистичные сгенерированные люди и сцены: YouTube требует раскрытия (метка «изменённый контент»)
+        platform_specific["containsSyntheticMedia"] = True
+    if platform == "tiktok":
+        platform_specific["tiktokSettings"] = _tiktok_settings(ai_generated)
     if platform_specific:
         platform_entry["platformSpecificData"] = platform_specific
 
@@ -160,9 +185,11 @@ def publish_video(
     platform: Platform,
     account_id: str,
     thumbnail_path: str | None = None,
+    ai_generated: bool = False,
 ) -> dict:
     """
     Загружает MP4 и публикует пост в социальную сеть через Zernio.
+    ai_generated=True — ролик с реалистичными сгенерированными людьми: метка ИИ на YouTube и TikTok.
 
     Args:
         video_path:  Абсолютный путь к MP4
@@ -222,6 +249,7 @@ def publish_video(
         platform=platform,
         account_id=account_id,
         thumbnail_url=thumbnail_url,
+        ai_generated=ai_generated,
     )
 
     post = result.get("post", result)

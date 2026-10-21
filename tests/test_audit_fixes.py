@@ -226,20 +226,23 @@ def test_api_rejects_cross_origin_and_non_json_and_foreign_host(tmp_path):
     assert out == {"text_plain": 415, "cross_origin": 403, "foreign_host": 403}
 
 
-def test_api_run_passes_custom_topic_flag(tmp_path):
+def test_api_jobs_build_commands_and_require_publish_confirm(tmp_path):
     out = _api_check("""
+        api.JOBS_DIR = __import__("pathlib").Path(%r)
         with patch.object(api.subprocess, "Popen") as popen, patch.object(api.threading, "Thread"):
             popen.return_value.pid = 1
-            popen.return_value.poll.return_value = None
-            r = client.post("/api/run", json={"niche": "психология", "platform": "youtube",
-                                              "custom_topic": "Эффект Даннинга-Крюгера",
-                                              "dry_run": True})
-            out["status"] = r.status_code
-            out["cmd"] = popen.call_args.args[0][2:]
-    """, tmp_path)
-    assert out["status"] == 200
-    assert out["cmd"] == ["--niche", "психология", "--platform", "youtube",
-                          "--custom-topic", "Эффект Даннинга-Крюгера", "--dry-run"]
+            r = client.post("/api/jobs", json={"type": "prepare", "series": "kabinet7", "n": 2})
+            out["prepare"] = r.status_code
+            out["cmd"] = popen.call_args.args[0][3:]
+            out["no_confirm"] = client.post("/api/jobs", json={"type": "publish_next", "series": "kabinet7"}).status_code
+            out["bad_series"] = client.post("/api/jobs", json={"type": "prepare", "series": "../x"}).status_code
+            out["bad_script"] = client.post("/api/jobs", json={"type": "script", "series": "kabinet7",
+                                                               "file": "../../.env"}).status_code
+    """ % str(tmp_path / "jobs"), tmp_path)
+    assert out["prepare"] == 201
+    assert out["cmd"][0].endswith("main.py") and out["cmd"][1:] == [
+        "--format", "series", "--series", "kabinet7", "--niche", "психология", "--platform", "youtube", "--prepare", "2"]
+    assert out["no_confirm"] == 400 and out["bad_series"] == 400 and out["bad_script"] == 400
 
 
 # ── main.run_pipeline: dry-run, fail-closed fact-check, одна попытка публикации ─
@@ -250,6 +253,8 @@ from unittest.mock import patch, MagicMock
 os.environ["DB_PATH"] = %(db)r
 sys.path.insert(0, %(root)r)
 sys.argv = ["main.py"]
+for _k in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "ZERNIO_API_KEY"):
+    os.environ[_k] = ""  # до load_dotenv в main: настоящие ключи из .env не подхватятся (см. conftest.py)
 import main
 out = {}
 idea = {"title": "Тема", "hook": "h", "hashtags": [], "source_topic": "тема", "virality": 1}

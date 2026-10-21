@@ -139,10 +139,20 @@ def run_task(model: str, input_: dict, timeout_s: int = 1200) -> dict:
     return wait_task(create_task(model, input_), timeout_s, model=model)
 
 
-def download(url: str, dest: str | Path) -> Path:
+def download(url: str, dest: str | Path, attempts: int = 4) -> Path:
+    """Результат задачи → файл. Сеть до CDN KIE рвётся — повторяем, иначе теряется оплаченная генерация."""
     dest = Path(dest)
     from utils.download import download_to
-    download_to(url, str(dest), timeout=180, min_bytes=1_000)
+    for attempt in range(1, attempts + 1):
+        try:
+            download_to(url, str(dest), timeout=180, min_bytes=1_000)
+            return dest
+        except (requests.ConnectionError, requests.Timeout, requests.exceptions.ChunkedEncodingError) as exc:
+            if attempt == attempts:
+                raise
+            logger.warning("KIE: скачивание %s оборвалось (%s) — повтор %d/%d",
+                           dest.name, type(exc).__name__, attempt, attempts - 1)
+            time.sleep(5 * attempt)
     return dest
 
 

@@ -82,10 +82,12 @@ def _render_still(image: str, duration: float, out: str, zoom_in: bool) -> None:
          "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-an", out], "series still")
 
 
-def _render_clip(video: str, duration: float, out: str) -> None:
+def _render_clip(video: str, duration: float, out: str, slowdown: bool = True) -> None:
+    """Клип в отрезок: длиннее — обрезка; короче — замедление до MAX_SLOWDOWN и стоп-кадр.
+    Липсинк не замедляется (slowdown=False): губы должны совпадать со звуком."""
     clip = _duration(video)
     factor = 1.0
-    if duration > clip:
+    if slowdown and duration > clip:
         factor = min(duration / clip, MAX_SLOWDOWN)
     hold = max(duration - clip * factor, 0)
     vf = (f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},fps={FPS},"
@@ -108,7 +110,7 @@ def assemble(shots: list[dict], dialogue: dict, subtitle_path: str, out_path: st
         shot = shots[seg["index"]]
         seg_out = str(work / f"seg_{n:02d}.mp4")
         if seg["clip"] and shot.get("video_path"):
-            _render_clip(shot["video_path"], seg["duration"], seg_out)
+            _render_clip(shot["video_path"], seg["duration"], seg_out, slowdown=not shot.get("lipsync"))
         else:
             _render_still(shot["image_path"], seg["duration"], seg_out, zoom_in=n % 2 == 0)
         seg_files.append(seg_out)
@@ -119,23 +121,27 @@ def assemble(shots: list[dict], dialogue: dict, subtitle_path: str, out_path: st
     _ff(["-f", "concat", "-safe", "0", "-i", str(concat_list), "-c", "copy", video_only], "series concat")
 
     total = sum(seg["duration"] for seg in timeline)
-    inputs = ["-i", video_only, "-i", dialogue["audio_path"]]
-    filters = [f"[0:v]subtitles='{_esc(subtitle_path)}'[v]",
-               "[1:a]aresample=48000,loudnorm=I=-16:TP=-1.5:LRA=11,apad[voice]"]
+    # Звук сводится отдельным проходом: в одном графе с субтитрами и libx264 ffmpeg 9 молча терял
+    # ~3 с голоса (окно loudnorm) — реплики уезжали от субтитров
+    mix = str(work / "mix.wav")
+    inputs = ["-i", dialogue["audio_path"]]
+    filters = ["[0:a]aresample=48000,loudnorm=I=-16:TP=-1.5:LRA=11,apad[voice]"]
     if music_path:
         inputs += ["-stream_loop", "-1", "-i", music_path]
         filters += [
             "[voice]asplit=2[vmain][vkey]",
-            f"[2:a]aresample=48000,volume={music_volume},afade=t=out:st={max(total - 1.5, 0):.2f}:d=1.5[mus]",
+            f"[1:a]aresample=48000,volume={music_volume},afade=t=out:st={max(total - 1.5, 0):.2f}:d=1.5[mus]",
             "[mus][vkey]sidechaincompress=threshold=0.04:ratio=8:attack=20:release=350[duck]",
             "[vmain][duck]amix=inputs=2:duration=first:normalize=0[a]",
         ]
     else:
         filters.append("[voice]anull[a]")
+    _ff([*inputs, "-filter_complex", ";".join(filters), "-map", "[a]", "-t", f"{total:.3f}",
+         "-ar", "48000", "-c:a", "pcm_s16le", mix], "series audio mix")
 
-    _ff([*inputs, "-filter_complex", ";".join(filters), "-map", "[v]", "-map", "[a]",
-         "-t", f"{total:.3f}", "-c:v", "libx264", "-profile:v", "high", "-level", "4.1",
-         "-preset", "medium", "-crf", "19", "-pix_fmt", "yuv420p",
+    _ff(["-i", video_only, "-i", mix, "-filter_complex", f"[0:v]subtitles='{_esc(subtitle_path)}'[v]",
+         "-map", "[v]", "-map", "1:a", "-t", f"{total:.3f}", "-c:v", "libx264", "-profile:v", "high",
+         "-level", "4.1", "-preset", "medium", "-crf", "19", "-pix_fmt", "yuv420p",
          "-c:a", "aac", "-ar", "48000", "-b:a", "192k", "-movflags", "+faststart", str(out_path)],
         "series final", timeout=1800)
 

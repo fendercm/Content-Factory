@@ -3,1197 +3,443 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Content Factory — Admin Panel</title>
+<title>Сериалы — панель</title>
 <style>
+:root{
+  --bg:#0b0d14;--panel:#12151f;--panel2:#171b28;--line:#232838;--text:#e6e8ef;--muted:#8a90a3;--dim:#5b6175;
+  --accent:#e0805c;--accent-2:#c96a47;--ok:#3ccf7a;--warn:#f0b53c;--err:#f0605c;--run:#5b9cf6;
+  --r:12px;
+}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0a0c14;color:#e0e0e0;min-height:100vh}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.45}
+button,input,select,textarea{font:inherit;color:inherit}
+a{color:var(--accent)}
 
-/* ── Topbar ── */
-.topbar{background:#111320;border-bottom:1px solid #1e2235;padding:12px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:200}
-.topbar-l{display:flex;align-items:center;gap:14px}
-.logo{font-size:15px;font-weight:800;color:#fff;letter-spacing:-.3px}
-.logo span{color:#D97757}
-.conn{display:flex;align-items:center;gap:5px}
-.dot{width:7px;height:7px;border-radius:50%;background:#22c55e;transition:background .3s}
-.dot.off{background:#ef4444}
-.conn-txt{font-size:11px;color:#22c55e;transition:color .3s}
-.conn-txt.off{color:#ef4444}
-.topbar-r{display:flex;align-items:center;gap:8px}
-.clock{font-size:12px;color:#444;font-variant-numeric:tabular-nums}
-.btn{padding:6px 14px;border-radius:7px;font-size:12px;font-weight:600;border:none;cursor:pointer;transition:all .15s}
-.btn-primary{background:#D97757;color:#fff}.btn-primary:hover{background:#c1522a}
-.btn-ghost{background:#1e2235;color:#888}.btn-ghost:hover{background:#262a3e;color:#ddd}
-.btn-danger{background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3)}
-.btn-danger:hover{background:rgba(239,68,68,.25)}
-.btn-sm{padding:4px 10px;font-size:11px}
-.btn:disabled{opacity:.4;cursor:not-allowed}
+.top{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:14px;padding:10px 18px;background:rgba(11,13,20,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.logo{font-weight:800;letter-spacing:-.2px}.logo b{color:var(--accent)}
+.top .grow{flex:1}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:99px;background:var(--panel2);border:1px solid var(--line);font-size:12px;color:var(--muted);white-space:nowrap}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--dim)}.dot.ok{background:var(--ok)}.dot.err{background:var(--err)}.dot.run{background:var(--run);animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.35}}
+select.sel{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 10px;color:var(--text)}
 
-/* ── Layout ── */
-.layout{display:grid;grid-template-columns:210px 1fr;min-height:calc(100vh - 49px)}
-.sidebar{background:#0d0f1c;border-right:1px solid #1e2235;padding:12px 0;overflow-y:auto}
-.sl{font-size:10px;font-weight:700;color:#333;letter-spacing:1px;text-transform:uppercase;padding:10px 14px 4px}
-.ni{display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:7px;font-size:12px;color:#666;cursor:pointer;margin:1px 8px;transition:all .15s}
-.ni:hover{background:#161928;color:#bbb}
-.ni.active{background:#161928;color:#fff}
-.ni-ic{font-size:13px;width:18px;text-align:center;flex-shrink:0}
-.ni-badge{margin-left:auto;background:#D97757;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:99px}
-
-/* ── Main ── */
-.main{padding:20px;overflow-y:auto;min-height:0}
-.page{display:none}.page.active{display:block}
-.pg-title{font-size:18px;font-weight:700;color:#fff;margin-bottom:3px}
-.pg-sub{font-size:12px;color:#555;margin-bottom:18px}
-
-/* ── Offline banner ── */
-.offline{display:none;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);border-radius:9px;padding:9px 14px;margin-bottom:14px;font-size:12px;color:#ef4444}
-.offline.show{display:block}
-
-/* ── KPI ── */
-.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
-.kpi{background:#111320;border:1px solid #1e2235;border-radius:11px;padding:14px 16px}
-.kpi-lbl{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
-.kpi-val{font-size:26px;font-weight:700;color:#fff;margin-bottom:2px}
-.kpi-sub{font-size:11px;color:#22c55e}.kpi-sub.down{color:#ef4444}.kpi-sub.warn{color:#f59e0b}
-
-/* ── Card ── */
-.card{background:#111320;border:1px solid #1e2235;border-radius:11px;padding:18px;margin-bottom:14px}
-.card-title{font-size:13px;font-weight:600;color:#fff;margin-bottom:14px;display:flex;align-items:center;gap:7px}
-
-/* ── Launch panel ── */
-.launch{background:linear-gradient(135deg,#111320,#161928);border:1px solid #2a2d4e;border-radius:11px;padding:16px;margin-bottom:14px}
-.launch-title{font-size:13px;font-weight:700;color:#fff;margin-bottom:12px;display:flex;align-items:center;gap:6px}
-.launch-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
-.form-sel,.form-inp{background:#0a0c14;border:1px solid #1e2235;border-radius:7px;padding:7px 10px;font-size:12px;color:#ddd;outline:none;transition:border-color .15s}
-.form-sel:focus,.form-inp:focus{border-color:#D97757}
-.form-inp{flex:1;min-width:160px}
-.form-sel option{background:#111320}
-.check-row{display:flex;align-items:center;gap:5px;font-size:12px;color:#888;cursor:pointer;user-select:none}
-.check-row input{accent-color:#D97757}
-.launch-btns{display:flex;gap:8px;align-items:center;margin-bottom:10px}
-.progress-wrap{background:#0a0c14;border-radius:99px;height:4px;overflow:hidden;margin-bottom:7px}
-.progress-bar{height:100%;background:linear-gradient(90deg,#3b82f6,#D97757);border-radius:99px;width:0;transition:width .5s}
-.launch-status{font-size:11px;color:#666;min-height:16px}
-.launch-status.active{color:#3b82f6}
-.launch-status.done{color:#22c55e}
-.launch-status.err{color:#ef4444}
-
-/* ── Pipeline mini flow ── */
-.pipe-mini{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
-.pm-step{padding:5px 8px;border-radius:6px;font-size:9px;font-weight:700;text-align:center;min-width:60px;border:1.5px solid;cursor:default}
-.pm-idle{background:#161928;border-color:#1e2235;color:#444}
-.pm-running{background:rgba(59,130,246,.12);border-color:#3b82f6;color:#3b82f6;animation:pm-pulse 1.2s infinite}
-.pm-done{background:rgba(34,197,94,.1);border-color:#22c55e;color:#22c55e}
-.pm-error{background:rgba(239,68,68,.1);border-color:#ef4444;color:#ef4444}
-.pm-arrow{color:#2a2d3e;font-size:12px}
-@keyframes pm-pulse{0%,100%{opacity:1}50%{opacity:.5}}
-
-/* ── Agent Feed ── */
-.feed-wrap{background:#0a0c14;border:1px solid #1e2235;border-radius:11px;overflow:hidden}
-.feed-hdr{padding:10px 14px;border-bottom:1px solid #1e2235;display:flex;align-items:center;justify-content:space-between}
-.feed-hdr-l{font-size:12px;font-weight:600;color:#fff;display:flex;align-items:center;gap:6px}
-.feed-live{width:6px;height:6px;border-radius:50%;background:#22c55e;animation:feed-blink 1.5s infinite}
-@keyframes feed-blink{0%,100%{opacity:1}50%{opacity:.2}}
-.feed-msgs{height:280px;overflow-y:auto;padding:8px 12px;display:flex;flex-direction:column;gap:3px}
-.feed-msgs.tall{height:calc(100vh - 180px)}
-.feed-msg{display:flex;align-items:baseline;gap:6px;padding:3px 0;font-size:12px;animation:msg-in .2s ease-out}
-@keyframes msg-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-.feed-ts{font-size:10px;color:#333;font-variant-numeric:tabular-nums;flex-shrink:0;width:62px}
-.feed-sender{font-weight:600;flex-shrink:0;white-space:nowrap}
-.feed-arrow{color:#333;flex-shrink:0}
-.feed-recv{font-weight:500;flex-shrink:0;white-space:nowrap}
-.feed-colon{color:#444;flex-shrink:0}
-.feed-text{color:#aaa;line-height:1.4}
-.feed-empty{color:#333;font-size:12px;padding:20px;text-align:center}
-
-/* ── Pipeline viz ── */
-.pipe-viz{display:flex;flex-direction:column;gap:0}
-.pipe-row{display:flex;align-items:center;gap:0}
-.pipe-node{display:flex;flex-direction:column;align-items:center;gap:3px;flex:1;min-width:0}
-.pipe-box{width:100%;max-width:110px;padding:9px 6px;border-radius:9px;border:2px solid;text-align:center;cursor:default;transition:all .3s;position:relative}
-.pipe-box-em{font-size:18px;margin-bottom:2px}
-.pipe-box-name{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
-.pipe-box-msg{font-size:8px;margin-top:3px;opacity:.8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100px}
-.pipe-box-stat{font-size:8px;font-weight:600;margin-top:2px}
-.pb-idle{background:#111320;border-color:#1e2235;color:#444}
-.pb-running{background:rgba(59,130,246,.12);border-color:#3b82f6;color:#3b82f6;animation:pb-pulse 1s infinite;box-shadow:0 0 12px rgba(59,130,246,.3)}
-.pb-done{background:rgba(34,197,94,.08);border-color:#22c55e;color:#22c55e}
-.pb-error{background:rgba(239,68,68,.1);border-color:#ef4444;color:#ef4444}
-@keyframes pb-pulse{0%,100%{box-shadow:0 0 8px rgba(59,130,246,.3)}50%{box-shadow:0 0 18px rgba(59,130,246,.6)}}
-.pipe-connector{display:flex;align-items:center;justify-content:center;width:24px;flex-shrink:0;position:relative;overflow:hidden}
-.pipe-arr{color:#2a2d3e;font-size:14px;transition:color .3s;z-index:1}
-.pipe-arr.flowing{color:#3b82f6;animation:arr-flow .6s infinite}
-@keyframes arr-flow{0%,100%{opacity:.3}50%{opacity:1}}
-.pipe-row-conn{display:flex;justify-content:flex-end;padding-right:calc(50% - 55px);height:20px;align-items:center}
-.pipe-row-conn .down-arr{color:#2a2d3e;font-size:16px}
-.pipe-row-conn-l{display:flex;justify-content:flex-start;padding-left:calc(50% - 55px);height:20px;align-items:center}
-
-/* ── Tables ── */
-.tbl{width:100%;border-collapse:collapse}
-.tbl th{text-align:left;font-size:10px;color:#444;font-weight:700;padding:7px 10px;border-bottom:1px solid #1e2235;text-transform:uppercase;letter-spacing:.5px}
-.tbl td{padding:9px 10px;font-size:12px;border-bottom:1px solid #111320;vertical-align:top}
-.tbl tr:hover td{background:#111828}
-.tbl-clickable{cursor:pointer}
-.tbl-clickable td:first-child::before{content:'▶';margin-right:5px;font-size:9px;color:#444;transition:transform .2s;display:inline-block}
-.tbl-clickable.open td:first-child::before{transform:rotate(90deg)}
-
-/* ── Badge ── */
-.badge{display:inline-block;padding:2px 7px;border-radius:99px;font-size:10px;font-weight:700}
-.b-ok{background:rgba(34,197,94,.15);color:#22c55e}
-.b-err{background:rgba(239,68,68,.15);color:#ef4444}
-.b-run{background:rgba(59,130,246,.15);color:#3b82f6}
-.b-pend{background:rgba(107,114,128,.15);color:#6b7280}
-.b-pub{background:rgba(217,119,87,.15);color:#D97757}
-
-.pill{display:inline-block;padding:2px 6px;border-radius:99px;font-size:10px;font-weight:600}
-.p-yt{background:rgba(255,0,0,.12);color:#ff4444}
-.p-tt{background:rgba(255,0,80,.12);color:#ff0050}
-.p-ig{background:rgba(225,48,108,.12);color:#E1306C}
-.p-li{background:rgba(0,119,181,.12);color:#0077B5}
-.p-tw{background:rgba(29,161,242,.12);color:#1da1f2}
-
-/* ── Ideas ── */
-.idea-expand{background:#0d0f1c;border-top:1px solid #1e2235;padding:12px 14px;font-size:11px}
-.idea-expand-sec{margin-bottom:8px}
-.idea-expand-lbl{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:#444;margin-bottom:3px}
-.idea-expand-val{color:#bbb;line-height:1.5}
-.idea-tags{display:flex;gap:4px;flex-wrap:wrap}
-.idea-tag{background:#1e2235;color:#888;font-size:10px;padding:2px 7px;border-radius:99px}
-.script-block{background:#0a0c14;border:1px solid #1e2235;border-radius:7px;padding:10px;font-size:11px;color:#aaa;line-height:1.6;white-space:pre-wrap;max-height:160px;overflow-y:auto;margin-top:4px}
-
-/* ── Filter bar ── */
-.filters{display:flex;gap:8px;margin-bottom:14px;align-items:center;flex-wrap:wrap}
-.filter-chip{padding:4px 12px;border-radius:99px;font-size:11px;font-weight:600;border:1px solid #1e2235;background:#111320;color:#666;cursor:pointer;transition:all .15s}
-.filter-chip:hover{border-color:#444;color:#bbb}
-.filter-chip.active{background:#D97757;border-color:#D97757;color:#fff}
-
-/* ── Agents grid ── */
-.agents-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.ag-card{background:#111320;border:1px solid #1e2235;border-radius:11px;padding:13px;transition:border-color .15s}
-.ag-card:hover{border-color:#2a2d4e}
-.ag-hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px}
-.ag-name{font-size:12px;font-weight:700;color:#fff}
-.ag-model{font-size:10px;color:#444;margin-top:1px}
-.ag-stats{display:flex;gap:10px;margin-top:8px;padding-top:8px;border-top:1px solid #1e2235}
-.ag-s{text-align:center}.ag-sv{font-size:14px;font-weight:700;color:#fff}.ag-sl{font-size:9px;color:#444;text-transform:uppercase}
-
-/* ── Tests ── */
-.tests-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
-.test-card{background:#111320;border:1px solid #1e2235;border-radius:10px;padding:12px;display:flex;align-items:center;gap:10px}
-.test-em{font-size:20px;flex-shrink:0;width:28px;text-align:center}
-.test-info{flex:1;min-width:0}
-.test-name{font-size:12px;font-weight:700;color:#fff;margin-bottom:1px}
-.test-desc{font-size:10px;color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.test-result{font-size:10px;margin-top:3px;min-height:13px}
-.test-result.ok{color:#22c55e}
-.test-result.fail{color:#ef4444}
-.test-result.running{color:#3b82f6}
-
-/* ── Logs ── */
-.log-box{background:#060810;border:1px solid #1e2235;border-radius:10px;padding:12px;font-family:'Courier New',monospace;font-size:11px;height:420px;overflow-y:auto}
-.ll{padding:1px 0;line-height:1.7}
-.ll-info{color:#3b82f6}.ll-success{color:#22c55e}.ll-error{color:#ef4444}.ll-warn{color:#f59e0b}.ll-dim{color:#333}
-
-/* ── Settings ── */
-.set-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-.set-card{background:#111320;border:1px solid #1e2235;border-radius:11px;padding:15px}
-.set-title{font-size:12px;font-weight:700;color:#fff;margin-bottom:11px}
-.fr{margin-bottom:10px}
-.fl{font-size:10px;color:#555;margin-bottom:3px;display:block}
-.fi{width:100%;background:#0a0c14;border:1px solid #1e2235;border-radius:7px;padding:7px 10px;font-size:12px;color:#ddd;outline:none}
-.fi:focus{border-color:#D97757}
-.tog-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid #111320}
-.tog-lbl{font-size:12px;color:#888}
-.tog{width:34px;height:18px;background:#1e2235;border-radius:99px;position:relative;cursor:pointer;transition:background .2s}
-.tog.on{background:#D97757}
-.tog::after{content:'';position:absolute;width:12px;height:12px;background:#fff;border-radius:50%;top:3px;left:3px;transition:left .2s}
-.tog.on::after{left:19px}
-
-/* ── Skeleton ── */
-.skel{background:linear-gradient(90deg,#161928 25%,#1e2235 50%,#161928 75%);background-size:200% 100%;animation:shimmer 1.4s infinite;border-radius:7px;height:20px}
-@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
-
-/* ── Scrollbar ── */
-::-webkit-scrollbar{width:5px;height:5px}
-::-webkit-scrollbar-track{background:#0a0c14}
-::-webkit-scrollbar-thumb{background:#1e2235;border-radius:3px}
-
-/* ── Scheduler ── */
-.sched-slot{display:flex;align-items:center;gap:12px;padding:11px 14px;background:#0a0c14;border-radius:8px;margin-bottom:8px}
-.sched-time{font-size:22px;font-weight:800;color:#D97757;width:52px;flex-shrink:0}
-.sched-lbl{font-size:12px;color:#ddd}.sched-sub{font-size:10px;color:#444}
-.code-blk{background:#060810;border:1px solid #1e2235;border-radius:8px;padding:10px 14px;font-family:monospace;font-size:12px;color:#22c55e;margin-top:8px}
+.layout{display:grid;grid-template-columns:200px 1fr;min-height:calc(100vh - 53px)}
+nav.side{border-right:1px solid var(--line);padding:12px 8px;display:flex;flex-direction:column;gap:2px}
+nav.side a{display:flex;gap:9px;align-items:center;padding:9px 12px;border-radius:9px;color:var(--muted);text-decoration:none;cursor:pointer}
+nav.side a:hover{background:var(--panel)}nav.side a.on{background:var(--panel2);color:var(--text)}
+nav.side .badge{margin-left:auto}
+main{padding:22px;max-width:1200px;width:100%}
+.page{display:none}.page.on{display:block}
+h1{font-size:20px;margin-bottom:4px}.sub{color:var(--muted);margin-bottom:18px}
+h2{font-size:15px;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:14px;min-width:0;overflow-wrap:anywhere}
+.grid{display:grid;gap:12px}.g4{grid-template-columns:repeat(4,1fr)}.g3{grid-template-columns:repeat(3,1fr)}.g2{grid-template-columns:repeat(2,1fr)}
+.kpi .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}.kpi .v{font-size:24px;font-weight:700;margin-top:4px}.kpi .s{font-size:12px;color:var(--dim)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.btn{border:1px solid var(--line);background:var(--panel2);padding:7px 13px;border-radius:9px;cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:#343a50}.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}.btn.pri:hover{background:var(--accent-2)}
+.btn.danger{color:var(--err);border-color:rgba(240,96,92,.35)}.btn.sm{padding:4px 9px;font-size:12px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.badge{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600;background:var(--panel2);color:var(--muted)}
+.b-ok{background:rgba(60,207,122,.13);color:var(--ok)}.b-err{background:rgba(240,96,92,.13);color:var(--err)}.b-run{background:rgba(91,156,246,.14);color:var(--run)}.b-warn{background:rgba(240,181,60,.13);color:var(--warn)}.b-acc{background:rgba(224,128,92,.14);color:var(--accent)}
+table{width:100%;border-collapse:collapse}th{text-align:left;font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;font-weight:600;padding:8px;border-bottom:1px solid var(--line)}
+td{padding:9px 8px;border-bottom:1px solid #1a1e2b;vertical-align:top}tr:last-child td{border-bottom:0}
+.muted{color:var(--muted)}.dim{color:var(--dim)}.small{font-size:12px}.err{color:var(--err)}
+.stages{display:grid;grid-template-columns:repeat(auto-fill,minmax(105px,1fr));gap:8px}
+.st{border:1.5px solid var(--line);border-radius:10px;padding:8px 10px;min-height:56px;font-size:12px}
+.st b{display:block;font-size:12px;margin-bottom:3px}.st.done{border-color:rgba(60,207,122,.45);color:var(--ok)}.st.running{border-color:var(--run);color:var(--run);background:rgba(91,156,246,.07)}
+.st.failed{border-color:var(--err);color:var(--err)}.st.pending{color:var(--dim)}.st.skipped{color:var(--muted);border-style:dashed}
+video.player{width:100%;max-width:280px;border-radius:10px;background:#000;display:block}
+label.f{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--muted)}
+.inp,textarea.inp,select.inp{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--text);width:100%}
+.inp:focus{outline:none;border-color:var(--accent)}
+textarea.inp{min-height:90px;resize:vertical;font-family:inherit}
+.form{display:grid;gap:12px;grid-template-columns:repeat(2,1fr)}.form .full{grid-column:1/-1}
+.check{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--text)}
+.script{white-space:pre-wrap;font-size:13px;line-height:1.55}.script .role{font-weight:700;color:var(--accent)}.script .emo{color:var(--dim);font-style:italic}
+.log{background:#07080d;border:1px solid var(--line);border-radius:10px;padding:10px;font:12px/1.5 ui-monospace,Consolas,monospace;max-height:520px;overflow:auto;white-space:pre-wrap;word-break:break-word}
+.log .warn{color:var(--warn)}.log .err{color:var(--err)}
+.thumbs{display:flex;gap:10px;flex-wrap:wrap}.thumb{width:130px;text-align:center;font-size:12px}.thumb img{width:130px;height:173px;object-fit:cover;border-radius:10px;border:2px solid var(--line);display:block;margin-bottom:6px}.thumb.sel img{border-color:var(--accent)}
+.empty{color:var(--dim);text-align:center;padding:22px}
+.chart{display:flex;align-items:flex-end;gap:6px;height:150px;padding-top:8px}.chart .bar{flex:1;min-width:14px;background:linear-gradient(180deg,var(--accent),#7a3f2a);border-radius:5px 5px 0 0;position:relative}.chart .bar span{position:absolute;bottom:-18px;left:0;right:0;text-align:center;font-size:10px;color:var(--dim)}
+.toast{position:fixed;right:16px;bottom:16px;display:flex;flex-direction:column;gap:8px;z-index:50}.toast div{background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--accent);padding:10px 14px;border-radius:9px;max-width:360px;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+.toast div.e{border-left-color:var(--err)}
+@media (max-width:820px){.layout{grid-template-columns:1fr}nav.side{flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line)}nav.side a{flex-shrink:0}.g4,.g3,.g2,.form{grid-template-columns:1fr 1fr}main{padding:16px}}
+@media (max-width:520px){.g4,.g3,.g2,.form{grid-template-columns:1fr}.top{flex-wrap:wrap}}
 </style>
 </head>
 <body>
-
-<!-- TOPBAR -->
-<div class="topbar">
-  <div class="topbar-l">
-    <div class="logo">Content<span>Factory</span></div>
-    <div class="conn">
-      <div class="dot" id="connDot"></div>
-      <div class="conn-txt" id="connTxt">Подключение...</div>
-    </div>
-  </div>
-  <div class="topbar-r">
-    <div class="clock" id="clock"></div>
-  </div>
+<div class="top">
+  <div class="logo">Content<b>Factory</b> · сериалы</div>
+  <select class="sel" id="seriesSel" title="Сериал"></select>
+  <div class="grow"></div>
+  <span class="pill" id="kiePill"><span class="dot"></span>KIE: …</span>
+  <span class="pill" id="schedPill"><span class="dot"></span>Планировщик</span>
+  <span class="pill" id="connPill"><span class="dot"></span>Сервер</span>
 </div>
 
 <div class="layout">
+<nav class="side" id="nav">
+  <a data-p="overview" class="on">🏠 Обзор</a>
+  <a data-p="episodes">🎬 Эпизоды</a>
+  <a data-p="scripts">✍️ Сценарии</a>
+  <a data-p="analytics">📈 Аналитика</a>
+  <a data-p="series">🗂 Сериалы</a>
+  <a data-p="jobs">⚙️ Задачи <span class="badge b-run" id="jobsBadge" style="display:none">0</span></a>
+  <a data-p="logs">🖥 Журнал</a>
+</nav>
+<main>
 
-<!-- SIDEBAR -->
-<div class="sidebar">
-  <div class="sl">Главное</div>
-  <div class="ni active" onclick="nav('dashboard',this)"><span class="ni-ic">📊</span> Дашборд</div>
-  <div class="ni" onclick="nav('feed',this)"><span class="ni-ic">💬</span> Лента агентов <span class="ni-badge" id="feedBadge" style="display:none">NEW</span></div>
-  <div class="ni" onclick="nav('pipeline',this)"><span class="ni-ic">⚡</span> Пайплайн</div>
-  <div class="ni" onclick="nav('ideas',this)"><span class="ni-ic">💡</span> Идеи</div>
-  <div class="ni" onclick="nav('agents',this)"><span class="ni-ic">🤖</span> Агенты</div>
-  <div class="sl">Мониторинг</div>
-  <div class="ni" onclick="nav('runs',this)"><span class="ni-ic">📋</span> История</div>
-  <div class="ni" onclick="nav('logs',this)"><span class="ni-ic">🖥</span> Логи</div>
-  <div class="ni" onclick="nav('tests',this)"><span class="ni-ic">🧪</span> Тесты</div>
-  <div class="sl">Система</div>
-  <div class="ni" onclick="nav('scheduler',this)"><span class="ni-ic">⏰</span> Расписание</div>
-  <div class="ni" onclick="nav('settings',this)"><span class="ni-ic">⚙️</span> Настройки</div>
-</div>
-
-<div class="main">
-
-<!-- ═══ DASHBOARD ═══ -->
-<div class="page active" id="page-dashboard">
-  <div class="pg-title">Дашборд</div>
-  <div class="pg-sub" id="lastRunSub">Последний запуск: —</div>
-  <div class="offline show" id="offlineBanner">⚠️ Нет подключения к серверу. Запустите: <code>py utils/api_server.py</code></div>
-
-  <div class="kpi-grid">
-    <div class="kpi"><div class="kpi-lbl">Видео сегодня</div><div class="kpi-val" id="k1">—</div><div class="kpi-sub" id="k1s">загрузка...</div></div>
-    <div class="kpi"><div class="kpi-lbl">Опубликовано всего</div><div class="kpi-val" id="k2">—</div><div class="kpi-sub" id="k2s">загрузка...</div></div>
-    <div class="kpi"><div class="kpi-lbl">Ошибок сегодня</div><div class="kpi-val" id="k3">—</div><div class="kpi-sub" id="k3s" class="kpi-sub">загрузка...</div></div>
-    <div class="kpi"><div class="kpi-lbl">Аккаунтов</div><div class="kpi-val" id="k4">—</div><div class="kpi-sub warn" id="k4s">загрузка...</div></div>
+<!-- ОБЗОР -->
+<section class="page on" id="p-overview">
+  <h1 id="ovTitle">Обзор</h1><div class="sub" id="ovSub">—</div>
+  <div class="grid g4" id="ovKpi"></div>
+  <div class="card"><h2>🎞 Сборка эпизода <span id="buildBadge"></span></h2>
+    <div class="row small muted" id="buildHead" style="margin-bottom:10px">—</div>
+    <div class="stages" id="buildStages"></div>
+    <div class="small" id="buildNote" style="margin-top:10px;color:var(--run)"></div>
+    <div class="small err" id="buildErr" style="margin-top:8px"></div>
   </div>
+  <div class="grid g2">
+    <div class="card"><h2>⏰ Выпуск</h2><div id="ovSched"></div></div>
+    <div class="card"><h2>⚠️ Последние ошибки</h2><div id="ovErrors" class="small"></div></div>
+  </div>
+</section>
 
-  <!-- Launch Panel -->
-  <div class="launch">
-    <div class="launch-title">▶ Запустить пайплайн</div>
-    <div class="launch-row">
-      <select class="form-sel" id="lNiche">
-        <option value="психология">🧠 Психология</option>
-        <option value="бизнес">💼 Бизнес</option>
-        <option value="здоровье">💪 Здоровье</option>
-        <option value="технологии">💻 Технологии</option>
-        <option value="деньги">💰 Деньги</option>
-        <option value="саморазвитие">🚀 Саморазвитие</option>
-        <option value="мотивация">🔥 Мотивация</option>
-        <option value="продуктивность">⚡ Продуктивность</option>
-      </select>
-      <select class="form-sel" id="lPlatform">
-        <option value="youtube" selected>YouTube</option>
-        <option value="tiktok">TikTok</option>
-        <option value="instagram">Instagram</option>
-        <option value="linkedin">LinkedIn</option>
-        <option value="twitter">Twitter</option>
-      </select>
-      <label class="check-row"><input type="checkbox" id="lDryRun"> Dry Run</label>
+<!-- ЭПИЗОДЫ -->
+<section class="page" id="p-episodes">
+  <h1>Эпизоды</h1><div class="sub">Очередь на выпуск, вышедшие и снятые серии</div>
+  <div class="card"><div class="row">
+    <span class="muted">Собрать</span>
+    <select class="sel" id="prepN"><option>1</option><option>2</option><option>3</option><option>5</option></select>
+    <span class="muted">эп. на</span>
+    <select class="sel" id="prepPlatform"><option value="youtube">YouTube</option><option value="tiktok">TikTok</option></select>
+    <button class="btn pri" onclick="startPrepare()">Собрать в очередь</button>
+    <div class="grow" style="flex:1"></div>
+    <button class="btn" onclick="publishNext()">🚀 Выпустить следующий сейчас</button>
+  </div><div class="small dim" style="margin-top:8px">Сборка: сценарий → кадры → голоса → монтаж. Эпизод ≈ $1 и 10–15 минут; в соцсети не уходит, пока вы его не выпустите или не сработает расписание.</div></div>
+  <div class="card"><table><thead><tr><th>№</th><th>Серия</th><th>Статус</th><th>Собрана</th><th>Вышла</th><th></th></tr></thead><tbody id="epBody"></tbody></table></div>
+  <div class="card"><h2>📋 Последние сборки</h2><table><thead><tr><th>Начало</th><th>Серия</th><th>Итог</th><th>Время</th><th>Цена</th><th></th></tr></thead><tbody id="runsBody"></tbody></table></div>
+</section>
+
+<!-- СЦЕНАРИИ -->
+<section class="page" id="p-scripts">
+  <h1>Сценарии</h1><div class="sub">Лаборатория вариантов и сценарии для производства</div>
+  <div class="card"><h2>🧪 Лаборатория</h2>
+    <div class="row"><span class="muted">Написать</span><select class="sel" id="labN"><option>2</option><option selected>4</option><option>6</option></select><span class="muted">сценария текстом</span>
+      <button class="btn pri" onclick="startLab()">Запустить</button><span class="small dim">≈3–5 минут, копейки; видео не собирается</span></div>
+    <div id="labList" style="margin-top:12px"></div>
+  </div>
+  <div class="card" id="labView" style="display:none"></div>
+  <div class="card"><h2>📄 Сценарии для производства</h2><div id="scriptList"></div></div>
+  <div class="card"><h2>✏️ Новый сценарий</h2>
+    <div class="form">
+      <label class="f">Название<input class="inp" id="scTitle" placeholder="Бублик"></label>
+      <label class="f">Имя клиента<input class="inp" id="scName" placeholder="Артём"></label>
+      <label class="f">Возраст<input class="inp" id="scAge" type="number" value="32"></label>
+      <label class="f">Пол<select class="inp" id="scGender"><option value="female">женский</option><option value="male">мужской</option></select></label>
+      <label class="f">Кто по жизни<input class="inp" id="scJob" placeholder="инженер"></label>
+      <label class="f">Вещь в кадре (деталь)<input class="inp" id="scDetail" placeholder="старый ошейник с жетоном"></label>
+      <label class="f full">Реплики — по одной на строку: <code>РОЛЬ: [эмоция] текст</code>
+        <textarea class="inp" id="scText" rows="10" placeholder="АРТЁМ: [устало] Мама думает, что у меня живёт папина собака.&#10;ВЕРА: [мягко] Артём, а мама?"></textarea></label>
     </div>
-    <div class="launch-row">
-      <input class="form-inp" id="lCustomTopic" placeholder="Своя тема (опционально — пропустит Trend Scout)">
+    <div class="row" style="margin-top:12px"><button class="btn" onclick="saveScript(false)">Сохранить</button><button class="btn pri" onclick="saveScript(true)">Сохранить и собрать</button></div>
+  </div>
+</section>
+
+<!-- АНАЛИТИКА -->
+<section class="page" id="p-analytics">
+  <h1>Аналитика</h1><div class="sub" id="anSub">Просмотры из соцсетей (через Zernio) и расходы на производство</div>
+  <div class="row" style="margin-bottom:14px"><select class="sel" id="anDays"><option value="7">7 дней</option><option value="30" selected>30 дней</option><option value="90">90 дней</option></select>
+    <button class="btn" onclick="startJob('analytics',{days:7})">↻ Обновить из соцсетей</button><span class="small dim">Wibes и VK — без API, их просмотры здесь не видны</span></div>
+  <div class="grid g4" id="anKpi"></div>
+  <div class="card"><h2>Просмотры по сериям</h2><div class="chart" id="anChart"></div><div style="height:20px"></div></div>
+  <div class="card"><table><thead><tr><th>№</th><th>Серия</th><th>Просмотры</th><th>Лайки</th><th>Комм.</th><th>Цена</th><th>₽/$ на 1000</th><th>Обновлено</th></tr></thead><tbody id="anBody"></tbody></table></div>
+</section>
+
+<!-- СЕРИАЛЫ -->
+<section class="page" id="p-series">
+  <h1>Сериалы</h1><div class="sub">Настройки сериала, героиня, расписание — и новые сериалы</div>
+  <div class="grid g3" id="seriesCards"></div>
+  <div class="card" id="seriesEdit"></div>
+  <div class="card"><h2>➕ Новый сериал</h2>
+    <div class="form">
+      <label class="f">ID (латиницей)<input class="inp" id="nsId" placeholder="notarius"></label>
+      <label class="f">Название<input class="inp" id="nsName" placeholder="Контора на Садовой"></label>
+      <label class="f full">Логлайн<input class="inp" id="nsLog" placeholder="Нотариус Марк видит людей в самый честный момент — когда они делят наследство."></label>
+      <label class="f">Героиня/герой: полное имя<input class="inp" id="nsHName" placeholder="Марк Левин"></label>
+      <label class="f">Роль в сценарии (капсом)<input class="inp" id="nsHRole" placeholder="МАРК"></label>
+      <label class="f">Профессия<input class="inp" id="nsHProf" placeholder="нотариус"></label>
+      <label class="f">Где идёт действие<input class="inp" id="nsHSet" placeholder="в конторе нотариуса"></label>
+      <label class="f full">Характер и манера речи<textarea class="inp" id="nsHVoice" rows="2"></textarea></label>
+      <label class="f full">Внешность героя по-английски (для кадров)<textarea class="inp" id="nsHVis" rows="2" placeholder="Mark, a 45-year-old Russian notary: ..."></textarea></label>
+      <label class="f full">Локация по-английски<input class="inp" id="nsLoc" placeholder="an old notary office in Saint Petersburg: ..."></label>
+      <label class="f full">Хэштеги<input class="inp" id="nsTags" placeholder="наследство, сериал, истории"></label>
     </div>
-    <div class="launch-btns">
-      <button class="btn btn-primary" id="btnRun" onclick="startRun()">▶ Создать видео</button>
-      <button class="btn btn-danger btn-sm" id="btnStop" onclick="stopRun()" disabled>⏹ Стоп</button>
-      <div style="font-size:11px;color:#444;margin-left:4px" id="runPid"></div>
-    </div>
-    <div class="progress-wrap"><div class="progress-bar" id="pBar"></div></div>
-    <div class="launch-status" id="runStatus">Готов к запуску</div>
+    <div class="row" style="margin-top:12px"><button class="btn pri" onclick="createSeries()">Создать сериал</button><span class="small dim">Технические настройки (голоса, монтаж, анимация) возьмутся из «Кабинета 7»; портрет героя — следующим шагом</span></div>
   </div>
+</section>
 
-  <!-- Pipeline mini -->
-  <div class="card">
-    <div class="card-title">⚡ Текущий пайплайн</div>
-    <div class="pipe-mini" id="pipeMini"></div>
-  </div>
+<!-- ЗАДАЧИ -->
+<section class="page" id="p-jobs">
+  <h1>Задачи</h1><div class="sub">Что сейчас выполняется и чем закончилось</div>
+  <div class="card"><table><thead><tr><th>Начало</th><th>Задача</th><th>Сериал</th><th>Статус</th><th></th></tr></thead><tbody id="jobsBody"></tbody></table></div>
+  <div class="card" id="jobLogCard" style="display:none"><h2 id="jobLogTitle">Журнал задачи</h2><div class="log" id="jobLog"></div></div>
+</section>
 
-  <!-- Agent Feed mini -->
-  <div class="feed-wrap" style="margin-bottom:14px">
-    <div class="feed-hdr">
-      <div class="feed-hdr-l"><div class="feed-live"></div> Лента агентов</div>
-      <button class="btn btn-ghost btn-sm" onclick="nav('feed',document.querySelector('.ni:nth-child(3)'))">Открыть полную →</button>
-    </div>
-    <div class="feed-msgs" id="feedMini"><div class="feed-empty">Сообщений пока нет. Запустите пайплайн.</div></div>
-  </div>
+<!-- ЖУРНАЛ -->
+<section class="page" id="p-logs">
+  <h1>Журнал</h1><div class="sub">Последние строки логов (секреты скрыты)</div>
+  <div class="card"><div class="log" id="logBox" style="max-height:70vh"></div></div>
+</section>
 
-  <!-- Recent runs -->
-  <div class="card">
-    <div class="card-title">📋 Последние запуски</div>
-    <table class="tbl">
-      <thead><tr><th>Тема</th><th>Ниша</th><th>Платформа</th><th>Статус</th><th>Дата</th></tr></thead>
-      <tbody id="recentRuns"><tr><td colspan="5" style="color:#333;text-align:center;padding:16px">Загрузка...</td></tr></tbody>
-    </table>
-  </div>
+</main>
 </div>
-
-<!-- ═══ FEED ═══ -->
-<div class="page" id="page-feed">
-  <div class="pg-title">Лента агентов</div>
-  <div class="pg-sub">Живые сообщения от каждого агента в реальном времени</div>
-  <div class="feed-wrap">
-    <div class="feed-hdr">
-      <div class="feed-hdr-l"><div class="feed-live"></div> Agent Feed — SSE live</div>
-      <button class="btn btn-ghost btn-sm" onclick="clearFeed()">Очистить</button>
-    </div>
-    <div class="feed-msgs tall" id="feedFull"><div class="feed-empty">Сообщений пока нет. Запустите пайплайн.</div></div>
-  </div>
-</div>
-
-<!-- ═══ PIPELINE ═══ -->
-<div class="page" id="page-pipeline">
-  <div class="pg-title">Пайплайн</div>
-  <div class="pg-sub" id="pipeRunId">run_id: —</div>
-  <div class="card">
-    <div class="card-title">🔄 Визуализация в реальном времени</div>
-    <div id="pipeViz"></div>
-  </div>
-  <div class="card" style="margin-top:14px">
-    <div class="card-title">📊 Детальный статус</div>
-    <div id="pipeDetail"></div>
-  </div>
-</div>
-
-<!-- ═══ IDEAS ═══ -->
-<div class="page" id="page-ideas">
-  <div class="pg-title">Идеи</div>
-  <div class="pg-sub">Все сгенерированные идеи из pipeline.db</div>
-  <div class="filters" id="ideasFilters">
-    <span style="font-size:11px;color:#555">Статус:</span>
-    <div class="filter-chip active" onclick="filterIdeas('',this)">Все</div>
-    <div class="filter-chip" onclick="filterIdeas('published',this)">Опубликовано</div>
-    <div class="filter-chip" onclick="filterIdeas('failed',this)">Ошибка</div>
-    <div class="filter-chip" onclick="filterIdeas('pending',this)">Ожидает</div>
-  </div>
-  <div class="card">
-    <table class="tbl" id="ideasTbl">
-      <thead><tr><th>Дата</th><th>Ниша</th><th>Тема</th><th>Крючок</th><th>Статус</th></tr></thead>
-      <tbody id="ideasBody"><tr><td colspan="5" style="color:#333;text-align:center;padding:20px">Загрузка...</td></tr></tbody>
-    </table>
-  </div>
-</div>
-
-<!-- ═══ AGENTS ═══ -->
-<div class="page" id="page-agents">
-  <div class="pg-title">Агенты</div>
-  <div class="pg-sub">Статистика и статус каждого агента пайплайна</div>
-  <div class="agents-grid" id="agGrid"><div class="skel" style="height:100px;grid-column:1/-1"></div></div>
-</div>
-
-<!-- ═══ RUNS ═══ -->
-<div class="page" id="page-runs">
-  <div class="pg-title">История запусков</div>
-  <div class="pg-sub">Все запуски пайплайна из pipeline.db</div>
-  <div class="card">
-    <table class="tbl">
-      <thead><tr><th>#</th><th>Тема</th><th>Ниша</th><th>Платформа</th><th>Статус</th><th>Дата</th></tr></thead>
-      <tbody id="allRuns"><tr><td colspan="6" style="color:#333;text-align:center;padding:20px">Загрузка...</td></tr></tbody>
-    </table>
-  </div>
-</div>
-
-<!-- ═══ LOGS ═══ -->
-<div class="page" id="page-logs">
-  <div class="pg-title">Логи</div>
-  <div class="pg-sub">Последние строки из logs/pipeline_*.log</div>
-  <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
-    <select class="form-sel" id="logLines" onchange="loadLogs()">
-      <option value="50">50 строк</option><option value="100" selected>100 строк</option>
-      <option value="200">200 строк</option><option value="500">500 строк</option>
-    </select>
-    <button class="btn btn-ghost btn-sm" onclick="loadLogs()">↻ Обновить</button>
-    <label class="check-row"><input type="checkbox" id="logAutoScroll" checked> Авто-скролл</label>
-  </div>
-  <div class="log-box" id="logBox"><div class="ll ll-dim">Загрузка...</div></div>
-</div>
-
-<!-- ═══ TESTS ═══ -->
-<div class="page" id="page-tests">
-  <div class="pg-title">Тесты агентов</div>
-  <div class="pg-sub">Быстрые тесты с мок-данными — без реальных API-вызовов</div>
-  <div style="display:flex;gap:8px;margin-bottom:14px;align-items:center">
-    <button class="btn btn-primary" onclick="runAllTests()">⚡ Запустить все</button>
-    <div style="font-size:11px;color:#555" id="testSummary"></div>
-  </div>
-  <div class="tests-grid" id="testsGrid"></div>
-</div>
-
-<!-- ═══ SCHEDULER ═══ -->
-<div class="page" id="page-scheduler">
-  <div class="pg-title">Расписание</div>
-  <div class="pg-sub">Автоматический запуск 3 раза в день</div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-    <div class="card">
-      <div class="card-title">⏰ Расписание запусков</div>
-      <div class="sched-slot"><div class="sched-time">09:00</div><div><div class="sched-lbl">Утренний запуск</div><div class="sched-sub">Контент для утренней аудитории</div></div></div>
-      <div class="sched-slot"><div class="sched-time">14:00</div><div><div class="sched-lbl">Дневной запуск</div><div class="sched-sub">Пиковое время просмотров</div></div></div>
-      <div class="sched-slot"><div class="sched-time">20:00</div><div><div class="sched-lbl">Вечерний запуск</div><div class="sched-sub">Максимальная активность</div></div></div>
-      <div class="sched-slot" style="border:1px solid #1e2235;border-radius:8px"><div class="sched-time" style="color:#3b82f6">21:00</div><div><div class="sched-lbl">Ежедневная сводка</div><div class="sched-sub">Telegram: статистика дня</div></div></div>
-    </div>
-    <div class="card">
-      <div class="card-title">🚀 Запуск</div>
-      <div style="font-size:12px;color:#666;margin-bottom:10px">Запустите в терминале и оставьте работать в фоне:</div>
-      <div class="code-blk">py scheduler.py</div>
-      <div style="margin-top:14px;font-size:11px;color:#555">Настройка через .env:<br>
-        <code style="color:#888">SCHEDULER_NICHE=психология</code><br>
-        <code style="color:#888">SCHEDULER_NICHES=психология,бизнес</code><br>
-        <code style="color:#888">SCHEDULER_PLATFORM=tiktok</code>
-      </div>
-      <div style="margin-top:14px">
-        <div style="font-size:11px;color:#555;margin-bottom:6px">Multi-niche (параллельно):</div>
-        <div class="code-blk" style="color:#3b82f6">py main.py --niches "психология,бизнес,здоровье"</div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ═══ SETTINGS ═══ -->
-<div class="page" id="page-settings">
-  <div class="pg-title">Настройки</div>
-  <div class="pg-sub">Конфигурация API ключей и параметров</div>
-  <div class="set-grid">
-    <div class="set-card">
-      <div class="set-title">🔑 API Ключи</div>
-      <div class="fr"><label class="fl">GROQ_API_KEY</label><input class="fi" type="password" placeholder="gsk_..."></div>
-      <div class="fr"><label class="fl">GEMINI_API_KEY</label><input class="fi" type="password" placeholder="AIza..."></div>
-      <div class="fr"><label class="fl">ZERNIO_API_KEY</label><input class="fi" type="password" placeholder="sk_..."></div>
-      <div class="fr"><label class="fl">PEXELS_API_KEY</label><input class="fi" type="password" placeholder="..."></div>
-      <div class="fr"><label class="fl">TELEGRAM_BOT_TOKEN</label><input class="fi" type="password" placeholder="123456:ABC..."></div>
-      <div class="fr"><label class="fl">TELEGRAM_CHAT_ID</label><input class="fi" type="text" placeholder="-100..."></div>
-    </div>
-    <div class="set-card">
-      <div class="set-title">⚙️ Параметры</div>
-      <div class="fr"><label class="fl">Ниша по умолчанию</label><input class="fi" type="text" value="психология"></div>
-      <div class="fr"><label class="fl">Платформа по умолчанию</label>
-        <select class="fi"><option>tiktok</option><option>youtube</option><option>instagram</option><option>linkedin</option></select>
-      </div>
-      <div class="fr"><label class="fl">Запусков в день</label><input class="fi" type="number" value="3"></div>
-      <div style="margin-top:12px">
-        <div class="tog-row"><span class="tog-lbl">Dry Run режим</span><div class="tog" onclick="this.classList.toggle('on')"></div></div>
-        <div class="tog-row"><span class="tog-lbl">Telegram уведомления</span><div class="tog on" onclick="this.classList.toggle('on')"></div></div>
-        <div class="tog-row"><span class="tog-lbl">Safety Agent</span><div class="tog on" onclick="this.classList.toggle('on')"></div></div>
-        <div class="tog-row"><span class="tog-lbl">QA Agent</span><div class="tog on" onclick="this.classList.toggle('on')"></div></div>
-        <div class="tog-row"><span class="tog-lbl">Fact Checker</span><div class="tog on" onclick="this.classList.toggle('on')"></div></div>
-      </div>
-    </div>
-  </div>
-</div>
-
-</div><!-- /main -->
-</div><!-- /layout -->
+<div class="toast" id="toast"></div>
 
 <script>
-// Относительный путь: панель отдаёт тот же Flask-сервер (любой хост/порт)
-const API = '/api';
+const TOKEN = (() => { try { const q = new URLSearchParams(location.search); const t = q.get('token');
+  if (t) { localStorage.setItem('cf_admin_token', t); q.delete('token'); history.replaceState(null, '', location.pathname); return t; }
+  return localStorage.getItem('cf_admin_token') || ''; } catch { return ''; } })();
+let S = localStorage.getItem('cf_series') || 'kabinet7';
+let page = 'overview', openLog = null, seriesList = [], openVideo = new Set();
 
-// Токен админки (если на сервере задан ADMIN_TOKEN): откройте панель один раз
-// как /?token=XXX — токен сохранится в localStorage и уйдёт из адресной строки
-const ADMIN_TOKEN = (() => {
+async function api(path, opts = {}) {
+  const headers = {'Content-Type': 'application/json', ...(TOKEN ? {'X-Admin-Token': TOKEN} : {})};
+  const r = await fetch('/api' + path, {...opts, headers, body: opts.body ? JSON.stringify(opts.body) : undefined});
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+  return data;
+}
+const esc = s => s == null ? '' : String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const $ = id => document.getElementById(id);
+function toast(msg, err) { const d = document.createElement('div'); if (err) d.className = 'e'; d.textContent = msg; $('toast').appendChild(d); setTimeout(() => d.remove(), 5000); }
+function ago(iso) { if (!iso) return '—'; const d = new Date(iso), m = Math.floor((Date.now() - d) / 60000);
+  if (m < 1) return 'только что'; if (m < 60) return m + ' мин назад'; if (m < 1440) return Math.floor(m / 60) + ' ч назад';
+  return d.toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}); }
+function dur(s) { if (s == null) return ''; if (s < 60) return s + ' с'; const m = Math.floor(s / 60); return m + ' мин' + (s % 60 ? ' ' + s % 60 + ' с' : ''); }
+const tok = () => TOKEN ? '?token=' + encodeURIComponent(TOKEN) : '';
+const RUN = {running:['b-run','собирается'], queued:['b-ok','в очереди'], completed:['b-acc','опубликован'], failed:['b-err','ошибка'], stalled:['b-err','завис?']};
+const EP = {ready:['b-run','ждёт выхода'], published:['b-ok','вышла'], rejected:['','снята']};
+const JOB = {running:['b-run','идёт'], done:['b-ok','готово'], failed:['b-err','ошибка'], stopped:['','остановлена'], stopping:['b-warn','останавливается'], lost:['b-warn','потеряна']};
+const badge = (m, k) => { const [c, t] = m[k] || ['', k || '—']; return `<span class="badge ${c}">${esc(t)}</span>`; };
+const ICON = {pending:'·', running:'⏳', done:'✓', failed:'✕', skipped:'⏸'};
+
+// ── навигация и сериал ──
+$('nav').addEventListener('click', e => { const a = e.target.closest('a[data-p]'); if (a) go(a.dataset.p); });
+function go(p) { page = p; document.querySelectorAll('nav.side a').forEach(a => a.classList.toggle('on', a.dataset.p === p));
+  document.querySelectorAll('.page').forEach(s => s.classList.toggle('on', s.id === 'p-' + p)); refresh(); }
+$('seriesSel').addEventListener('change', e => { S = e.target.value; localStorage.setItem('cf_series', S); openVideo.clear(); refresh(true); });
+async function loadSeriesList() {
+  seriesList = await api('/series');
+  if (!seriesList.find(s => s.id === S) && seriesList.length) S = seriesList[0].id;
+  $('seriesSel').innerHTML = seriesList.map(s => `<option value="${esc(s.id)}" ${s.id === S ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
+}
+
+// ── задачи ──
+async function startJob(type, params = {}) {
+  try { const j = await api('/jobs', {method: 'POST', body: {type, series: S, ...params}}); toast('Запущено: ' + j.title); refresh(); return j; }
+  catch (e) { toast(e.message, true); }
+}
+function startPrepare() { startJob('prepare', {n: +$('prepN').value, platform: $('prepPlatform').value}); }
+function publishNext() { if (confirm('Опубликовать следующий эпизод из очереди прямо сейчас? Это реальная публикация в соцсети.')) startJob('publish_next', {confirm: true}); }
+function startLab() { startJob('lab', {n: +$('labN').value, same: true}); }
+
+// ── обзор ──
+async function loadOverview() {
+  const o = await api('/overview');
+  const s = o.series.find(x => x.id === S) || {episodes: {}, schedule: {}};
+  const kie = o.kie_balance == null ? '…' : o.kie_balance.toLocaleString('ru-RU');
+  $('kiePill').innerHTML = `<span class="dot ${o.kie_balance > 300 ? 'ok' : o.kie_balance == null ? '' : 'err'}"></span>KIE: ${kie} кр.`;
+  $('schedPill').innerHTML = `<span class="dot ${o.scheduler_alive ? 'ok' : 'err'}"></span>Планировщик ${o.scheduler_alive ? 'работает' : 'выключен'}`;
+  const run = o.running_jobs.length; $('jobsBadge').style.display = run ? '' : 'none'; $('jobsBadge').textContent = run;
+  if (page !== 'overview') return;
+  $('ovTitle').textContent = s.name || 'Обзор';
+  $('ovSub').textContent = run ? `Идёт задач: ${run}` : 'Фоновых задач нет';
+  const kpi = [['В очереди', s.episodes.ready || 0, 'готовы к выходу'], ['Вышло', s.episodes.published || 0, 'серий'],
+    ['Расходы', '$' + o.spend_week_usd, 'за 7 дней, все сериалы'], ['Баланс KIE', kie, o.kie_balance == null ? '' : '≈ $' + (o.kie_balance / 200).toFixed(2)]];
+  $('ovKpi').innerHTML = kpi.map(([l, v, sub]) => `<div class="card kpi"><div class="l">${l}</div><div class="v">${esc(v)}</div><div class="s">${esc(sub)}</div></div>`).join('');
+  const sch = s.schedule;
+  $('ovSched').innerHTML = `<div class="row"><span class="badge ${sch.enabled ? 'b-ok' : ''}">${sch.enabled ? 'включён' : 'выключен'}</span>
+    <span>${sch.enabled ? 'ежедневно в ' + esc(sch.time) + ' → ' + esc(sch.platform) : 'серии выходят только вручную'}</span></div>
+    <div class="small dim" style="margin:8px 0">${o.scheduler_alive ? 'Планировщик запущен и выпустит серию по расписанию.' : 'Чтобы серии выходили сами, запустите планировщик — он должен работать, пока включён компьютер.'}</div>
+    <div class="row"><button class="btn sm" onclick="go('series')">Настроить расписание</button>${o.scheduler_alive ? '' : '<button class="btn sm pri" onclick="startJob(\'scheduler\')">Запустить планировщик</button>'}</div>`;
+  $('ovErrors').innerHTML = o.errors.length ? o.errors.map(e => `<div style="margin-bottom:8px"><span class="dim">${ago(e.created_at)} · ${esc(e.step)}</span><br>${esc(e.error)}</div>`).join('') : '<div class="empty">Ошибок нет</div>';
+  await loadBuild();
+}
+async function loadBuild() {
+  const b = await api(`/series/${S}/builds`); const c = b.current;
+  if (!c) { $('buildHead').textContent = 'Сборок ещё не было'; $('buildStages').innerHTML = ''; $('buildBadge').innerHTML = ''; $('buildNote').textContent = ''; $('buildErr').textContent = ''; return b; }
+  $('buildBadge').innerHTML = badge(RUN, c.status);
+  $('buildHead').innerHTML = `<span>Серия: <b>${esc(c.title || 'сценарий пишется')}</b></span>${c.episode ? `<span>· эпизод ${c.episode}</span>` : ''}
+    <span>· ${c.resumed ? 'доделка' : 'начало'} ${ago(c.started_at)}</span><span>· ${c.status === 'running' ? 'идёт' : 'заняло'} ${dur(c.seconds)}</span>${c.cost_usd != null ? `<span>· $${c.cost_usd}</span>` : ''}`;
+  $('buildStages').innerHTML = c.stages.map(st => `<div class="st ${st.status}"><b>${ICON[st.status]} ${esc(st.label)}</b>${st.status === 'pending' ? 'ждёт' : st.status === 'skipped' ? 'ждёт выхода' : st.reused ? 'готово ранее' : dur(st.seconds)}${st.retries ? ' · повторов ' + st.retries : ''}</div>`).join('');
+  $('buildNote').textContent = c.note ? '▸ ' + c.note : '';
+  const f = c.stages.find(st => st.status === 'failed');
+  $('buildErr').textContent = c.status === 'failed' ? (f ? f.label + ': ' + (f.error || '') : '') + (c.error && !f ? c.error : '') : '';
+  return b;
+}
+
+// ── эпизоды ──
+async function loadEpisodes(force) {
+  const [eps, b] = await Promise.all([api(`/series/${S}/episodes`), api(`/series/${S}/builds`)]);
+  // Плеер внутри таблицы: перерисовка пересоздала бы видео и сбросила просмотр
+  const playing = !force && [...document.querySelectorAll('#epBody video')].some(v => !v.paused || v.currentTime > 0);
+  const html = eps.length ? eps.map(e => {
+    const watch = e.has_video ? `<button class="btn sm" onclick="toggleVideo(${e.id})">${openVideo.has(e.id) ? 'Скрыть' : '▶ Смотреть'}</button>` : '';
+    const act = e.status === 'ready' ? `<button class="btn sm danger" onclick="epAction(${e.id},'reject')">Снять</button>` : e.status === 'rejected' ? `<button class="btn sm" onclick="epAction(${e.id},'restore')">Вернуть</button>` : '';
+    const player = openVideo.has(e.id) ? `<tr><td></td><td colspan="5"><video class="player" controls preload="metadata" src="/api/video/${e.id}${tok()}"></video></td></tr>` : '';
+    return `<tr><td>${e.episode_no}</td><td>${esc(e.publish_title || e.title)}</td><td>${badge(EP, e.status)}</td><td class="small">${ago(e.created_at)}</td><td class="small">${e.published_at ? ago(e.published_at) : '—'}</td><td><div class="row">${watch}${act}</div></td></tr>${player}`;
+  }).join('') : '<tr><td colspan="6" class="empty">Серий пока нет — соберите первую</td></tr>';
+  if (!playing && (force || html !== $('epBody').dataset.html)) { $('epBody').innerHTML = html; $('epBody').dataset.html = html; }
+  $('runsBody').innerHTML = b.runs.length ? b.runs.map(r => `<tr><td class="small">${ago(r.started_at)}</td><td>${esc(r.title || '—')}</td><td>${badge(RUN, r.status)}</td><td class="small">${dur(r.seconds)}</td><td class="small">${r.cost_usd != null ? '$' + r.cost_usd : ''}</td>
+    <td>${r.status === 'failed' || r.status === 'stalled' ? `<button class="btn sm" onclick="resumeRun('${esc(r.run_id)}')">Доделать</button>` : ''}</td></tr>`).join('') : '<tr><td colspan="6" class="empty">Сборок не было</td></tr>';
+}
+function toggleVideo(id) { openVideo.has(id) ? openVideo.delete(id) : openVideo.add(id);
+  document.querySelectorAll('#epBody video').forEach(v => v.pause()); loadEpisodes(true); }
+async function epAction(id, action) { if (action === 'reject' && !confirm('Снять эпизод с выхода? Его можно вернуть.')) return;
+  try { await api(`/series/${S}/episodes/${id}`, {method: 'POST', body: {action}}); loadEpisodes(); } catch (e) { toast(e.message, true); } }
+function resumeRun(runId) { if (confirm('Доделать сборку? Готовые кадры возьмутся с диска, заново — только недостающее.')) startJob('resume', {run_id: runId}); }
+
+// ── сценарии ──
+function renderLines(lines) { return `<div class="script">${lines.map(l => `<div><span class="role">${esc(l.role)}:</span> ${l.emotion ? `<span class="emo">[${esc(l.emotion)}]</span> ` : ''}${esc(l.text)}</div>`).join('')}</div>`; }
+async function loadScripts() {
+  const [lab, scripts] = await Promise.all([api('/lab'), api('/scripts?series=' + S)]);
+  $('labList').innerHTML = lab.length ? `<table><tbody>${lab.slice(0, 8).map(l => `<tr><td class="small dim">${esc(l.stamp.replace(/^(\d{4})(\d\d)(\d\d)_(\d\d)(\d\d)$/, '$3.$2 $4:$5'))}</td><td>${l.titles.map(esc).join(' · ')}</td><td><button class="btn sm" onclick="openLab('${l.stamp}')">Открыть</button></td></tr>`).join('')}</tbody></table>` : '<div class="empty">Запусков ещё не было</div>';
+  $('scriptList').innerHTML = scripts.length ? `<table><tbody>${scripts.map(s => `<tr><td>${esc(s.title)}</td><td class="small dim">${s.lines} реплик · ${ago(s.modified)}</td><td><div class="row"><button class="btn sm" onclick="viewScript('${esc(s.file)}')">Открыть</button><button class="btn sm pri" onclick="buildScript('${esc(s.file)}')">Собрать</button></div></td></tr>`).join('')}</tbody></table>` : '<div class="empty">Нет сохранённых сценариев</div>';
+}
+async function openLab(stamp) {
+  const d = await api('/lab/' + stamp); window._lab = d;
+  $('labView').style.display = '';
+  $('labView').innerHTML = `<h2>Лаборатория ${esc(stamp)} <button class="btn sm" style="margin-left:auto" onclick="$('labView').style.display='none'">Закрыть</button></h2>` +
+    d.items.map((it, i) => `<div class="card" style="background:var(--panel2)"><h2>${esc(it.label)}. ${esc((it.episode || {}).title || it.case.title)} <span class="badge">${esc(it.model || '')}</span></h2>
+    <div class="small dim" style="margin-bottom:8px">${esc(it.case.client_name)}, ${esc(it.case.age)}, ${esc(it.case.occupation)} · ${esc(it.case.stakes || '')}</div>
+    ${it.episode ? renderLines(it.episode.lines) + `<div class="row" style="margin-top:10px"><button class="btn sm pri" onclick="labToProduction(${i})">В производство</button></div>` : '<div class="err small">не получился</div>'}</div>`).join('');
+  $('labView').scrollIntoView({behavior: 'smooth'});
+}
+async function labToProduction(i) {
+  const it = window._lab.items[i];
+  try { const r = await api('/scripts', {method: 'POST', body: {series: S, title: it.episode.title || it.case.title, case: it.case, lines: it.episode.lines}});
+    if (confirm('Сценарий сохранён. Собрать по нему эпизод сейчас (≈ $1)?')) buildScript(r.file); else loadScripts(); } catch (e) { toast(e.message, true); }
+}
+async function viewScript(file) { const d = await api('/scripts/' + encodeURIComponent(file));
+  $('labView').style.display = ''; $('labView').innerHTML = `<h2>${esc(d.title)} <button class="btn sm" style="margin-left:auto" onclick="$('labView').style.display='none'">Закрыть</button></h2>${renderLines(d.lines)}`; $('labView').scrollIntoView({behavior: 'smooth'}); }
+function buildScript(file) { startJob('script', {file}); }
+async function saveScript(andBuild) {
+  const body = {series: S, title: $('scTitle').value.trim(), text: $('scText').value,
+    case: {client_name: $('scName').value.trim(), age: +$('scAge').value, gender: $('scGender').value, occupation: $('scJob').value.trim(), signature_detail: $('scDetail').value.trim()}};
+  try { const r = await api('/scripts', {method: 'POST', body}); toast('Сценарий сохранён'); if (andBuild) buildScript(r.file); loadScripts(); } catch (e) { toast(e.message, true); }
+}
+
+// ── аналитика ──
+async function loadAnalytics() {
+  const d = await api(`/analytics?series=${S}&days=${$('anDays').value}`); const t = d.totals;
+  $('anKpi').innerHTML = [['Вышло серий', t.published], ['Просмотры', t.views.toLocaleString('ru-RU')], ['В среднем на серию', t.avg_views.toLocaleString('ru-RU')], ['Цена серии', '$' + t.cost_per_episode]]
+    .map(([l, v]) => `<div class="card kpi"><div class="l">${l}</div><div class="v">${esc(v)}</div></div>`).join('');
+  const pub = d.episodes.filter(e => e.status === 'published'); const max = Math.max(1, ...pub.map(e => e.views));
+  $('anChart').innerHTML = pub.length ? pub.map(e => `<div class="bar" title="${esc(e.title)}: ${e.views}" style="height:${Math.max(3, e.views / max * 100)}%"><span>${e.episode_no}</span></div>`).join('') : '<div class="empty" style="width:100%">Вышедших серий пока нет</div>';
+  $('anBody').innerHTML = d.episodes.length ? d.episodes.map(e => `<tr><td>${e.episode_no}</td><td>${esc(e.title)} ${e.status !== 'published' ? badge(EP, e.status) : ''}</td><td>${e.views.toLocaleString('ru-RU')}</td><td>${e.likes}</td><td>${e.comments}</td><td>$${e.cost_usd}</td>
+    <td class="small">${e.views ? '$' + (e.cost_usd / e.views * 1000).toFixed(2) : '—'}</td><td class="small dim">${e.fetched_at ? ago(e.fetched_at) : '—'}</td></tr>`).join('') : '<tr><td colspan="8" class="empty">Серий нет</td></tr>';
+}
+$('anDays').addEventListener('change', loadAnalytics);
+
+// ── сериалы ──
+const PLAT = ['youtube', 'tiktok', 'instagram'];
+async function loadSeriesPage() {
+  await loadSeriesList();
+  $('seriesCards').innerHTML = seriesList.map(s => `<div class="card" style="cursor:pointer;${s.id === S ? 'border-color:var(--accent)' : ''}" onclick="pickSeries('${esc(s.id)}')">
+    <h2>${esc(s.name)}</h2><div class="small muted" style="margin-bottom:8px">${esc(s.logline)}</div>
+    <div class="row small"><span class="badge">в очереди ${s.episodes.ready || 0}</span><span class="badge">вышло ${s.episodes.published || 0}</span>${s.schedule.enabled ? `<span class="badge b-ok">${esc(s.schedule.time)}</span>` : ''}${s.has_reference ? '' : '<span class="badge b-warn">нет портрета</span>'}</div></div>`).join('');
+  const d = await api('/series/' + S); const c = d.config, h = c.heroine || {}, sch = d.schedule;
+  const fld = (id, label, val, cls = '', type = 'text') => `<label class="f ${cls}">${label}<input class="inp" id="${id}" type="${type}" value="${esc(val ?? '')}"></label>`;
+  const area = (id, label, val) => `<label class="f full">${label}<textarea class="inp" id="${id}" rows="2">${esc(val ?? '')}</textarea></label>`;
+  const imgs = d.images;
+  $('seriesEdit').innerHTML = `<h2>⚙️ ${esc(c.name)}</h2>
+  <div class="grid g2" style="margin-bottom:14px"><div>
+    <div class="small muted" style="margin-bottom:8px">Лицо героини — референс для всех кадров</div>
+    <div class="thumbs">${imgs.reference ? `<div class="thumb sel"><img src="/api/series/${S}/heroine/${encodeURIComponent(imgs.reference)}${tok()}">референс</div>` : '<div class="empty">Портрета нет</div>'}
+    ${imgs.candidates.map(n => `<div class="thumb"><img src="/api/series/${S}/heroine/${encodeURIComponent(n)}${tok()}"><button class="btn sm" onclick="pickHeroine('${esc(n)}')">Выбрать</button></div>`).join('')}</div>
+    <div class="row" style="margin-top:10px"><button class="btn sm" onclick="startJob('heroine')">Сгенерировать 3 варианта (≈ $0.12)</button></div>
+  </div><div>
+    <div class="small muted" style="margin-bottom:8px">Ежедневный выпуск</div>
+    <label class="check"><input type="checkbox" id="esSchOn" ${sch.enabled ? 'checked' : ''}> выпускать по расписанию</label>
+    <div class="row" style="margin-top:8px"><input class="inp" style="width:100px" id="esSchTime" value="${esc(sch.time)}"><select class="inp" style="width:140px" id="esSchPlat">${PLAT.map(p => `<option ${p === sch.platform ? 'selected' : ''}>${p}</option>`).join('')}</select></div>
+    <div class="small dim" style="margin-top:8px">Планировщик подхватит изменения сам, перезапуск не нужен.</div>
+  </div></div>
+  <div class="form">
+    ${fld('esName', 'Название', c.name)}${fld('esTags', 'Хэштеги', (c.hashtags || []).join(', '))}
+    ${area('esLog', 'Логлайн', c.logline)}
+    ${fld('esHName', 'Героиня: полное имя', h.name)}${fld('esHRole', 'Роль в сценарии', h.role)}
+    ${fld('esHProf', 'Профессия', h.profession)}${fld('esHSet', 'Где идёт действие', h.setting)}
+    ${area('esHVoice', 'Характер и манера речи', h.voice_ru)}${area('esHVis', 'Внешность (англ., для кадров)', h.visual_en)}
+    ${area('esArc', 'Линия сезона', c.season_arc)}${area('esDir', 'Режиссура озвучки', c.tts_direction)}
+    ${fld('esWmin', 'Слов от', c.words_min, '', 'number')}${fld('esWmax', 'Слов до', c.words_max, '', 'number')}
+    ${fld('esAnim', 'Оживлять кадров без лиц (Wan)', c.animated_simple, '', 'number')}
+    <label class="f">Липсинк лиц<select class="inp" id="esLip"><option value="key" ${c.lipsync_lines === 'key' ? 'selected' : ''}>ключевые реплики (≈ +$0.6)</option><option value="none" ${c.lipsync_lines !== 'key' ? 'selected' : ''}>выключен</option></select></label>
+    ${fld('esAlso', 'Ещё площадки через Zernio (tiktok, instagram, vk)', (c.also_publish || []).join(', '), 'full')}
+    ${fld('esManual', 'Ручные площадки (видео придёт в Telegram)', (c.manual_publish || []).join(', '), 'full')}
+    ${area('esDisc', 'Дисклеймер в описании', c.disclaimer)}
+  </div>
+  <div class="row" style="margin-top:12px"><button class="btn pri" onclick="saveSeries()">Сохранить настройки</button></div>`;
+}
+function pickSeries(id) { S = id; localStorage.setItem('cf_series', S); refresh(true); }
+async function pickHeroine(file) { try { await api(`/series/${S}/heroine/pick`, {method: 'POST', body: {file}}); toast('Референс обновлён'); loadSeriesPage(); } catch (e) { toast(e.message, true); } }
+async function saveSeries() {
+  const list = v => v.split(',').map(x => x.trim()).filter(Boolean);
+  const body = {name: $('esName').value, logline: $('esLog').value, hashtags: list($('esTags').value), season_arc: $('esArc').value,
+    tts_direction: $('esDir').value, words_min: +$('esWmin').value, words_max: +$('esWmax').value, animated_simple: +$('esAnim').value,
+    lipsync_lines: $('esLip').value, also_publish: list($('esAlso').value), manual_publish: list($('esManual').value), disclaimer: $('esDisc').value,
+    heroine: {name: $('esHName').value, role: $('esHRole').value, profession: $('esHProf').value, setting: $('esHSet').value, voice_ru: $('esHVoice').value, visual_en: $('esHVis').value},
+    schedule: {enabled: $('esSchOn').checked, time: $('esSchTime').value.trim(), platform: $('esSchPlat').value}};
+  try { await api('/series/' + S, {method: 'PUT', body}); toast('Сохранено'); loadSeriesPage(); } catch (e) { toast(e.message, true); }
+}
+async function createSeries() {
+  const body = {id: $('nsId').value.trim().toLowerCase(), name: $('nsName').value.trim(), logline: $('nsLog').value.trim(),
+    location_en: $('nsLoc').value.trim(), hashtags: $('nsTags').value.split(',').map(x => x.trim()).filter(Boolean),
+    heroine: {name: $('nsHName').value.trim(), role: $('nsHRole').value.trim(), profession: $('nsHProf').value.trim(), setting: $('nsHSet').value.trim(),
+      voice_ru: $('nsHVoice').value.trim(), visual_en: $('nsHVis').value.trim(), intro: ($('nsHName').value.trim() + ' · ' + $('nsHProf').value.trim())}};
+  try { const r = await api('/series', {method: 'POST', body}); toast('Сериал создан. Сгенерируйте портрет героя.'); pickSeries(r.id); go('series'); }
+  catch (e) { toast(e.message, true); }
+}
+
+// ── задачи и журнал ──
+async function loadJobs() {
+  const jobs = await api('/jobs');
+  $('jobsBody').innerHTML = jobs.length ? jobs.map(j => `<tr><td class="small">${ago(j.started_at)}</td><td>${esc(j.title)}${j.params && j.params.n ? ' × ' + j.params.n : ''}</td><td class="small">${esc(j.series || '—')}</td><td>${badge(JOB, j.status)}</td>
+    <td><div class="row"><button class="btn sm" onclick="showLog('${j.id}')">Журнал</button>${j.status === 'running' ? `<button class="btn sm danger" onclick="stopJob('${j.id}')">Стоп</button>` : ''}</div></td></tr>`).join('') : '<tr><td colspan="5" class="empty">Задач ещё не было</td></tr>';
+  if (openLog) await showLog(openLog, true);
+}
+async function showLog(id, quiet) {
+  openLog = id; const d = await api(`/jobs/${id}/log?lines=300`);
+  $('jobLogCard').style.display = ''; $('jobLogTitle').textContent = 'Журнал: ' + d.job.title;
+  const box = $('jobLog'); const atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
+  box.innerHTML = d.lines.map(l => `<div class="${/ERROR|CRITICAL|Traceback/.test(l) ? 'err' : /WARNING/.test(l) ? 'warn' : ''}">${esc(l)}</div>`).join('') || '<span class="dim">пусто</span>';
+  if (atEnd || !quiet) box.scrollTop = box.scrollHeight;
+}
+async function stopJob(id) { if (!confirm('Остановить задачу?')) return; try { await api(`/jobs/${id}/stop`, {method: 'POST', body: {}}); loadJobs(); } catch (e) { toast(e.message, true); } }
+async function loadLogs() { const lines = await api('/logs?lines=300'); const box = $('logBox');
+  box.innerHTML = lines.map(l => `<div class="${l.level}">${esc(l.text)}</div>`).join(''); box.scrollTop = box.scrollHeight; }
+
+// ── обновление ──
+let busy = false;
+async function refresh(force) {
+  if (busy && !force) return; busy = true;
   try {
-    const params = new URLSearchParams(location.search);
-    const fromUrl = params.get('token');
-    if (fromUrl) {
-      localStorage.setItem('cf_admin_token', fromUrl);
-      params.delete('token');
-      const qs = params.toString();
-      history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
-      return fromUrl;
-    }
-    return localStorage.getItem('cf_admin_token') || '';
-  } catch (e) { return ''; }
-})();
-
-// ── Constants ─────────────────────────────────────────────────────────────────
-
-const EMOJI = {
-  trend_scout:'🔍', idea_generator:'💡', topic_filter:'✅', script_writer:'✍️',
-  fact_checker:'🔎', safety_agent:'🛡️', voice_agent:'🎙️', music_agent:'🎵',
-  subtitle_agent:'💬', visual_agent:'🎬', assembly_agent:'🎞️', thumbnail_agent:'🖼️',
-  qa_agent:'✔️', publisher_agent:'🚀', notify_agent:'📨', orchestrator:'🎯',
-};
-
-const ACOLOR = {
-  trend_scout:'#3b82f6', idea_generator:'#a855f7', topic_filter:'#22c55e',
-  script_writer:'#f59e0b', fact_checker:'#06b6d4', safety_agent:'#ef4444',
-  voice_agent:'#ec4899', music_agent:'#8b5cf6', subtitle_agent:'#14b8a6',
-  visual_agent:'#f97316', assembly_agent:'#64748b', thumbnail_agent:'#84cc16',
-  qa_agent:'#10b981', publisher_agent:'#D97757', notify_agent:'#38bdf8',
-  orchestrator:'#fff',
-};
-
-const PIPELINE_STEPS = [
-  'trend_scout','idea_generator','topic_filter','script_writer','fact_checker',
-  'safety_agent','voice_agent','music_agent','subtitle_agent','visual_agent',
-  'assembly_agent','thumbnail_agent','qa_agent','publisher_agent','notify_agent',
-];
-
-const PLATFORM_CLS = {youtube:'p-yt',tiktok:'p-tt',instagram:'p-ig',linkedin:'p-li',twitter:'p-tw'};
-
-const TEST_DESCS = {
-  trend_scout:'Парсинг Google Trends и Reddit',
-  idea_generator:'Генерация идей через Groq',
-  topic_filter:'Дедупликация + Gemini safety',
-  script_writer:'Сценарий PAS через Groq',
-  fact_checker:'valid=False для текста с ошибкой',
-  safety_agent:'Проверка политик платформ',
-  voice_agent:'Синтез голоса edge-tts',
-  music_agent:'Подбор трека по настроению',
-  visual_agent:'Клипы с Pexels',
-  qa_agent:'QA через ffprobe',
-  publisher_agent:'Публикация Zernio API',
-  notify_agent:'Telegram уведомления',
-};
-
-// ── State ─────────────────────────────────────────────────────────────────────
-
-let currentPage = 'dashboard';
-let isOnline = false;
-let feedMessages = [];       // все сообщения ленты
-let lastMsgTimestamp = '';   // для polling since=
-let sseSource = null;
-let currentPipeSteps = [];
-let lastAgentMessages = {};  // key → last message text
-let ideasData = [];
-let ideasFilter = '';
-let testResults = {};        // agent_key → {success,message,duration_ms,state}
-let runPolling = null;
-
-// ── SSE / Polling ─────────────────────────────────────────────────────────────
-
-function connectSSE() {
-  if (sseSource) { sseSource.close(); sseSource = null; }
-  try {
-    sseSource = new EventSource(API + '/stream' + (ADMIN_TOKEN ? '?token=' + encodeURIComponent(ADMIN_TOKEN) : ''));
-    sseSource.onmessage = onSSEMsg;
-    sseSource.onerror = () => {
-      if (sseSource) { sseSource.close(); sseSource = null; }
-      setTimeout(connectSSE, 3000);
-    };
-  } catch (e) {
-    setTimeout(connectSSE, 3000);
-  }
+    if (force) await loadSeriesList();
+    await loadOverview();
+    if (page === 'episodes') await loadEpisodes();
+    if (page === 'scripts' && (force || !window._scriptsLoaded)) { await loadScripts(); window._scriptsLoaded = true; }
+    if (page === 'analytics') await loadAnalytics();
+    if (page === 'series' && force !== 'poll') await loadSeriesPage();
+    if (page === 'jobs') await loadJobs();
+    if (page === 'logs') await loadLogs();
+    $('connPill').innerHTML = '<span class="dot ok"></span>Сервер';
+  } catch (e) { $('connPill').innerHTML = '<span class="dot err"></span>Нет связи'; }
+  busy = false;
 }
-
-function onSSEMsg(evt) {
-  let data;
-  try { data = JSON.parse(evt.data); } catch { return; }
-  setOnline(true);
-
-  if (data.type === 'message') {
-    appendFeedMsg(data);
-  } else if (data.type === 'pipeline') {
-    onPipelineUpdate(data.data);
-  } else if (data.type === 'run_status') {
-    onRunStatus(data);
-  }
-}
-
-// ── Online/offline ────────────────────────────────────────────────────────────
-
-function setOnline(online) {
-  isOnline = online;
-  const dot = document.getElementById('connDot');
-  const txt = document.getElementById('connTxt');
-  const banners = document.querySelectorAll('.offline');
-  dot.className = 'dot' + (online ? '' : ' off');
-  txt.className = 'conn-txt' + (online ? '' : ' off');
-  txt.textContent = online ? 'Сервер подключён' : 'Нет подключения';
-  banners.forEach(b => online ? b.classList.remove('show') : b.classList.add('show'));
-}
-
-// ── Feed ──────────────────────────────────────────────────────────────────────
-
-function appendFeedMsg(d) {
-  // Deduplicate by id
-  if (feedMessages.find(m => m.id === d.id)) return;
-  feedMessages.push(d);
-  if (d.timestamp > lastMsgTimestamp) lastMsgTimestamp = d.timestamp;
-  lastAgentMessages[d.sender] = d.message;
-
-  const html = buildMsgHTML(d);
-  ['feedMini','feedFull'].forEach(id => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    // Remove empty placeholder
-    const empty = el.querySelector('.feed-empty');
-    if (empty) empty.remove();
-    const div = document.createElement('div');
-    div.innerHTML = html;
-    el.appendChild(div.firstChild);
-    // Keep max 200 items in mini, unlimited in full
-    if (id === 'feedMini' && el.children.length > 30) el.firstChild.remove();
-    el.scrollTop = el.scrollHeight;
-  });
-
-  // Badge on sidebar if not on feed page
-  if (currentPage !== 'feed') {
-    const b = document.getElementById('feedBadge');
-    if (b) b.style.display = '';
-  }
-
-  // Update pipeline viz node messages
-  if (currentPage === 'pipeline') updatePipeVizMessages();
-}
-
-function buildMsgHTML(d) {
-  const ts = fmtTime(d.timestamp);
-  const sc = ACOLOR[d.sender] || '#888';
-  const se = EMOJI[d.sender] || '🤖';
-  const senderHtml = `<span class="feed-sender" style="color:${sc}">${se} ${esc(d.sender)}</span>`;
-  let receiverHtml = '';
-  if (d.receiver) {
-    const rc = ACOLOR[d.receiver] || '#888';
-    const re = EMOJI[d.receiver] || '🤖';
-    receiverHtml = `<span class="feed-arrow">→</span><span class="feed-recv" style="color:${rc}">${re} ${esc(d.receiver)}</span>`;
-  }
-  return `<div class="feed-msg">
-    <span class="feed-ts">${ts}</span>
-    ${senderHtml}${receiverHtml}
-    <span class="feed-colon">:</span>
-    <span class="feed-text">${esc(d.message)}</span>
-  </div>`;
-}
-
-function clearFeed() {
-  feedMessages = [];
-  ['feedMini','feedFull'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.innerHTML = '<div class="feed-empty">Очищено.</div>';
-  });
-}
-
-// ── Pipeline ──────────────────────────────────────────────────────────────────
-
-function onPipelineUpdate(data) {
-  if (!data || !data.steps) return;
-  currentPipeSteps = data.steps;
-
-  // Mini flow on dashboard
-  renderMiniFlow(data.steps);
-
-  // Detailed viz on pipeline page
-  if (currentPage === 'pipeline') {
-    renderPipeViz(data.steps);
-    renderPipeDetail(data.steps);
-    const el = document.getElementById('pipeRunId');
-    if (el) el.textContent = 'run_id: ' + (data.run_id || '—');
-  }
-
-  // Progress bar
-  updateProgressBar(data.steps);
-}
-
-function renderMiniFlow(steps) {
-  const el = document.getElementById('pipeMini');
-  if (!el) return;
-  let html = '';
-  steps.forEach((s, i) => {
-    html += `<div class="pm-step pm-${s.status}" title="${esc(s.label)}">${esc(s.label.replace(' ','\n'))}</div>`;
-    if (i < steps.length - 1) html += `<div class="pm-arrow">›</div>`;
-  });
-  el.innerHTML = html;
-}
-
-function renderPipeViz(steps) {
-  const el = document.getElementById('pipeViz');
-  if (!el) return;
-  const rows = [
-    ['trend_scout','idea_generator','topic_filter','script_writer','fact_checker'],
-    ['safety_agent','voice_agent','music_agent','subtitle_agent','visual_agent'],
-    ['assembly_agent','thumbnail_agent','qa_agent','publisher_agent','notify_agent'],
-  ];
-  const stepMap = {};
-  steps.forEach(s => stepMap[s.key] = s);
-
-  let html = '';
-  rows.forEach((row, ri) => {
-    html += '<div class="pipe-row">';
-    row.forEach((key, ci) => {
-      const s = stepMap[key] || {status:'idle', label: key};
-      const em = EMOJI[key] || '🤖';
-      const lastMsg = lastAgentMessages[key] || '';
-      const statusLabel = {idle:'Ожидание',running:'Выполняется...',done:'Готово',error:'Ошибка'}[s.status] || s.status;
-      const flowing = (s.status === 'running') ? ' flowing' : '';
-      html += `<div class="pipe-node">
-        <div class="pipe-box pb-${s.status}">
-          <div class="pipe-box-em">${em}</div>
-          <div class="pipe-box-name">${esc(s.label)}</div>
-          ${lastMsg ? `<div class="pipe-box-msg" title="${esc(lastMsg)}">${esc(lastMsg.slice(0,35))}${lastMsg.length>35?'…':''}</div>` : ''}
-          <div class="pipe-box-stat">${statusLabel}</div>
-        </div>
-      </div>`;
-      if (ci < row.length - 1) {
-        html += `<div class="pipe-connector"><span class="pipe-arr${flowing}">›</span></div>`;
-      }
-    });
-    html += '</div>';
-
-    // Connection arrow between rows
-    if (ri < rows.length - 1) {
-      const lastKey = row[row.length - 1];
-      const nextFirstKey = rows[ri + 1][0];
-      const lastS = stepMap[lastKey] || {};
-      const flowing = lastS.status === 'done' ? ' flowing' : '';
-      // Arrow pointing from end of row down and to start of next row
-      html += `<div style="display:flex;align-items:center;margin:4px 0">
-        <div style="flex:1"></div>
-        <div style="width:24px;text-align:center;color:${lastS.status==='done'?'#22c55e':'#2a2d3e'};font-size:14px">↓</div>
-        <div style="flex:4"></div>
-      </div>`;
-    }
-  });
-  el.innerHTML = html;
-}
-
-function updatePipeVizMessages() {
-  if (currentPage === 'pipeline') renderPipeViz(currentPipeSteps);
-}
-
-function renderPipeDetail(steps) {
-  const el = document.getElementById('pipeDetail');
-  if (!el) return;
-  const colors = {idle:'#333',running:'#3b82f6',done:'#22c55e',error:'#ef4444'};
-  const labels = {idle:'Ожидание',running:'Выполняется...',done:'Готово',error:'Ошибка'};
-  el.innerHTML = steps.map(s => {
-    const c = colors[s.status] || '#333';
-    const em = EMOJI[s.key] || '🤖';
-    const err = s.status === 'error' && s.error
-      ? `<span style="font-size:10px;color:#ef4444;margin-left:8px">${esc(s.error)}</span>` : '';
-    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #111320">
-      <span style="font-size:16px;width:22px;text-align:center">${em}</span>
-      <div style="width:140px;font-size:12px;color:#ddd">${esc(s.label)}</div>
-      <div style="font-size:11px;color:${c}">${labels[s.status]||s.status}${err}</div>
-      ${s.updated_at ? `<div style="font-size:10px;color:#333;margin-left:auto">${fmtTime(s.updated_at)}</div>` : ''}
-    </div>`;
-  }).join('');
-}
-
-// ── Run status & progress ─────────────────────────────────────────────────────
-
-function onRunStatus(data) {
-  const btnRun = document.getElementById('btnRun');
-  const btnStop = document.getElementById('btnStop');
-  const pidEl = document.getElementById('runPid');
-  const statusEl = document.getElementById('runStatus');
-
-  if (data.running) {
-    if (btnRun) btnRun.disabled = true;
-    if (btnStop) btnStop.disabled = false;
-    const meta = data.meta || {};
-    if (pidEl) pidEl.textContent = `PID: ${meta.pid || '?'}`;
-    if (statusEl) { statusEl.className = 'launch-status active'; statusEl.textContent = `Пайплайн запущен: ${meta.niche||'?'} / ${meta.platform||'?'}${meta.dry_run ? ' [dry-run]' : ''}`; }
-  } else {
-    if (btnRun) btnRun.disabled = false;
-    if (btnStop) btnStop.disabled = true;
-    if (pidEl) pidEl.textContent = '';
-    if (data.meta && statusEl && statusEl.classList.contains('active')) {
-      const code = data.exit_code;
-      statusEl.className = 'launch-status ' + (code === 0 ? 'done' : 'err');
-      statusEl.textContent = code === 0 ? '✓ Пайплайн завершён успешно' : `✗ Пайплайн завершился с ошибкой (код ${code})`;
-    }
-  }
-}
-
-function updateProgressBar(steps) {
-  const total = PIPELINE_STEPS.length;
-  const done = steps.filter(s => s.status === 'done').length;
-  const pct = Math.round(done / total * 100);
-  const bar = document.getElementById('pBar');
-  if (bar) bar.style.width = pct + '%';
-
-  const runningStep = steps.find(s => s.status === 'running');
-  const statusEl = document.getElementById('runStatus');
-  if (statusEl && runningStep && statusEl.classList.contains('active')) {
-    const em = EMOJI[runningStep.key] || '🤖';
-    statusEl.textContent = `${em} ${runningStep.label}: выполняется... (${done}/${total})`;
-  }
-}
-
-// ── Run actions ───────────────────────────────────────────────────────────────
-
-async function startRun() {
-  const btnRun = document.getElementById('btnRun');
-  const btnStop = document.getElementById('btnStop');
-  if (btnRun) btnRun.disabled = true;
-  showStatus('active', '⏳ Запускаю...');
-
-  const body = {
-    niche: document.getElementById('lNiche').value,
-    platform: document.getElementById('lPlatform').value,
-    dry_run: document.getElementById('lDryRun').checked,
-    custom_topic: document.getElementById('lCustomTopic').value.trim(),
-  };
-  try {
-    const r = await apiFetch('/run', {method:'POST', body: JSON.stringify(body)});
-    if (r.error) {
-      if (btnRun) btnRun.disabled = false;
-      showStatus('err', '✗ ' + r.error);
-    } else {
-      if (btnStop) btnStop.disabled = false;
-      showStatus('active', `▶ Запущен: PID ${r.pid} | ниша: ${body.custom_topic || body.niche} / ${body.platform}`);
-      document.getElementById('pBar').style.width = '0%';
-    }
-  } catch (e) {
-    if (btnRun) btnRun.disabled = false;
-    showStatus('err', '✗ ' + (e.message || 'Нет подключения к API серверу — запустите start.bat'));
-  }
-}
-
-async function stopRun() {
-  try {
-    const r = await apiFetch('/run/stop', {method:'POST'});
-    showStatus('', r.error || '⏹ Остановлен');
-  } catch { }
-}
-
-function showStatus(cls, msg) {
-  const el = document.getElementById('runStatus');
-  if (!el) return;
-  el.className = 'launch-status ' + cls;
-  el.textContent = msg;
-}
-
-// ── Stats ─────────────────────────────────────────────────────────────────────
-
-function updateStats(s) {
-  set('k1', s.videos_today);
-  set('k2', s.videos_total);
-  set('k3', s.errors_today);
-  set('k4', s.accounts);
-  set('k1s', 'за сегодня');
-  set('k2s', 'с начала работы');
-  const k3el = document.getElementById('k3s');
-  if (k3el) { k3el.textContent = s.errors_today > 0 ? `⚠ ${s.errors_today} ошибок` : '✓ Всё чисто'; k3el.className = 'kpi-sub' + (s.errors_today > 0 ? ' down' : ''); }
-  set('k4s', s.accounts > 0 ? 'Zernio подключён' : 'Нет аккаунтов');
-  if (s.last_run) set('lastRunSub', 'Последний запуск: ' + fmtDate(s.last_run));
-}
-
-// ── Runs table ────────────────────────────────────────────────────────────────
-
-function renderRecentRuns(runs) {
-  const el = document.getElementById('recentRuns');
-  if (!el) return;
-  if (!runs.length) { el.innerHTML = '<tr><td colspan="5" style="color:#333;text-align:center;padding:16px">Нет запусков</td></tr>'; return; }
-  el.innerHTML = runs.slice(0, 6).map(r => `
-    <tr>
-      <td style="color:#ddd;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.topic||'—')}</td>
-      <td style="color:#555">${esc(r.niche||'—')}</td>
-      <td><span class="pill ${PLATFORM_CLS[r.platform]||''}">${esc(r.platform||'—')}</span></td>
-      <td><span class="badge ${r.status==='success'?'b-ok':'b-err'}">${r.status==='success'?'✓ OK':'✗ Ошибка'}</span></td>
-      <td style="color:#444;font-size:11px">${fmtDate(r.date)}</td>
-    </tr>`).join('');
-}
-
-function renderAllRuns(runs) {
-  const el = document.getElementById('allRuns');
-  if (!el) return;
-  if (!runs.length) { el.innerHTML = '<tr><td colspan="6" style="color:#333;text-align:center;padding:16px">Нет запусков</td></tr>'; return; }
-  el.innerHTML = runs.map(r => `
-    <tr>
-      <td style="color:#444">#${r.id}</td>
-      <td style="color:#ddd" title="${esc(r.run_id)}">${esc(r.topic||'—')}</td>
-      <td style="color:#555">${esc(r.niche||'—')}</td>
-      <td><span class="pill ${PLATFORM_CLS[r.platform]||''}">${esc(r.platform||'—')}</span></td>
-      <td><span class="badge ${r.status==='success'?'b-ok':'b-err'}">${r.status==='success'?'✓ OK':'✗ Ошибка'}</span></td>
-      <td style="color:#444;font-size:11px">${fmtDate(r.date)}</td>
-    </tr>`).join('');
-}
-
-// ── Agents ────────────────────────────────────────────────────────────────────
-
-function renderAgents(agents) {
-  const el = document.getElementById('agGrid');
-  if (!el) return;
-  if (!agents.length) { el.innerHTML = '<div style="color:#444;grid-column:1/-1;padding:20px">Запусков ещё не было</div>'; return; }
-  el.innerHTML = agents.map(a => `
-    <div class="ag-card">
-      <div class="ag-hdr">
-        <div><div class="ag-name">${EMOJI[a.key]||'🤖'} ${esc(a.name)}</div><div class="ag-model">${esc(a.model)}</div></div>
-        <span class="badge ${a.errors>0?'b-err':'b-ok'}">${a.errors>0?a.errors+' ошибок':'OK'}</span>
-      </div>
-      <div style="font-size:10px;color:#333;margin-top:2px">${esc(a.layer)}</div>
-      <div class="ag-stats">
-        <div class="ag-s"><div class="ag-sv">${a.runs}</div><div class="ag-sl">Запусков</div></div>
-        <div class="ag-s"><div class="ag-sv">${a.errors}</div><div class="ag-sl">Ошибок</div></div>
-        <div class="ag-s"><div class="ag-sv">${a.success_rate}%</div><div class="ag-sl">Успех</div></div>
-      </div>
-    </div>`).join('');
-}
-
-// ── Logs ──────────────────────────────────────────────────────────────────────
-
-function renderLogs(lines) {
-  const el = document.getElementById('logBox');
-  if (!el) return;
-  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-  if (!lines.length) { el.innerHTML = '<div class="ll ll-dim">Логов нет</div>'; return; }
-  el.innerHTML = lines.map(l => `<div class="ll ll-${l.level}">${esc(l.text)}</div>`).join('');
-  const autoScroll = document.getElementById('logAutoScroll');
-  if (atBottom || (autoScroll && autoScroll.checked)) el.scrollTop = el.scrollHeight;
-}
-
-async function loadLogs() {
-  const n = document.getElementById('logLines')?.value || 100;
-  try {
-    const logs = await apiFetch(`/logs?lines=${n}`);
-    renderLogs(logs);
-  } catch {}
-}
-
-// ── Ideas ─────────────────────────────────────────────────────────────────────
-
-async function loadIdeas() {
-  try {
-    const data = await apiFetch('/ideas?limit=200');
-    ideasData = data;
-    renderIdeas();
-  } catch {}
-}
-
-function filterIdeas(status, chipEl) {
-  ideasFilter = status;
-  document.querySelectorAll('#ideasFilters .filter-chip').forEach(c => c.classList.remove('active'));
-  if (chipEl) chipEl.classList.add('active');
-  renderIdeas();
-}
-
-function renderIdeas() {
-  const el = document.getElementById('ideasBody');
-  if (!el) return;
-  let data = ideasFilter ? ideasData.filter(d => d.status === ideasFilter) : ideasData;
-  if (!data.length) { el.innerHTML = '<tr><td colspan="5" style="color:#333;text-align:center;padding:20px">Нет идей</td></tr>'; return; }
-  el.innerHTML = data.map((d, i) => {
-    const statusBadge = {published:'<span class="badge b-pub">Опубликовано</span>',failed:'<span class="badge b-err">Ошибка</span>',pending:'<span class="badge b-pend">Ожидает</span>'}[d.status] || '';
-    return `<tr class="tbl-clickable" id="irow-${i}" onclick="toggleIdea(${i})">
-      <td style="color:#444;font-size:11px;white-space:nowrap">${fmtDate(d.date)}</td>
-      <td style="color:#555">${esc(d.niche||'—')}</td>
-      <td style="color:#ddd;font-weight:500">${esc(d.title||'—')}</td>
-      <td style="color:#888;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(d.hook||'')}">${esc((d.hook||'—').slice(0,60))}${(d.hook||'').length>60?'…':''}</td>
-      <td>${statusBadge}</td>
-    </tr>
-    <tr id="iexp-${i}" style="display:none">
-      <td colspan="5" style="padding:0">
-        <div class="idea-expand">
-          ${d.angle ? `<div class="idea-expand-sec"><div class="idea-expand-lbl">Угол подачи</div><div class="idea-expand-val">${esc(d.angle)}</div></div>` : ''}
-          ${d.hashtags?.length ? `<div class="idea-expand-sec"><div class="idea-expand-lbl">Хэштеги</div><div class="idea-tags">${d.hashtags.map(h=>`<span class="idea-tag">#${esc(h)}</span>`).join('')}</div></div>` : ''}
-          ${d.script ? `<div class="idea-expand-sec"><div class="idea-expand-lbl">Сценарий</div><pre class="script-block">${esc(d.script.full_script||'')}</pre></div>` : '<div style="color:#444;font-size:11px">Сценарий не найден</div>'}
-          <div style="font-size:10px;color:#333;margin-top:6px">run_id: ${esc(d.run_id||'—')}</div>
-        </div>
-      </td>
-    </tr>`;
-  }).join('');
-}
-
-function toggleIdea(i) {
-  const row = document.getElementById('irow-' + i);
-  const exp = document.getElementById('iexp-' + i);
-  if (!exp) return;
-  const open = exp.style.display !== 'none';
-  exp.style.display = open ? 'none' : 'table-row';
-  if (row) row.classList.toggle('open', !open);
-}
-
-// ── Tests ─────────────────────────────────────────────────────────────────────
-
-function initTests() {
-  const el = document.getElementById('testsGrid');
-  if (!el || el.children.length > 0) return;
-  const agents = Object.keys(TEST_DESCS);
-  el.innerHTML = agents.map(key => `
-    <div class="test-card" id="tc-${key}">
-      <div class="test-em">${EMOJI[key]||'🤖'}</div>
-      <div class="test-info">
-        <div class="test-name">${key.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}</div>
-        <div class="test-desc">${esc(TEST_DESCS[key]||'')}</div>
-        <div class="test-result" id="tr-${key}"></div>
-      </div>
-      <button class="btn btn-ghost btn-sm" onclick="runTest('${key}')">▶ Тест</button>
-    </div>`).join('');
-}
-
-async function runTest(key) {
-  const el = document.getElementById('tr-' + key);
-  if (el) { el.className = 'test-result running'; el.textContent = '⟳ Запуск...'; }
-  try {
-    const r = await apiFetch('/test/' + key, {method:'POST'});
-    testResults[key] = r;
-    if (el) {
-      el.className = 'test-result ' + (r.success ? 'ok' : 'fail');
-      el.textContent = (r.success ? '✅ OK' : '❌ FAIL') + ` (${r.duration_ms}ms) — ${r.message}`;
-    }
-  } catch (e) {
-    testResults[key] = {success:false,message:String(e),duration_ms:0};
-    if (el) { el.className = 'test-result fail'; el.textContent = '❌ Сервер недоступен'; }
-  }
-  updateTestSummary();
-}
-
-async function runAllTests() {
-  initTests();
-  const keys = Object.keys(TEST_DESCS);
-  set('testSummary', 'Запускаю...');
-  for (const key of keys) {
-    await runTest(key);
-    await new Promise(r => setTimeout(r, 100));
-  }
-  updateTestSummary();
-}
-
-function updateTestSummary() {
-  const all = Object.values(testResults);
-  if (!all.length) return;
-  const ok = all.filter(r => r.success).length;
-  const el = document.getElementById('testSummary');
-  if (el) el.textContent = `${ok}/${all.length} прошли`;
-}
-
-// ── Navigation ────────────────────────────────────────────────────────────────
-
-function nav(id, el) {
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.ni').forEach(n => n.classList.remove('active'));
-  const page = document.getElementById('page-' + id);
-  if (page) page.classList.add('active');
-  if (el) el.classList.add('active');
-  currentPage = id;
-
-  // Clear feed badge
-  if (id === 'feed') {
-    const b = document.getElementById('feedBadge');
-    if (b) b.style.display = 'none';
-  }
-
-  // Page-specific loads
-  if (id === 'agents') loadAgents();
-  if (id === 'runs') loadRuns();
-  if (id === 'logs') loadLogs();
-  if (id === 'ideas') loadIdeas();
-  if (id === 'tests') initTests();
-  if (id === 'pipeline' && currentPipeSteps.length) {
-    renderPipeViz(currentPipeSteps);
-    renderPipeDetail(currentPipeSteps);
-  }
-  // Re-render feed full with existing messages
-  if (id === 'feed') {
-    const el = document.getElementById('feedFull');
-    if (el && feedMessages.length) {
-      el.innerHTML = '';
-      feedMessages.slice(-100).forEach(m => {
-        const div = document.createElement('div');
-        div.innerHTML = buildMsgHTML(m);
-        el.appendChild(div.firstChild);
-      });
-      el.scrollTop = el.scrollHeight;
-    }
-  }
-}
-
-// ── Data loaders ──────────────────────────────────────────────────────────────
-
-async function loadAgents() {
-  try {
-    const data = await apiFetch('/agents');
-    renderAgents(data);
-  } catch {}
-}
-
-async function loadRuns() {
-  try {
-    const data = await apiFetch('/runs');
-    renderAllRuns(data);
-  } catch {}
-}
-
-// ── Periodic refresh ──────────────────────────────────────────────────────────
-
-async function refresh() {
-  try {
-    const [stats, runs] = await Promise.all([apiFetch('/stats'), apiFetch('/runs')]);
-    setOnline(true);
-    updateStats(stats);
-    renderRecentRuns(runs);
-    if (currentPage === 'runs') renderAllRuns(runs);
-    if (currentPage === 'agents') loadAgents();
-    if (currentPage === 'logs') loadLogs();
-  } catch {
-    setOnline(false);
-  }
-}
-
-// ── API ───────────────────────────────────────────────────────────────────────
-
-async function apiFetch(path, opts = {}) {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 5000);
-  const headers = {'Content-Type': 'application/json', ...(ADMIN_TOKEN ? {'X-Admin-Token': ADMIN_TOKEN} : {}), ...(opts.headers||{})};
-  try {
-    const r = await fetch(API + path, {...opts, headers, signal: ctrl.signal});
-    clearTimeout(t);
-    const json = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      const err = new Error(json.error || 'HTTP ' + r.status);
-      err.data = json;
-      throw err;
-    }
-    return json;
-  } catch (e) {
-    clearTimeout(t);
-    throw e;
-  }
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function esc(s) {
-  if (s == null) return '';
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-function fmtDate(iso) {
-  if (!iso) return '—';
-  try {
-    const d = new Date(iso), now = new Date();
-    const diff = Math.floor((now - d) / 60000);
-    if (diff < 1) return 'только что';
-    if (diff < 60) return diff + ' мин. назад';
-    if (diff < 1440) return Math.floor(diff/60) + ' ч. назад';
-    return d.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-  } catch { return iso; }
-}
-
-function fmtTime(iso) {
-  if (!iso) return '—';
-  try { return new Date(iso).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
-  catch { return iso.slice(11,19)||iso; }
-}
-
-function set(id, val) {
-  const el = document.getElementById(id);
-  if (el) el.textContent = val;
-}
-
-function updateClock() {
-  set('clock', new Date().toLocaleTimeString('ru-RU'));
-}
-
-// ── Init ──────────────────────────────────────────────────────────────────────
-
-setInterval(updateClock, 1000);
-updateClock();
-
-// SSE connection
-connectSSE();
-
-// Periodic refresh for stats/runs (SSE handles pipeline/messages)
-setInterval(refresh, 5000);
-refresh();
+document.querySelectorAll('nav.side a').forEach(a => a.addEventListener('click', () => { window._scriptsLoaded = false; }));
+setInterval(() => { if (page !== 'series' && page !== 'scripts') refresh(); else loadOverview().catch(() => {}); }, 5000);
+loadSeriesList().then(() => refresh(true)).catch(() => refresh());
 </script>
 </body>
 </html>

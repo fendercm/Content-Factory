@@ -14,6 +14,12 @@ Scheduler — запускает main.py по расписанию 3 раза в
     SCHEDULER_NICHES=психология,бизнес  # несколько ниш (запускаются параллельно)
     SCHEDULER_PLATFORM=tiktok       # платформа по умолчанию
 
+Режим сериала (SCHEDULER_MODE=series): вместо роликов 3 раза в день — один эпизод из очереди
+(main.py --format series --prepare N) в SERIES_PUBLISH_TIME:
+    SERIES_ID=kabinet7
+    SERIES_PLATFORM=youtube         # основная площадка (Zernio); остальные — also_publish в конфиге
+    SERIES_PUBLISH_TIME=19:00
+
 Установка: pip install schedule
 """
 
@@ -96,6 +102,29 @@ def job_pipeline() -> None:
         t.start()
     for t in threads:
         t.join()
+
+
+def series_publish_command(series_id: str | None = None, platform: str | None = None) -> list[str]:
+    series_id = series_id or os.getenv("SERIES_ID", "kabinet7")
+    platform = platform or os.getenv("SERIES_PLATFORM", "youtube")
+    return [sys.executable, str(_ROOT / "main.py"), "--format", "series", "--series", series_id,
+            "--niche", _NICHE_DEFAULT, "--platform", platform, "--publish-next"]
+
+
+def job_series_publish(series_id: str | None = None, platform: str | None = None) -> None:
+    """Публикует следующий эпизод сериала из очереди (пустая очередь — алерт из main.py)."""
+    cmd = series_publish_command(series_id, platform)
+    logger.info(">>> Сериал: публикация следующего эпизода (%s)", " ".join(cmd[2:]))
+    try:
+        proc = subprocess.run(cmd, cwd=str(_ROOT), timeout=3600)
+        if proc.returncode == 0:
+            logger.info("<<< Сериал: готово")
+        else:
+            logger.error("<<< Сериал: ошибка (code=%d)", proc.returncode)
+    except subprocess.TimeoutExpired:
+        logger.error("<<< Сериал: таймаут (>1ч)")
+    except Exception as exc:
+        logger.error("<<< Сериал: исключение %s", exc)
 
 
 def job_analytics() -> None:
@@ -209,23 +238,64 @@ def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
     return row is not None
 
 
+def series_schedules() -> dict[str, tuple[str, str]]:
+    """Расписания сериалов из config/series/*.json (раздел schedule, настраивается в панели)."""
+    out = {}
+    for path in sorted((_ROOT / "config" / "series").glob("*.json")):
+        try:
+            cfg = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        sch = cfg.get("schedule") or {}
+        if sch.get("enabled"):
+            out[cfg["id"]] = (sch.get("time", "19:00"), sch.get("platform", "youtube"))
+    return out
+
+
+_synced: dict = {}
+
+
+def sync_series_jobs() -> None:
+    """Перечитывает расписания сериалов: изменения из панели подхватываются без перезапуска."""
+    global _synced
+    current = series_schedules()
+    if current == _synced:
+        return
+    schedule.clear("series")
+    for series_id, (at, platform) in current.items():
+        schedule.every().day.at(at).do(job_series_publish, series_id, platform).tag("series")
+        logger.info("Сериал %s: выпуск ежедневно в %s → %s", series_id, at, platform)
+    _synced = current
+
+
 def main() -> None:
     niches_env = os.getenv("SCHEDULER_NICHES", "")
     niches = [n.strip() for n in niches_env.split(",") if n.strip()] if niches_env else [_NICHE_DEFAULT]
 
-    logger.info("Scheduler запущен | Ниши: %s | Платформа: %s", niches, _PLATFORM)
-    logger.info("Расписание запусков: %s", ", ".join(_RUN_TIMES))
-
-    for t in _RUN_TIMES:
-        schedule.every().day.at(t).do(job_pipeline)
+    sync_series_jobs()
+    if _synced:
+        logger.info("Scheduler запущен | Сериалы по расписанию из конфигов: %s", ", ".join(_synced))
+    elif os.getenv("SCHEDULER_MODE", "clips") == "series":
+        publish_time = os.getenv("SERIES_PUBLISH_TIME", "19:00")
+        logger.info("Scheduler запущен | Сериал %s → %s | Публикация ежедневно в %s",
+                    os.getenv("SERIES_ID", "kabinet7"), os.getenv("SERIES_PLATFORM", "youtube"), publish_time)
+        schedule.every().day.at(publish_time).do(job_series_publish)
+    else:
+        logger.info("Scheduler запущен | Ниши: %s | Платформа: %s", niches, _PLATFORM)
+        logger.info("Расписание запусков: %s", ", ".join(_RUN_TIMES))
+        for t in _RUN_TIMES:
+            schedule.every().day.at(t).do(job_pipeline)
 
     schedule.every().day.at("21:00").do(job_daily_digest)
     schedule.every().day.at("08:30").do(job_analytics)
     schedule.every().day.at("04:00").do(job_housekeeping)
 
     logger.info("Ожидание по расписанию... (Ctrl+C для остановки)")
+    heartbeat = _ROOT / "logs" / "scheduler.heartbeat"
     while True:
+        sync_series_jobs()
         schedule.run_pending()
+        heartbeat.touch()  # панель видит, что планировщик жив
         time.sleep(30)
 
 

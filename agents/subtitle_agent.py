@@ -279,15 +279,41 @@ if __name__ == "__main__":
 # Диалоговые субтитры сериала: тайминги известны из озвучки по ролям
 # ---------------------------------------------------------------------------
 
-def _dialogue_chunks(text: str, start: float, end: float, max_chars: int) -> list[dict]:
-    """Режет реплику на куски по 1-3 слова; время делится пропорционально длине."""
-    words = text.split()
-    groups: list[list[str]] = []
-    for w in words:
-        if groups and len(" ".join(groups[-1] + [w])) <= max_chars and len(groups[-1]) < 3:
-            groups[-1].append(w)
-        else:
-            groups.append([w])
+_PHRASE_END = re.compile(r"[.,!?:;…—]$")
+
+
+def _group_words(words: list[str], max_chars: int, max_words: int) -> list[list[int]]:
+    """Индексы слов по кускам субтитров: до max_words слов и max_chars символов, разрыв после знака препинания."""
+    groups: list[list[int]] = []
+    for i, w in enumerate(words):
+        if groups:
+            cur = [words[j] for j in groups[-1]]
+            if (len(" ".join(cur + [w])) <= max_chars and len(cur) < max_words
+                    and not _PHRASE_END.search(cur[-1])):
+                groups[-1].append(i)
+                continue
+        groups.append([i])
+    return groups
+
+
+def _dialogue_chunks(text: str, start: float, end: float, max_chars: int, max_words: int = 3,
+                     words: list[dict] | None = None) -> list[dict]:
+    """
+    Реплика → куски субтитров. words — слова Whisper, выровненные на сценарий ({word, start, end}):
+    кусок появляется, когда звучит его первое слово. Без words время делится пропорционально длине.
+    """
+    if words:
+        tokens = [w["word"] for w in words]
+        groups = _group_words(tokens, max_chars, max_words)
+        out = []
+        for k, g in enumerate(groups):
+            s = start if k == 0 else max(float(words[g[0]]["start"]), start)
+            e = float(words[groups[k + 1][0]]["start"]) if k + 1 < len(groups) else end
+            out.append({"text": " ".join(tokens[i] for i in g), "start": s, "end": max(e, s + 0.05)})
+        return out
+
+    tokens = text.split()
+    groups = [[tokens[i] for i in g] for g in _group_words(tokens, max_chars, max_words)]
     total = sum(len(" ".join(g)) for g in groups) or 1
     out, t = [], start
     for g in groups:
@@ -307,7 +333,7 @@ def write_dialogue_ass(
     brand_seconds: float = 3.0,
     fontsize: int = 92,
     margin_v: int = 620,
-    max_chars: int = 14,
+    max_chars: int = 18,
     labels: dict[str, str] | None = None,
     intro_labels: dict[str, str] | None = None,
     label_fontsize: int = 46,
@@ -346,7 +372,7 @@ def write_dialogue_ass(
         if label:
             events.append(f"Dialogue: 2,{_ts(line['start'])},{_ts(line['end'])},Speaker,,0,0,{label_margin},,"
                           f"{{\\fad(120,120)\\c{color}}}{label.upper()}")
-        for c in _dialogue_chunks(line["text"], line["start"], line["end"], max_chars):
+        for c in _dialogue_chunks(line["text"], line["start"], line["end"], max_chars, words=line.get("words")):
             events.append(
                 f"Dialogue: 0,{_ts(c['start'])},{_ts(c['end'])},Default,,0,0,{margin_v},,"
                 f"{{{pop}\\c{color}}}{c['text'].upper()}"

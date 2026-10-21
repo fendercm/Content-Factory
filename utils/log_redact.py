@@ -23,7 +23,7 @@ _PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"bot\d{6,12}:[A-Za-z0-9_-]{30,}"), "bot***"),
     (re.compile(r"\b\d{6,12}:AA[A-Za-z0-9_-]{30,}"), "***"),
     # Ключи в query string: ?key=..., &api_key=..., &token=...
-    (re.compile(r"([?&](?:key|api_key|apikey|access_key|token)=)[^&\s'\"]+", re.I), r"\1***"),
+    (re.compile(r"([?&](?:key|api_key|apikey|access_key|access_token|token)=)[^&\s'\"]+", re.I), r"\1***"),
     # Заголовки авторизации, попавшие в текст
     (re.compile(r"(Bearer\s+)[A-Za-z0-9._~+/=-]{12,}", re.I), r"\1***"),
     (re.compile(r"(Api-Key\s+)[A-Za-z0-9._~+/=-]{12,}", re.I), r"\1***"),

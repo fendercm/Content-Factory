@@ -161,6 +161,47 @@ def send_photo(
         return send(caption, chat_id=chat_id, level="success")
 
 
+TELEGRAM_VIDEO_LIMIT = 49 * 1024 * 1024  # Bot API принимает файлы до 50 МБ
+
+
+def send_video(video_path: str, caption: str, chat_id: str | None = None) -> dict[str, Any]:
+    """Отправляет видео с подписью (HTML). Файл больше лимита Bot API — только текст с путём к файлу."""
+    token, target = _token_and_chat(chat_id)
+    if not token:
+        return {"ok": False, "error": "credentials missing"}
+    if os.path.getsize(video_path) > TELEGRAM_VIDEO_LIMIT:
+        logger.warning("Telegram: %s больше 50 МБ — отправляю только текст", os.path.basename(video_path))
+        return send(f"{caption}\nФайл: <code>{_esc(video_path)}</code>", chat_id=chat_id, level="info")
+
+    url = f"{_API_BASE.format(token=token)}/sendVideo"
+    try:
+        with open(video_path, "rb") as f:
+            resp = requests.post(
+                url,
+                data={"chat_id": target, "caption": caption, "parse_mode": "HTML", "supports_streaming": "true"},
+                files={"video": (os.path.basename(video_path), f, "video/mp4")},
+                timeout=300,
+            )
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("ok"):
+            return {"ok": True, "message_id": data["result"].get("message_id")}
+        return {"ok": False, "error": data.get("description")}
+    except Exception as exc:
+        logger.error("Telegram sendVideo ошибка: %s", _describe_error(exc))
+        return {"ok": False, "error": _describe_error(exc)}
+
+
+def send_manual_upload(platform: str, video_path: str, text: str) -> dict[str, Any]:
+    """
+    Площадка без API (Wibes): ролик и готовая подпись приходят в Telegram — сохранить видео
+    и вставить текст с телефона. Подпись в <code>: в Telegram копируется одним нажатием.
+    """
+    caption = (f"<b>{_esc(platform)}: загрузить вручную</b>\n"
+               f"Сохраните видео. Подпись — нажмите, чтобы скопировать:\n<code>{_esc(text[:800])}</code>")
+    return send_video(video_path, caption)
+
+
 def alert_error(step: str, error: str, attempt: int | None = None) -> dict[str, Any]:
     """Алерт об ошибке в пайплайне: агент + причина + номер попытки."""
     from utils.log_redact import redact
@@ -207,6 +248,19 @@ def alert_success(
             return send_photo(frame, caption)
 
     return send(caption, level="success")
+
+
+def alert_queued(title: str, episode_no: int, video_path: str, duration: float | None = None) -> dict[str, Any]:
+    """Эпизод сериала собран заранее (--prepare) и ждёт публикации: карточка для просмотра."""
+    dur_str = f"\nДлительность: <b>{duration:.1f} сек</b>" if duration else ""
+    caption = (
+        f"<b>Эпизод {episode_no} в очереди на публикацию</b>\n"
+        f"<b>{_esc(title)}</b>{dur_str}\n"
+        f"Файл: <code>{_esc(video_path)}</code>\n"
+        f"Снять с публикации: <code>py scripts/series_queue.py reject {episode_no}</code>"
+    )
+    frame = _extract_frame(video_path) if os.path.exists(video_path) else None
+    return send_photo(frame, caption) if frame else send(caption, level="info")
 
 
 if __name__ == "__main__":

@@ -16,6 +16,8 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from utils.agent_logger import log_message
+
 logger = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -73,6 +75,7 @@ def render(series: dict, plan: dict, out_dir: Path) -> dict:
     client_url = client_res["urls"][0]
     client_ref = kie_client.download(client_url, out_dir / "client_ref.jpg")
     logger.info("Scene: портрет клиента готов (%s кр.)", client_res["credits"])
+    log_message("scene_agent", f"Портрет клиента готов, рисую {len(plan['shots'])} кадров", "scene_agent")
 
     refs_by_char = {"VERA": vera_url, "CLIENT": client_url}
     shots = plan["shots"]
@@ -89,6 +92,8 @@ def render(series: dict, plan: dict, out_dir: Path) -> dict:
     with ThreadPoolExecutor(max_workers=8) as ex:
         image_credits = sum(ex.map(make_image, enumerate(shots)))
     logger.info("Scene: %d кадров готово (%s кр.)", len(shots), image_credits)
+    log_message("scene_agent", f"Кадры готовы ({len(shots)}), оживляю {sum(1 for s in shots if s.get('animate'))} планов",
+                "scene_agent")
 
     # 3. Анимация ключевых (Kling) и простых (Wan) планов
     def animate(i_shot):
@@ -112,6 +117,7 @@ def render(series: dict, plan: dict, out_dir: Path) -> dict:
         video_credits = sum(ex.map(animate, enumerate(shots)))
     engines = [s.get("engine", "still") for s in shots if s.get("animate")]
     logger.info("Scene: анимация %s (%s кр.)", engines, video_credits)
+    log_message("scene_agent", f"Анимация готова: {', '.join(engines) or 'без анимации'}", "series_assembly")
 
     return {"client_ref": str(client_ref), "shots": shots,
             "credits": (client_res["credits"] or 0) + image_credits + video_credits}
