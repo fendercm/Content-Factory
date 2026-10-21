@@ -505,8 +505,11 @@ def _job_command(kind: str, series: dict | None, data: dict) -> list[str]:
         return py + [str(ROOT_DIR / "scripts" / "series_setup.py"), sid]
     if kind == "lab":
         n = max(1, min(int(data.get("n", 4)), 8))
+        idea = str(data.get("idea") or "").strip()
+        if len(idea) > 2000:
+            raise ValueError("идея длиннее 2000 символов")
         return py + [str(ROOT_DIR / "scripts" / "script_lab.py"), "--series", sid, "--n", str(n)] + \
-            (["--same"] if data.get("same", True) else [])
+            (["--same"] if data.get("same", True) else []) + (["--idea", idea] if idea else [])
     platform = data.get("platform") or _schedule(series)["platform"]
     if platform not in _PLATFORMS:
         raise ValueError("неизвестная площадка")

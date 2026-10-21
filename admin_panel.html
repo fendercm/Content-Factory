@@ -81,6 +81,7 @@ textarea.inp{min-height:90px;resize:vertical;font-family:inherit}
 <div class="layout">
 <nav class="side" id="nav">
   <a data-p="overview" class="on">🏠 Обзор</a>
+  <a data-p="studio">🎥 Студия</a>
   <a data-p="episodes">🎬 Эпизоды</a>
   <a data-p="scripts">✍️ Сценарии</a>
   <a data-p="analytics">📈 Аналитика</a>
@@ -104,6 +105,31 @@ textarea.inp{min-height:90px;resize:vertical;font-family:inherit}
     <div class="card"><h2>⏰ Выпуск</h2><div id="ovSched"></div></div>
     <div class="card"><h2>⚠️ Последние ошибки</h2><div id="ovErrors" class="small"></div></div>
   </div>
+</section>
+
+<!-- СТУДИЯ -->
+<section class="page" id="p-studio">
+  <h1>Студия</h1><div class="sub">Идея → сценарий → видео. Готовый сценарий можно вставить сразу во второй шаг.</div>
+  <div class="card"><h2>1 · Идея</h2>
+    <textarea class="inp" id="stIdea" rows="4" placeholder="О чём серия: кто пришёл, что случилось, что он скрывает, чем закончится. Хватит и пары фраз — остальное допишет сценарист."></textarea>
+    <div class="row" style="margin-top:10px"><span class="muted">Вариантов</span><select class="sel" id="stN"><option>2</option><option selected>3</option><option>4</option></select>
+      <button class="btn pri" id="stIdeaBtn" onclick="studioIdea()">Написать сценарии</button><span class="small dim" id="stIdeaState">≈ 3–5 минут, копейки; видео пока не собирается</span></div>
+  </div>
+  <div class="card" id="stVariants" style="display:none"></div>
+  <div class="card"><h2>2 · Сценарий <span class="small dim" style="font-weight:400">— правьте как хотите или вставьте свой</span></h2>
+    <div class="form">
+      <label class="f">Название<input class="inp" id="scTitle" placeholder="Бублик"></label>
+      <label class="f">Имя клиента<input class="inp" id="scName" placeholder="Артём"></label>
+      <label class="f">Возраст<input class="inp" id="scAge" type="number" value="32"></label>
+      <label class="f">Пол<select class="inp" id="scGender"><option value="female">женский</option><option value="male">мужской</option></select></label>
+      <label class="f">Кто по жизни<input class="inp" id="scJob" placeholder="инженер"></label>
+      <label class="f">Вещь в кадре (деталь)<input class="inp" id="scDetail" placeholder="старый ошейник с жетоном"></label>
+      <label class="f full">Реплики — по одной на строку: <code>РОЛЬ: [эмоция] текст</code>
+        <textarea class="inp" id="scText" rows="10" placeholder="АРТЁМ: [устало] Мама думает, что у меня живёт папина собака.&#10;ВЕРА: [мягко] Артём, а мама?"></textarea></label>
+    </div>
+    <div class="row" style="margin-top:12px"><button class="btn" onclick="saveScript(false)">Сохранить</button><button class="btn pri" onclick="saveScript(true)">🎬 Собрать видео</button><button class="btn" onclick="clearEditor()">Очистить</button><span class="small dim">сборка ≈ $1.5 и 10–15 минут; в соцсети сама не уходит</span></div>
+  </div>
+  <div class="card"><h2>3 · Видео</h2><div id="stBuild"><div class="empty">Соберите видео во втором шаге</div></div></div>
 </section>
 
 <!-- ЭПИЗОДЫ -->
@@ -132,19 +158,6 @@ textarea.inp{min-height:90px;resize:vertical;font-family:inherit}
   </div>
   <div class="card" id="labView" style="display:none"></div>
   <div class="card"><h2>📄 Сценарии для производства</h2><div id="scriptList"></div></div>
-  <div class="card"><h2>✏️ Новый сценарий</h2>
-    <div class="form">
-      <label class="f">Название<input class="inp" id="scTitle" placeholder="Бублик"></label>
-      <label class="f">Имя клиента<input class="inp" id="scName" placeholder="Артём"></label>
-      <label class="f">Возраст<input class="inp" id="scAge" type="number" value="32"></label>
-      <label class="f">Пол<select class="inp" id="scGender"><option value="female">женский</option><option value="male">мужской</option></select></label>
-      <label class="f">Кто по жизни<input class="inp" id="scJob" placeholder="инженер"></label>
-      <label class="f">Вещь в кадре (деталь)<input class="inp" id="scDetail" placeholder="старый ошейник с жетоном"></label>
-      <label class="f full">Реплики — по одной на строку: <code>РОЛЬ: [эмоция] текст</code>
-        <textarea class="inp" id="scText" rows="10" placeholder="АРТЁМ: [устало] Мама думает, что у меня живёт папина собака.&#10;ВЕРА: [мягко] Артём, а мама?"></textarea></label>
-    </div>
-    <div class="row" style="margin-top:12px"><button class="btn" onclick="saveScript(false)">Сохранить</button><button class="btn pri" onclick="saveScript(true)">Сохранить и собрать</button></div>
-  </div>
 </section>
 
 <!-- АНАЛИТИКА -->
@@ -324,11 +337,71 @@ async function labToProduction(i) {
 }
 async function viewScript(file) { const d = await api('/scripts/' + encodeURIComponent(file));
   $('labView').style.display = ''; $('labView').innerHTML = `<h2>${esc(d.title)} <button class="btn sm" style="margin-left:auto" onclick="$('labView').style.display='none'">Закрыть</button></h2>${renderLines(d.lines)}`; $('labView').scrollIntoView({behavior: 'smooth'}); }
-function buildScript(file) { startJob('script', {file}); }
+async function buildScript(file) { const j = await startJob('script', {file});
+  if (j) { stSave({...stState(), buildJob: j.id}); if (page !== 'studio') go('studio'); } }
 async function saveScript(andBuild) {
   const body = {series: S, title: $('scTitle').value.trim(), text: $('scText').value,
-    case: {client_name: $('scName').value.trim(), age: +$('scAge').value, gender: $('scGender').value, occupation: $('scJob').value.trim(), signature_detail: $('scDetail').value.trim()}};
+    case: {...(window._stCase || {}), client_name: $('scName').value.trim(), age: +$('scAge').value, gender: $('scGender').value, occupation: $('scJob').value.trim(), signature_detail: $('scDetail').value.trim()}};
   try { const r = await api('/scripts', {method: 'POST', body}); toast('Сценарий сохранён'); if (andBuild) buildScript(r.file); loadScripts(); } catch (e) { toast(e.message, true); }
+}
+
+
+// ── студия ──
+const ST_KEY = 'cf_studio';
+function stState() { try { return JSON.parse(localStorage.getItem(ST_KEY) || '{}'); } catch { return {}; } }
+function stSave(st) { try { localStorage.setItem(ST_KEY, JSON.stringify(st)); } catch {} }
+const stampOf = iso => { const d = new Date(iso), z = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}`; };
+async function studioIdea() {
+  const idea = $('stIdea').value.trim();
+  if (idea.length < 10) return toast('Опишите идею хотя бы одной фразой', true);
+  const j = await startJob('lab', {n: +$('stN').value, same: true, idea});
+  if (j) { stSave({...stState(), ideaJob: j.id, ideaAt: j.started_at, shown: null}); loadStudio(); }
+}
+async function loadStudio() {
+  const st = stState(), jobs = await api('/jobs');
+  const ij = jobs.find(j => j.id === st.ideaJob);
+  $('stIdeaBtn').disabled = !!(ij && ij.status === 'running');
+  if (ij && ij.status === 'running') $('stIdeaState').innerHTML = `<span style="color:var(--run)">⏳ Сценарист пишет варианты… ${ago(ij.started_at)}</span>`;
+  else if (ij && ij.status !== 'done') $('stIdeaState').innerHTML = `<span class="err">Не получилось</span> — <a href="#" onclick="go('jobs');showLog('${ij.id}');return false">журнал</a>`;
+  else $('stIdeaState').textContent = '≈ 3–5 минут, копейки; видео пока не собирается';
+  if (ij && ij.status === 'done' && !st.shown) {
+    const from = stampOf(ij.started_at), lab = (await api('/lab')).find(l => l.stamp >= from);
+    if (lab) { stSave({...st, shown: lab.stamp}); await studioVariants(lab.stamp); }
+  } else if (st.shown && $('stVariants').style.display === 'none') await studioVariants(st.shown);
+  const bj = jobs.find(j => j.id === st.buildJob);
+  if (bj) await studioBuild(bj);
+}
+async function studioVariants(stamp) {
+  const d = await api('/lab/' + stamp); window._stLab = d;
+  $('stVariants').style.display = '';
+  $('stVariants').innerHTML = `<h2>Варианты <span class="small dim" style="font-weight:400">— возьмите лучший во второй шаг</span></h2>` + d.items.map((it, i) =>
+    `<div class="card" style="background:var(--panel2)"><h2>${esc(it.label)}. ${esc((it.episode || {}).title || it.case.title)}</h2>
+    <div class="small dim" style="margin-bottom:8px">${esc(it.case.client_name)}, ${esc(it.case.age)}, ${esc(it.case.occupation)} · ${esc(it.case.stakes || '')}</div>
+    ${it.episode ? renderLines(it.episode.lines) + `<div class="row" style="margin-top:10px"><button class="btn sm pri" onclick="studioTake(${i})">Взять в работу</button></div>` : '<div class="err small">этот вариант не получился</div>'}</div>`).join('');
+}
+function studioTake(i) {
+  const it = window._stLab.items[i], c = it.case;
+  window._stCase = c;
+  $('scTitle').value = it.episode.title || c.title; $('scName').value = c.client_name; $('scAge').value = c.age;
+  $('scGender').value = c.gender === 'male' ? 'male' : 'female'; $('scJob').value = c.occupation; $('scDetail').value = c.signature_detail || '';
+  $('scText').value = it.episode.lines.map(l => `${l.role}: ${l.emotion ? '[' + l.emotion + '] ' : ''}${l.text}`).join('\n');
+  $('scTitle').scrollIntoView({behavior: 'smooth', block: 'center'});
+}
+function clearEditor() { window._stCase = null; ['scTitle', 'scName', 'scJob', 'scDetail', 'scText'].forEach(id => $(id).value = ''); }
+async function studioBuild(job) {
+  const b = await api(`/series/${S}/builds`), c = b.current;
+  let html = `<div class="row" style="margin-bottom:10px">${badge(JOB, job.status)}<span class="small muted">запущено ${ago(job.started_at)}</span>
+    <button class="btn sm" onclick="go('jobs');showLog('${job.id}')">Журнал</button></div>`;
+  if (c && c.started_at >= job.started_at.slice(0, 19)) html += `<div class="stages">${c.stages.map(st => `<div class="st ${st.status}"><b>${ICON[st.status]} ${esc(st.label)}</b>${st.status === 'pending' ? 'ждёт' : st.status === 'skipped' ? 'ждёт выхода' : dur(st.seconds)}</div>`).join('')}</div>
+    ${c.note ? `<div class="small" style="margin-top:8px;color:var(--run)">▸ ${esc(c.note)}</div>` : ''}`;
+  if (job.status === 'done') {
+    const ep = (await api(`/series/${S}/episodes`)).find(e => e.status !== 'rejected' && e.created_at >= job.started_at && e.has_video);
+    if (ep && !document.querySelector('#stBuild video')) html += `<div style="margin-top:12px"><div class="small muted" style="margin-bottom:6px">Эпизод ${ep.episode_no} «${esc(ep.title)}» — ${ep.status === 'ready' ? 'в очереди на выход' : 'вышел'}</div>
+      <video class="player" controls preload="metadata" src="/api/video/${ep.id}${tok()}"></video></div>`;
+    else if (document.querySelector('#stBuild video')) return;
+  }
+  $('stBuild').innerHTML = html;
 }
 
 // ── аналитика ──
@@ -429,6 +502,7 @@ async function refresh(force) {
     await loadOverview();
     if (page === 'episodes') await loadEpisodes();
     if (page === 'scripts' && (force || !window._scriptsLoaded)) { await loadScripts(); window._scriptsLoaded = true; }
+    if (page === 'studio') await loadStudio();
     if (page === 'analytics') await loadAnalytics();
     if (page === 'series' && force !== 'poll') await loadSeriesPage();
     if (page === 'jobs') await loadJobs();

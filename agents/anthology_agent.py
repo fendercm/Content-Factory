@@ -376,10 +376,16 @@ def _json(text: str) -> dict:
     return json.loads(m.group() if m else text)
 
 
-def propose_cases(series: dict, topics: list[str] | None, recent: list[dict], n: int = 3) -> list[dict]:
+def propose_cases(series: dict, topics: list[str] | None, recent: list[dict], n: int = 3,
+                  idea: str | None = None) -> list[dict]:
+    """idea — замысел автора из панели: кейсы строятся на нём, тренды тогда не нужны."""
     recent_txt = "\n".join(f"  - №{e['episode_no']} «{e['title']}» ({e['psych_concept']})" for e in recent) or "  (пока нет)"
     topics_txt = ("\nО чём сейчас говорят (используй тему, только если она естественно ложится в кейс):\n"
                   + "\n".join(f"  - {t}" for t in topics)) if topics else ""
+    if idea:
+        topics_txt = ("\nИДЕЯ АВТОРА — все кейсы строй на ней: сохрани её суть, героев и событие, если они "
+                      "названы; недостающее (ставки, тайну, поворот) добавь по правилам выше. Каждый кейс — "
+                      f"свой вариант поворота:\n{idea.strip()}\n")
     raw = _llm([{"role": "system", "content": _CRAFT.format(**hero_fields(series))},
                 {"role": "user", "content": _CASES_PROMPT.format(bible=bible_text(series), n=n,
                                                                  recent=recent_txt, topics=topics_txt)}],

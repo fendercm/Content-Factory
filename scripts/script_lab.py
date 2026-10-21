@@ -4,6 +4,7 @@
     py scripts/script_lab.py                       # 4 сценария, сценаристы по очереди: Argon, Astra
     py scripts/script_lab.py --n 6 --writers "gemini:gemini-4-argon,codex:gpt-6-astra"
     py scripts/script_lab.py --same                # все пишет первый сценарист, второй — резерв
+    py scripts/script_lab.py --idea "..." --n 3    # варианты по идее автора (панель → Студия)
 
 Сценарии подписаны буквами вслепую; какая модель писала — в ключе output/script_lab/<время>_key.json.
 Результат: output/script_lab/<время>.md. Кейсы — по брифу сериала (propose_cases), факты не ищутся,
@@ -68,13 +69,14 @@ def main() -> None:
     parser.add_argument("--writers", default="gemini:gemini-4-argon,codex:gpt-6-astra")
     parser.add_argument("--same", action="store_true",
                         help="все сценарии пишет первый из --writers, остальные — резерв (без чередования)")
+    parser.add_argument("--idea", default="", help="замысел автора: кейсы строятся на нём")
     args = parser.parse_args()
 
     aa._llm = _llm_by_thread
     series = aa.load_series(args.series)
     writers = [w.strip() for w in args.writers.split(",") if w.strip()]
     print(f"Кейсы ({args.n})...", flush=True)
-    cases = aa.propose_cases(series, [], aa.recent_episodes(series, DB_PATH), args.n)
+    cases = aa.propose_cases(series, [], aa.recent_episodes(series, DB_PATH), args.n, idea=args.idea or None)
 
     # Сценаристы по очереди: кейс i пишет writers[i], при сбое — следующий по кругу
     jobs = [(case, writers if args.same else writers[i % len(writers):] + writers[:i % len(writers)])
@@ -87,6 +89,8 @@ def main() -> None:
     out_dir = ROOT / "output" / "script_lab"
     out_dir.mkdir(parents=True, exist_ok=True)
     md, key = [f"# Лаборатория сценариев «{series['name']}» — {stamp}\n"], {}
+    if args.idea:
+        md.append(f"Идея: {args.idea}\n")
     for i, r in enumerate(results):
         label = chr(ord("A") + i)
         key[label] = r["model"]

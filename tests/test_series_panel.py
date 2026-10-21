@@ -89,3 +89,32 @@ def test_series_panel_stages_queue_and_video(tmp_path):
     assert list(out["videos"].values()) == [False, True] or list(out["videos"].values()) == [True, False]
     assert out["get_ok"] == 200 and out["get_outside"] == 404       # файлы вне output/ не отдаются
     assert out["reject"] == 200 and out["after"] == ["rejected"]
+
+
+
+_IDEA = """
+import json, os, sys
+sys.path.insert(0, %(root)r)
+for _k in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "ZERNIO_API_KEY", "KIE_API_KEY"):
+    os.environ[_k] = ""
+import utils.api_server as api
+series = {"id": "kabinet7"}
+cmd = api._job_command("lab", series, {"n": 3, "idea": "Мама прилетела без предупреждения"})
+blank = api._job_command("lab", series, {"n": 3, "idea": "  "})
+try:
+    api._job_command("lab", series, {"idea": "x" * 2001})
+    long_ok = True
+except ValueError:
+    long_ok = False
+out = {"idea": cmd[cmd.index("--idea") + 1], "blank": "--idea" in blank, "long": long_ok}
+open(%(result)r, "w", encoding="utf-8").write(json.dumps(out, ensure_ascii=False))
+"""
+
+
+def test_lab_job_passes_author_idea(tmp_path):
+    result = tmp_path / "r.json"
+    proc = subprocess.run([sys.executable, "-c", textwrap.dedent(_IDEA % {"root": str(ROOT), "result": str(result)})],
+                          capture_output=True, cwd=str(tmp_path), timeout=120)
+    assert result.exists(), proc.stderr.decode("utf-8", "replace")[-3000:]
+    out = json.loads(result.read_text(encoding="utf-8"))
+    assert out == {"idea": "Мама прилетела без предупреждения", "blank": False, "long": False}
