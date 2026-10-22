@@ -21,6 +21,7 @@ KIE отдаёт ошибки с HTTP 200 — всегда смотрим на c
 import json
 import logging
 import os
+import re
 import time
 from pathlib import Path
 
@@ -135,8 +136,31 @@ def wait_task(task_id: str, timeout_s: int = 1200, poll_s: int = 8, model: str =
     raise KieError(f"задача {model or task_id} не завершилась за {timeout_s} с")
 
 
-def run_task(model: str, input_: dict, timeout_s: int = 1200) -> dict:
-    return wait_task(create_task(model, input_), timeout_s, model=model)
+_TRANSIENT = re.compile(r"\b5\d\d\b|internal error|try again|temporarily|overload|busy|timed? ?out", re.I)
+
+
+def _transient(exc: Exception) -> bool:
+    """Временный сбой KIE/Kling — стоит повторить: 5xx, «try again later», обрыв сети.
+    Не повторяем: нет кредитов, KIE выключен, ошибка в запросе, задача не уложилась в таймаут."""
+    if isinstance(exc, requests.RequestException):
+        return True
+    msg = str(exc)
+    if "не завершилась за" in msg or "KIE выключен" in msg or "402" in msg:
+        return False
+    return isinstance(exc, KieError) and bool(_TRANSIENT.search(msg))
+
+
+def run_task(model: str, input_: dict, timeout_s: int = 1200, retries: int = 1, pause_s: float = 30) -> dict:
+    """Задача целиком; при временном сбое — ещё retries попыток с паузой (упавшие задачи KIE не списывает)."""
+    for attempt in range(retries + 1):
+        try:
+            return wait_task(create_task(model, input_), timeout_s, model=model)
+        except Exception as exc:
+            if attempt == retries or not _transient(exc):
+                raise
+            logger.warning("KIE %s: %s — повтор %d/%d через %.0f с", model, str(exc)[:160], attempt + 1, retries,
+                           pause_s)
+            time.sleep(pause_s)
 
 
 def download(url: str, dest: str | Path, attempts: int = 4) -> Path:

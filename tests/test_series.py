@@ -396,3 +396,41 @@ def test_dialogue_turns_merge_same_speaker_and_extra_speech_detected():
     assert dv._extra_speech(words("Сегодня два года шёпотом со слезами утром пришло фото она знает"), lines) \
         == "шепотом со слезами"
     assert dv._extra_speech(words("Сегодня два года утром пришла фото она знает"), lines) == ""
+
+
+def test_voice_cue_keeps_voice_drops_actions():
+    from agents import dialogue_voice as dv
+
+    assert dv._voice_cue("глухо, глядя в пол") == "глухо"
+    assert dv._voice_cue("теребит ручку") == ""
+    assert dv._voice_cue("голос срывается, почти шёпотом") == "голос срывается, почти шёпотом"
+    assert dv._voice_cue("тепло, чуть улыбнувшись") == "тепло"
+    assert dv._speaker_name("ВИКТОР ПАВЛОВИЧ") == "Виктор"
+
+
+def test_kie_run_task_retries_only_transient(monkeypatch):
+    from utils import kie_client as kc
+
+    calls = []
+
+    def fake_wait(task_id, timeout_s, model=""):
+        calls.append(task_id)
+        if len(calls) < 3:
+            raise kc.KieError("задача kling/ai-avatar-standard: 500 internal error, please try again later.")
+        return {"urls": ["u"], "credits": 8}
+
+    monkeypatch.setattr(kc, "create_task", lambda model, input_: f"t{len(calls)}")
+    monkeypatch.setattr(kc, "wait_task", fake_wait)
+    monkeypatch.setattr(kc.time, "sleep", lambda s: None)
+    assert kc.run_task("m", {}, retries=2)["urls"] == ["u"] and len(calls) == 3
+
+    calls.clear()
+    monkeypatch.setattr(kc, "wait_task", lambda *a, **k: (_ for _ in ()).throw(
+        kc.KieError("createTask m: 402 Credits insufficient")))
+    try:
+        kc.run_task("m", {}, retries=2)
+        raise AssertionError("402 не повторяется")
+    except kc.KieError:
+        pass
+    assert kc._transient(kc.KieError("задача m: 500 Internal Error")) and \
+        not kc._transient(kc.KieError("задача m не завершилась за 1500 с"))

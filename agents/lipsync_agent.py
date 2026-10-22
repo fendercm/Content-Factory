@@ -76,7 +76,7 @@ def render(series: dict, plan: dict, shots: list[dict], dialogue: dict, out_dir:
             image_url = shot.get("image_url") or kie_client.upload_file(shot["image_path"], f"content-factory/{series['id']}")
             audio_url = kie_client.upload_file(audio, f"content-factory/{series['id']}")
             res = kie_client.run_task(MODEL, {"image_url": image_url, "audio_url": audio_url,
-                                              "prompt": _prompt(series, plan, line)}, 1500)
+                                              "prompt": _prompt(series, plan, line)}, 1500, retries=2)
             path = kie_client.download(res["urls"][0], out_dir / f"lip_{i:02d}.mp4")
             return i, str(path), res["credits"] or 0
         except Exception as exc:

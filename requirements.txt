@@ -18,8 +18,8 @@ Pillow>=10.0.0
 numpy>=1.24.0             # fast gradient rendering in assembly_agent
 
 # ── Beat sync (optional, improves cut timing) ────────────────────────────────
-# librosa>=0.10.0         # uncomment to enable beat-sync; requires ffmpeg
-# soundfile>=0.12.1       # required by librosa
+librosa>=0.10.0           # Series QA (тембр реплик), beat-sync; requires ffmpeg
+soundfile>=0.12.1         # required by librosa
 
 # ── Research ─────────────────────────────────────────────────────────────────
 pytrends>=4.9.0           # Google Trends

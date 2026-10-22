@@ -104,7 +104,7 @@ def render(series: dict, plan: dict, out_dir: Path) -> dict:
         for engine in engines:
             model, body = _video_request(engine, shot["image_url"], shot.get("motion_en", ""))
             try:
-                res = kie_client.run_task(model, body, 1500)
+                res = kie_client.run_task(model, body, 1500, retries=2)
                 shot["video_path"] = str(kie_client.download(res["urls"][0], out_dir / f"shot_{i:02d}.mp4"))
                 shot["engine"] = engine
                 return res["credits"] or 0

@@ -115,8 +115,25 @@ def _gemini_pcm(text: str, voice: str) -> np.ndarray:
 
 
 def _speaker_name(role: str) -> str:
-    """Метка говорящего в тексте для многоголосого TTS: «ИГОРЬ» → «Игорь»."""
-    return role.capitalize()
+    """Метка говорящего в тексте для многоголосого TTS: «ИГОРЬ» → «Игорь», «ВИКТОР ПАВЛОВИЧ» → «Виктор»."""
+    return role.split()[0].capitalize() if role.split() else role
+
+
+# Действие в пометке («глядя в пол», «теребит ручку») модель читает вслух — в озвучку идёт только голос
+_ACTION_WORD = re.compile(r"^\w+(?:[яа]|вшись|ив|ав|ув|[еи]т|[ая]ет|ует|ется|ится)$")
+
+
+def _voice_cue(emotion: str) -> str:
+    """Пометка для TTS: только как звучит голос. «глухо, глядя в пол» → «глухо»;
+    «голос срывается» остаётся; «теребит ручку» → пусто."""
+    keep = []
+    for part in re.split(r"[,;]", emotion or ""):
+        words = re.findall(r"[а-яё]+", part.lower())
+        if not words:
+            continue
+        if "голос" in part.lower() or not any(_ACTION_WORD.match(w) and len(w) > 3 for w in words):
+            keep.append(part.strip())
+    return ", ".join(keep)
 
 
 def _turns(lines: list[dict]) -> list[list[dict]]:
@@ -141,7 +158,8 @@ def _gemini_dialogue_pcm(lines: list[dict], voices: dict, direction: str = "") -
     # Режиссёрское вступление + «[эмоция]» у реплики: модель играет сцену, а не читает (вслух это
     # не звучит — проверено Whisper'ом 2026-10-21). Одиночный голос так не умеет: читает указания вслух
     text = "\n".join(_speaker_name(turn[0]["role"]) + ": " + " ".join(
-        (f"[{line['emotion']}] " if line.get("emotion") else "") + line["text"] for line in turn)
+        (f"[{_voice_cue(line.get('emotion'))}] " if _voice_cue(line.get("emotion")) else "") + line["text"]
+        for line in turn)
         for turn in _turns(lines))
     if direction:
         text = f"{direction}\n\n{text}"

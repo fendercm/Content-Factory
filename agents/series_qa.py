@@ -32,6 +32,7 @@ NARRATOR = "РАССКАЗЧИК"
 VOICE_CATEGORIES = {"speech", "speaker"}
 
 MAX_LAG = 0.15            # с — допустимый сдвиг голоса относительно озвучки
+SYNC_SURE_CORR = 0.7      # совпадение окна, которому верим и без соседнего окна
 MIN_LINE_COVERAGE = 0.34  # доля слов реплики, которую Whisper должен расслышать под музыкой
 SPEAKER_MARGIN = 1.05     # реплика ближе к чужому голосу с таким запасом — не тот голос
 LUFS_RANGE = (-20.0, -12.0)
@@ -75,15 +76,23 @@ def check_sync(final: np.ndarray, voice: np.ndarray, window: float = 4.0) -> tup
     """Голос финального ролика против чистой озвучки — окнами по 4 с."""
     env_f, env_v = _envelope(final), _envelope(voice)
     step = int(window * SR / HOP)
-    lags, problems = [], []
+    lags, problems, windows = [], [], []
     for w0 in range(0, max(len(env_v) - step + 1, 0), step):
         ref = env_v[w0:w0 + step]
         if ref.std() < 0.5:  # ровная огибающая — в окне тишина, сравнивать нечего
             continue
         lag, corr = _best_lag(ref, env_f, w0, int(4.0 * SR / HOP))
         lags.append(round(lag, 2))
-        if corr > 0.4 and abs(lag) > MAX_LAG:
-            problems.append(f"голос сдвинут на {lag:+.2f} с около {w0 * HOP / SR:.0f}-й секунды")
+        windows.append((w0 * HOP / SR, lag, corr))
+    # Сдвиг — брак, если его подтверждают два окна подряд или одно уверенное. Одиночное слабое совпадение
+    # (тихая реплика шёпотом под музыкой, corr≈0.45) — случайность: так эпизод 2 браковался зря
+    for k, (t, lag, corr) in enumerate(windows):
+        if corr <= 0.4 or abs(lag) <= MAX_LAG:
+            continue
+        near = [w for w in windows[max(k - 1, 0):k + 2] if w is not windows[k]]
+        confirmed = any(c > 0.4 and abs(l - lag) <= 0.2 for _, l, c in near)
+        if corr >= SYNC_SURE_CORR or confirmed:
+            problems.append(f"голос сдвинут на {lag:+.2f} с около {t:.0f}-й секунды")
     if not lags:
         problems.append("в ролике не найдено речи озвучки")
     return problems[:3], {"sync_lags": lags}
