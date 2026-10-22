@@ -337,6 +337,7 @@ def write_dialogue_ass(
     labels: dict[str, str] | None = None,
     intro_labels: dict[str, str] | None = None,
     label_fontsize: int = 46,
+    play_res: tuple[int, int] = (1080, 1920),
 ) -> int:
     """
     lines: [{role, text, start, end}] — из dialogue_voice. Цвет — по роли (ASS BGR, «&HAABBGGRR&»).
@@ -348,7 +349,7 @@ def write_dialogue_ass(
     labels, intro_labels = labels or {}, intro_labels or {}
     label_margin = margin_v + fontsize + 40
     header = (
-        "[Script Info]\nScriptType: v4.00+\nPlayResX: 1080\nPlayResY: 1920\nScaledBorderAndShadow: yes\n\n"
+        f"[Script Info]\nScriptType: v4.00+\nPlayResX: {play_res[0]}\nPlayResY: {play_res[1]}\nScaledBorderAndShadow: yes\n\n"
         "[V4+ Styles]\n"
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, "
         "Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, "

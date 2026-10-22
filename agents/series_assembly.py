@@ -71,18 +71,20 @@ def build_timeline(assignment: list[dict], lines: list[dict], speech_end: float,
     return merged
 
 
-def _render_still(image: str, duration: float, out: str, zoom_in: bool) -> None:
+def _render_still(image: str, duration: float, out: str, zoom_in: bool, size: tuple[int, int] = (W, H)) -> None:
+    w, h = size
     frames = max(int(round(duration * FPS)), 1)
     step = 0.08 / frames
     z = f"min(1+{step:.6f}*on,1.08)" if zoom_in else f"max(1.08-{step:.6f}*on,1.0)"
-    vf = (f"scale={W * 2}:{H * 2}:force_original_aspect_ratio=increase,crop={W * 2}:{H * 2},"
-          f"zoompan=z='{z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={frames}:s={W}x{H}:fps={FPS},"
+    vf = (f"scale={w * 2}:{h * 2}:force_original_aspect_ratio=increase,crop={w * 2}:{h * 2},"
+          f"zoompan=z='{z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={frames}:s={w}x{h}:fps={FPS},"
           f"{GRADE},format=yuv420p")
     _ff(["-loop", "1", "-i", image, "-vf", vf, "-frames:v", str(frames), "-r", str(FPS),
          "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-an", out], "series still")
 
 
-def _render_clip(video: str, duration: float, out: str, slowdown: bool = True) -> None:
+def _render_clip(video: str, duration: float, out: str, slowdown: bool = True,
+                 size: tuple[int, int] = (W, H)) -> None:
     """Клип в отрезок: длиннее — обрезка; короче — замедление до MAX_SLOWDOWN и стоп-кадр.
     Липсинк не замедляется (slowdown=False): губы должны совпадать со звуком."""
     clip = _duration(video)
@@ -90,14 +92,17 @@ def _render_clip(video: str, duration: float, out: str, slowdown: bool = True) -
     if slowdown and duration > clip:
         factor = min(duration / clip, MAX_SLOWDOWN)
     hold = max(duration - clip * factor, 0)
-    vf = (f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},fps={FPS},"
+    w, h = size
+    vf = (f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},fps={FPS},"
           f"setpts={factor:.4f}*PTS,tpad=stop_mode=clone:stop_duration={hold + 0.1:.3f},{GRADE},format=yuv420p")
     _ff(["-i", video, "-vf", vf, "-t", f"{duration:.3f}", "-r", str(FPS),
          "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-an", out], "series clip")
 
 
-def assemble(shots: list[dict], dialogue: dict, subtitle_path: str, out_path: str, assignment: list[dict],
-             music_path: str | None = None, music_volume: float = 0.14) -> dict:
+def assemble(shots: list[dict], dialogue: dict, subtitle_path: str | None, out_path: str, assignment: list[dict],
+             music_path: str | None = None, music_volume: float = 0.14, size: tuple[int, int] = (W, H),
+             logo_path: str | None = None) -> dict:
+    """size — кадр (заказы бывают 16:9); subtitle_path=None — без субтитров; logo_path — логотип в углу."""
     from agents.assembly_agent import _esc
 
     out_path = Path(out_path)
@@ -110,9 +115,9 @@ def assemble(shots: list[dict], dialogue: dict, subtitle_path: str, out_path: st
         shot = shots[seg["index"]]
         seg_out = str(work / f"seg_{n:02d}.mp4")
         if seg["clip"] and shot.get("video_path"):
-            _render_clip(shot["video_path"], seg["duration"], seg_out, slowdown=not shot.get("lipsync"))
+            _render_clip(shot["video_path"], seg["duration"], seg_out, slowdown=not shot.get("lipsync"), size=size)
         else:
-            _render_still(shot["image_path"], seg["duration"], seg_out, zoom_in=n % 2 == 0)
+            _render_still(shot["image_path"], seg["duration"], seg_out, zoom_in=n % 2 == 0, size=size)
         seg_files.append(seg_out)
 
     concat_list = work / "concat.txt"
@@ -139,7 +144,14 @@ def assemble(shots: list[dict], dialogue: dict, subtitle_path: str, out_path: st
     _ff([*inputs, "-filter_complex", ";".join(filters), "-map", "[a]", "-t", f"{total:.3f}",
          "-ar", "48000", "-c:a", "pcm_s16le", mix], "series audio mix")
 
-    _ff(["-i", video_only, "-i", mix, "-filter_complex", f"[0:v]subtitles='{_esc(subtitle_path)}'[v]",
+    vfilters = [f"[0:v]subtitles='{_esc(subtitle_path)}'[vs]" if subtitle_path else "[0:v]null[vs]"]
+    inputs = ["-i", video_only, "-i", mix]
+    if logo_path:
+        inputs += ["-i", logo_path]
+        vfilters += [f"[2:v]scale={int(min(size) * 0.18)}:-1[lg]", "[vs][lg]overlay=W-w-40:40[v]"]
+    else:
+        vfilters.append("[vs]null[v]")
+    _ff([*inputs, "-filter_complex", ";".join(vfilters),
          "-map", "[v]", "-map", "1:a", "-t", f"{total:.3f}", "-c:v", "libx264", "-profile:v", "high",
          "-level", "4.1", "-preset", "medium", "-crf", "19", "-pix_fmt", "yuv420p",
          "-c:a", "aac", "-ar", "48000", "-b:a", "192k", "-movflags", "+faststart", str(out_path)],
@@ -150,5 +162,5 @@ def assemble(shots: list[dict], dialogue: dict, subtitle_path: str, out_path: st
     for seg in timeline:
         placed.append({"shot": seg["index"], "start": round(t, 3), "duration": round(seg["duration"], 3)})
         t += seg["duration"]
-    return {"video_path": str(out_path), "duration": round(total, 2), "resolution": f"{W}x{H}",
+    return {"video_path": str(out_path), "duration": round(total, 2), "resolution": f"{size[0]}x{size[1]}",
             "segments": len(timeline), "timeline": placed}

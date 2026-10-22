@@ -490,6 +490,7 @@ _jobs_lock = threading.Lock()
 _JOB_TITLES = {"prepare": "Собрать эпизоды", "script": "Собрать по сценарию", "resume": "Доделать сборку",
                "publish_next": "Опубликовать следующий", "lab": "Лаборатория сценариев",
                "analytics": "Обновить аналитику", "heroine": "Портреты героини", "scheduler": "Планировщик",
+               "order_script": "Заказ: сценарий", "order_build": "Заказ: видео",
                "pitches": "Завязки серий"}
 
 
@@ -499,6 +500,13 @@ def _job_command(kind: str, series: dict | None, data: dict) -> list[str]:
         return py + [str(ROOT_DIR / "agents" / "analytics_agent.py"), "--days", str(int(data.get("days", 7)))]
     if kind == "scheduler":
         return py + [str(ROOT_DIR / "scheduler.py")]
+    if kind in ("order_script", "order_build"):
+        from agents import order_agent
+        order = order_agent.load(str(data.get("order", "")))  # ValueError/OSError — нет такого заказа
+        if kind == "order_build" and not (order.get("script") or {}).get("lines"):
+            raise ValueError("сначала сценарий")
+        return py + [str(ROOT_DIR / "scripts" / "order_run.py"), "--order", order["id"],
+                     "--step", "script" if kind == "order_script" else "build"]
     if series is None:
         raise ValueError("нужен сериал")
     sid = series["id"]
@@ -597,11 +605,11 @@ def api_job_start():
             return jsonify({"error": "сериал не найден"}), 404
     try:
         cmd = _job_command(kind, series, data)
-    except (ValueError, TypeError) as exc:
-        return jsonify({"error": str(exc)}), 400
+    except (ValueError, TypeError, OSError) as exc:
+        return jsonify({"error": str(exc) if not isinstance(exc, OSError) else "заказ не найден"}), 400
     with _jobs_lock:
         busy = [j for j in _jobs.values() if j["status"] == "running" and j["type"] == kind
-                and j.get("series") == data.get("series")]
+                and j.get("series") == data.get("series") and j["params"].get("order") == data.get("order")]
         if busy and kind != "lab":
             return jsonify({"error": "такая задача уже идёт"}), 409
         job_id = uuid.uuid4().hex[:10]
@@ -851,6 +859,154 @@ def api_script_save():
     path.write_text(json.dumps({"title": title, "case": case, "lines": lines}, ensure_ascii=False, indent=2),
                     encoding="utf-8")
     return jsonify({"ok": True, "file": path.name}), 201
+
+
+# ── Заказы (Студия) ───────────────────────────────────────────────────────────
+
+def _order_or_404(order_id: str):
+    from agents import order_agent
+    try:
+        return order_agent.load(order_id), None
+    except (ValueError, OSError):
+        return None, (jsonify({"error": "заказ не найден"}), 404)
+
+
+def _order_jobs(order_id: str) -> list[dict]:
+    with _jobs_lock:
+        return [j for j in _jobs.values() if j["type"].startswith("order_") and j["params"].get("order") == order_id]
+
+
+@app.get("/api/orders")
+def api_orders():
+    from agents import order_agent
+    return jsonify(order_agent.list_orders())
+
+
+@app.post("/api/orders")
+def api_order_create():
+    from agents import order_agent
+    order, errors = order_agent.new_order(_body())
+    if errors:
+        return jsonify({"error": f"неверные поля: {', '.join(errors)}"}), 400
+    order_agent.save(order)
+    return jsonify({"ok": True, "id": order["id"]}), 201
+
+
+@app.get("/api/orders/<order_id>")
+def api_order_get(order_id: str):
+    from agents import order_agent
+    order, err = _order_or_404(order_id)
+    if err:
+        return err
+    jobs = sorted(_order_jobs(order_id), key=lambda j: j["started_at"])
+    return jsonify({**order, "estimate_usd": order_agent.estimate_usd(order),
+                    "job": jobs[-1] if jobs else None})
+
+
+@app.put("/api/orders/<order_id>")
+def api_order_update(order_id: str):
+    """Параметры заказа и правка сценария: script_text «РОЛЬ: [эмоция] реплика» + characters."""
+    from agents import order_agent
+    order, err = _order_or_404(order_id)
+    if err:
+        return err
+    if any(j["status"] == "running" for j in _order_jobs(order_id)):
+        return jsonify({"error": "заказ сейчас в работе — дождитесь окончания"}), 409
+    data = _body()
+    errors = order_agent.apply_params(order, data)
+    if errors:
+        return jsonify({"error": f"неверные поля: {', '.join(errors)}"}), 400
+    if "script_text" in data or "characters" in data:
+        old = order.get("script") or {"title": order.get("title") or "Ролик", "characters": [], "lines": []}
+        lines = order_agent.parse_lines(data["script_text"]) if "script_text" in data else old["lines"]
+        if "script_text" in data and data["script_text"].strip() and not lines:
+            return jsonify({"error": "не разобрал реплики: каждая строка — «РОЛЬ: [эмоция] текст»"}), 400
+        chars = data.get("characters", old["characters"])
+        order["script"] = order_agent.normalize_script(
+            {"title": data.get("script_title") or old.get("title"), "characters": chars, "lines": lines}, order)
+        if order["script"]["lines"] and order["status"] in ("draft", "failed", "done"):
+            order["status"] = "script_ready"
+    order_agent.save(order)
+    return jsonify({**order, "estimate_usd": order_agent.estimate_usd(order)})
+
+
+@app.post("/api/orders/<order_id>/files")
+def api_order_file_add(order_id: str):
+    """Файл клиента: {name, data (base64), kind: asset|logo} — JSON, как все запросы панели."""
+    import base64
+    from agents import order_agent
+    order, err = _order_or_404(order_id)
+    if err:
+        return err
+    body = _body()
+    try:
+        raw = base64.b64decode(str(body.get("data", "")).split(",")[-1], validate=True)
+    except ValueError:
+        return jsonify({"error": "файл не прочитан"}), 400
+    if not order_agent.file_size_ok(len(raw)):
+        return jsonify({"error": "файл пустой или больше 15 МБ"}), 400
+    try:
+        name = order_agent.add_file(order, str(body.get("name", "")), raw,
+                                    "logo" if body.get("kind") == "logo" else "asset")
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    order_agent.save(order)
+    return jsonify({"ok": True, "name": name}), 201
+
+
+@app.post("/api/orders/<order_id>/files/remove")
+def api_order_file_remove(order_id: str):
+    from agents import order_agent
+    order, err = _order_or_404(order_id)
+    if err:
+        return err
+    name = str(_body().get("name", ""))
+    path = order_agent.file_path(order, name)
+    if not path:
+        return jsonify({"error": "файл не найден"}), 404
+    order["files"] = [f for f in order["files"] if f != name]
+    if order.get("logo") == name:
+        order["logo"] = None
+    path.unlink(missing_ok=True)
+    order_agent.save(order)
+    return jsonify({"ok": True})
+
+
+@app.get("/api/orders/<order_id>/file/<name>")
+def api_order_file(order_id: str, name: str):
+    from agents import order_agent
+    order, err = _order_or_404(order_id)
+    if err:
+        return err
+    path = order_agent.file_path(order, name)
+    return send_file(path) if path else (jsonify({"error": "not found"}), 404)
+
+
+@app.get("/api/orders/<order_id>/video")
+def api_order_video(order_id: str):
+    from agents import order_agent
+    order, err = _order_or_404(order_id)
+    if err:
+        return err
+    name = (order.get("result") or {}).get("video")
+    path = order_agent.order_dir(order_id) / name if name else None
+    if not path or not path.is_file():
+        return jsonify({"error": "видео ещё нет"}), 404
+    title = re.sub(r"[^\w\- ]+", "", order.get("title") or order_id).strip() or order_id
+    return send_file(path, mimetype="video/mp4", conditional=True,
+                     as_attachment=request.args.get("dl") == "1", download_name=f"{title}.mp4")
+
+
+@app.post("/api/orders/<order_id>/delete")
+def api_order_delete(order_id: str):
+    from agents import order_agent
+    order, err = _order_or_404(order_id)
+    if err:
+        return err
+    if any(j["status"] == "running" for j in _order_jobs(order_id)):
+        return jsonify({"error": "заказ сейчас в работе"}), 409
+    shutil.rmtree(order_agent.order_dir(order_id))
+    return jsonify({"ok": True})
 
 
 # ── Логи ──────────────────────────────────────────────────────────────────────

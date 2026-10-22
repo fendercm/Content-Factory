@@ -109,27 +109,10 @@ textarea.inp{min-height:90px;resize:vertical;font-family:inherit}
 
 <!-- СТУДИЯ -->
 <section class="page" id="p-studio">
-  <h1>Студия</h1><div class="sub">Идея → сценарий → видео. Готовый сценарий можно вставить сразу во второй шаг.</div>
-  <div class="card"><h2>1 · Идея</h2>
-    <textarea class="inp" id="stIdea" rows="4" placeholder="О чём серия: кто пришёл, что случилось, что он скрывает, чем закончится. Хватит и пары фраз — остальное допишет сценарист."></textarea>
-    <div class="row" style="margin-top:10px"><span class="muted">Вариантов</span><select class="sel" id="stN"><option>2</option><option selected>3</option><option>4</option></select>
-      <button class="btn pri" id="stIdeaBtn" onclick="studioIdea()">Написать сценарии</button><span class="small dim" id="stIdeaState">≈ 3–5 минут, копейки; видео пока не собирается</span></div>
-  </div>
-  <div class="card" id="stVariants" style="display:none"></div>
-  <div class="card"><h2>2 · Сценарий <span class="small dim" style="font-weight:400">— правьте как хотите или вставьте свой</span></h2>
-    <div class="form">
-      <label class="f">Название<input class="inp" id="scTitle" placeholder="Бублик"></label>
-      <label class="f">Имя клиента<input class="inp" id="scName" placeholder="Артём"></label>
-      <label class="f">Возраст<input class="inp" id="scAge" type="number" value="32"></label>
-      <label class="f">Пол<select class="inp" id="scGender"><option value="female">женский</option><option value="male">мужской</option></select></label>
-      <label class="f">Кто по жизни<input class="inp" id="scJob" placeholder="инженер"></label>
-      <label class="f">Вещь в кадре (деталь)<input class="inp" id="scDetail" placeholder="старый ошейник с жетоном"></label>
-      <label class="f full">Реплики — по одной на строку: <code>РОЛЬ: [эмоция] текст</code>
-        <textarea class="inp" id="scText" rows="10" placeholder="АРТЁМ: [устало] Мама думает, что у меня живёт папина собака.&#10;ВЕРА: [мягко] Артём, а мама?"></textarea></label>
-    </div>
-    <div class="row" style="margin-top:12px"><button class="btn" onclick="saveScript(false)">Сохранить</button><button class="btn pri" onclick="saveScript(true)">🎬 Собрать видео</button><button class="btn" onclick="clearEditor()">Очистить</button><span class="small dim">сборка ≈ $1.5 и 10–15 минут; в соцсети сама не уходит</span></div>
-  </div>
-  <div class="card"><h2>3 · Видео</h2><div id="stBuild"><div class="empty">Соберите видео во втором шаге</div></div></div>
+  <h1>Студия</h1><div class="sub">Видео на заказ: бриф клиента → сценарий → ролик. Отдельно от сериалов, в соцсети само не уходит.</div>
+  <div class="row" style="margin-bottom:14px"><button class="btn pri" onclick="orderNew()">➕ Новый заказ</button></div>
+  <div class="card"><table><thead><tr><th>Создан</th><th>Заказ</th><th>Клиент</th><th>Ролик</th><th>Статус</th><th>Цена</th><th></th></tr></thead><tbody id="ordList"></tbody></table></div>
+  <div id="ordView"></div>
 </section>
 
 <!-- ЭПИЗОДЫ -->
@@ -162,10 +145,24 @@ textarea.inp{min-height:90px;resize:vertical;font-family:inherit}
   <div class="card"><h2>🧪 Лаборатория</h2>
     <div class="row"><span class="muted">Написать</span><select class="sel" id="labN"><option>2</option><option selected>4</option><option>6</option></select><span class="muted">сценария текстом</span>
       <button class="btn pri" onclick="startLab()">Запустить</button><span class="small dim">≈3–5 минут, копейки; видео не собирается</span></div>
+    <textarea class="inp" id="labIdea" rows="2" style="margin-top:10px" placeholder="Идея серии (необязательно): кто пришёл, что случилось, что скрывает — сценарист построит варианты на ней"></textarea>
     <div id="labList" style="margin-top:12px"></div>
   </div>
   <div class="card" id="labView" style="display:none"></div>
   <div class="card"><h2>📄 Сценарии для производства</h2><div id="scriptList"></div></div>
+  <div class="card"><h2>✏️ Сценарий серии <span class="small dim" style="font-weight:400">— из лаборатории («В редактор») или свой</span></h2>
+    <div class="form">
+      <label class="f">Название<input class="inp" id="scTitle" placeholder="Бублик"></label>
+      <label class="f">Имя клиента<input class="inp" id="scName" placeholder="Артём"></label>
+      <label class="f">Возраст<input class="inp" id="scAge" type="number" value="32"></label>
+      <label class="f">Пол<select class="inp" id="scGender"><option value="female">женский</option><option value="male">мужской</option></select></label>
+      <label class="f">Кто по жизни<input class="inp" id="scJob" placeholder="инженер"></label>
+      <label class="f">Вещь в кадре (деталь)<input class="inp" id="scDetail" placeholder="старый ошейник с жетоном"></label>
+      <label class="f full">Реплики — по одной на строку: <code>РОЛЬ: [эмоция] текст</code>
+        <textarea class="inp" id="scText" rows="10" placeholder="АРТЁМ: [устало] Мама думает, что у меня живёт папина собака.&#10;ВЕРА: [мягко] Артём, а мама?"></textarea></label>
+    </div>
+    <div class="row" style="margin-top:12px"><button class="btn" onclick="saveScript(false)">Сохранить</button><button class="btn pri" onclick="saveScript(true)">🎬 Собрать эпизод</button><button class="btn" onclick="clearEditor()">Очистить</button><span class="small dim">эпизод ≈ $1.5 и 10–15 минут, встанет в очередь</span></div>
+  </div>
 </section>
 
 <!-- АНАЛИТИКА -->
@@ -264,7 +261,8 @@ async function startJob(type, params = {}) {
 }
 function startPrepare() { startJob('prepare', {n: +$('prepN').value, platform: $('prepPlatform').value}); }
 function publishNext() { if (confirm('Опубликовать следующий эпизод из очереди прямо сейчас? Это реальная публикация в соцсети.')) startJob('publish_next', {confirm: true}); }
-function startLab() { startJob('lab', {n: +$('labN').value, same: true}); }
+function startLab() { const idea = $('labIdea').value.trim();
+  startJob('lab', {n: +$('labN').value, same: true, ...(idea ? {idea} : {})}); }
 
 // ── обзор ──
 async function loadOverview() {
@@ -366,7 +364,7 @@ async function openLab(stamp) {
     ${it.story ? `<details class="small" style="margin-bottom:8px"><summary class="dim">история прозой</summary><div style="margin-top:6px">${esc(it.story)}</div></details>` : ''}
     ${it.critic && (it.critic.failed.length || it.critic.fixes.length) ? `<details class="small" style="margin-bottom:8px"><summary class="dim">замечания критика${it.critic.failed.length ? ': ' + it.critic.failed.map(k => CRITIC_LABELS[k] || k).join(', ') : ''}</summary><ul style="margin:6px 0 0 18px">${it.critic.fixes.map(f => `<li>${esc(f)}</li>`).join('')}</ul></details>` : ''}
     ${it.error ? `<div class="err small">${esc(it.error)}</div>` : ''}
-    ${it.episode ? renderLines(it.episode.lines) + `<div class="row" style="margin-top:10px"><button class="btn sm pri" onclick="labToProduction(${i})">В производство</button></div>` : '<div class="err small">не получился</div>'}</div>`).join('');
+    ${it.episode ? renderLines(it.episode.lines) + `<div class="row" style="margin-top:10px"><button class="btn sm pri" onclick="labToProduction(${i})">В производство</button><button class="btn sm" onclick="labEdit(${i})">В редактор</button></div>` : '<div class="err small">не получился</div>'}</div>`).join('');
   $('labView').scrollIntoView({behavior: 'smooth'});
 }
 async function labToProduction(i) {
@@ -376,51 +374,9 @@ async function labToProduction(i) {
 }
 async function viewScript(file) { const d = await api('/scripts/' + encodeURIComponent(file));
   $('labView').style.display = ''; $('labView').innerHTML = `<h2>${esc(d.title)} <button class="btn sm" style="margin-left:auto" onclick="$('labView').style.display='none'">Закрыть</button></h2>${renderLines(d.lines)}`; $('labView').scrollIntoView({behavior: 'smooth'}); }
-async function buildScript(file) { const j = await startJob('script', {file});
-  if (j) { stSave({...stState(), buildJob: j.id}); if (page !== 'studio') go('studio'); } }
-async function saveScript(andBuild) {
-  const body = {series: S, title: $('scTitle').value.trim(), text: $('scText').value,
-    case: {...(window._stCase || {}), client_name: $('scName').value.trim(), age: +$('scAge').value, gender: $('scGender').value, occupation: $('scJob').value.trim(), signature_detail: $('scDetail').value.trim()}};
-  try { const r = await api('/scripts', {method: 'POST', body}); toast('Сценарий сохранён'); if (andBuild) buildScript(r.file); loadScripts(); } catch (e) { toast(e.message, true); }
-}
-
-
-// ── студия ──
-const ST_KEY = 'cf_studio';
-function stState() { try { return JSON.parse(localStorage.getItem(ST_KEY) || '{}'); } catch { return {}; } }
-function stSave(st) { try { localStorage.setItem(ST_KEY, JSON.stringify(st)); } catch {} }
-const stampOf = iso => { const d = new Date(iso), z = n => String(n).padStart(2, '0');
-  return `${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}`; };
-async function studioIdea() {
-  const idea = $('stIdea').value.trim();
-  if (idea.length < 10) return toast('Опишите идею хотя бы одной фразой', true);
-  const j = await startJob('lab', {n: +$('stN').value, same: true, idea});
-  if (j) { stSave({...stState(), ideaJob: j.id, ideaAt: j.started_at, shown: null}); loadStudio(); }
-}
-async function loadStudio() {
-  const st = stState(), jobs = await api('/jobs');
-  const ij = jobs.find(j => j.id === st.ideaJob);
-  $('stIdeaBtn').disabled = !!(ij && ij.status === 'running');
-  if (ij && ij.status === 'running') $('stIdeaState').innerHTML = `<span style="color:var(--run)">⏳ Сценарист пишет варианты… ${ago(ij.started_at)}</span>`;
-  else if (ij && ij.status !== 'done') $('stIdeaState').innerHTML = `<span class="err">Не получилось</span> — <a href="#" onclick="go('jobs');showLog('${ij.id}');return false">журнал</a>`;
-  else $('stIdeaState').textContent = '≈ 3–5 минут, копейки; видео пока не собирается';
-  if (ij && ij.status === 'done' && !st.shown) {
-    const from = stampOf(ij.started_at), lab = (await api('/lab')).find(l => l.stamp >= from);
-    if (lab) { stSave({...st, shown: lab.stamp}); await studioVariants(lab.stamp); }
-  } else if (st.shown && $('stVariants').style.display === 'none') await studioVariants(st.shown);
-  const bj = jobs.find(j => j.id === st.buildJob);
-  if (bj) await studioBuild(bj);
-}
-async function studioVariants(stamp) {
-  const d = await api('/lab/' + stamp); window._stLab = d;
-  $('stVariants').style.display = '';
-  $('stVariants').innerHTML = `<h2>Варианты <span class="small dim" style="font-weight:400">— возьмите лучший во второй шаг</span></h2>` + d.items.map((it, i) =>
-    `<div class="card" style="background:var(--panel2)"><h2>${esc(it.label)}. ${esc((it.episode || {}).title || it.case.title)}</h2>
-    <div class="small dim" style="margin-bottom:8px">${esc(it.case.client_name)}, ${esc(it.case.age)}, ${esc(it.case.occupation)} · ${esc(it.case.stakes || '')}</div>
-    ${it.episode ? renderLines(it.episode.lines) + `<div class="row" style="margin-top:10px"><button class="btn sm pri" onclick="studioTake(${i})">Взять в работу</button></div>` : '<div class="err small">этот вариант не получился</div>'}</div>`).join('');
-}
-function studioTake(i) {
-  const it = window._stLab.items[i], c = it.case;
+async function buildScript(file) { const j = await startJob('script', {file}); if (j) go('overview'); }
+function labEdit(i) {
+  const it = window._lab.items[i], c = it.case;
   window._stCase = c;
   $('scTitle').value = it.episode.title || c.title; $('scName').value = c.client_name; $('scAge').value = c.age;
   $('scGender').value = c.gender === 'male' ? 'male' : 'female'; $('scJob').value = c.occupation; $('scDetail').value = c.signature_detail || '';
@@ -428,19 +384,184 @@ function studioTake(i) {
   $('scTitle').scrollIntoView({behavior: 'smooth', block: 'center'});
 }
 function clearEditor() { window._stCase = null; ['scTitle', 'scName', 'scJob', 'scDetail', 'scText'].forEach(id => $(id).value = ''); }
-async function studioBuild(job) {
-  const b = await api(`/series/${S}/builds`), c = b.current;
-  let html = `<div class="row" style="margin-bottom:10px">${badge(JOB, job.status)}<span class="small muted">запущено ${ago(job.started_at)}</span>
-    <button class="btn sm" onclick="go('jobs');showLog('${job.id}')">Журнал</button></div>`;
-  if (c && c.started_at >= job.started_at.slice(0, 19)) html += `<div class="stages">${c.stages.map(st => `<div class="st ${st.status}"><b>${ICON[st.status]} ${esc(st.label)}</b>${st.status === 'pending' ? 'ждёт' : st.status === 'skipped' ? 'ждёт выхода' : dur(st.seconds)}</div>`).join('')}</div>
-    ${c.note ? `<div class="small" style="margin-top:8px;color:var(--run)">▸ ${esc(c.note)}</div>` : ''}`;
-  if (job.status === 'done') {
-    const ep = (await api(`/series/${S}/episodes`)).find(e => e.status !== 'rejected' && e.created_at >= job.started_at && e.has_video);
-    if (ep && !document.querySelector('#stBuild video')) html += `<div style="margin-top:12px"><div class="small muted" style="margin-bottom:6px">Эпизод ${ep.episode_no} «${esc(ep.title)}» — ${ep.status === 'ready' ? 'в очереди на выход' : 'вышел'}</div>
-      <video class="player" controls preload="metadata" src="/api/video/${ep.id}${tok()}"></video></div>`;
-    else if (document.querySelector('#stBuild video')) return;
+async function saveScript(andBuild) {
+  const body = {series: S, title: $('scTitle').value.trim(), text: $('scText').value,
+    case: {...(window._stCase || {}), client_name: $('scName').value.trim(), age: +$('scAge').value, gender: $('scGender').value, occupation: $('scJob').value.trim(), signature_detail: $('scDetail').value.trim()}};
+  try { const r = await api('/scripts', {method: 'POST', body}); toast('Сценарий сохранён'); if (andBuild) buildScript(r.file); loadScripts(); } catch (e) { toast(e.message, true); }
+}
+
+
+// ── студия: заказы ──
+const ORD = {draft: ['', 'черновик'], scripting: ['b-run', 'пишется сценарий'], script_ready: ['b-acc', 'сценарий готов'],
+  building: ['b-run', 'собирается'], done: ['b-ok', 'готово'], failed: ['b-err', 'ошибка']};
+const OPT = {
+  mode: [['auto', 'Авто — как лучше подходит'], ['scene', 'Сценка с героями'], ['voiceover', 'Голос за кадром']],
+  duration: [[15, '15 секунд'], [30, '30 секунд'], [60, '60 секунд'], [90, '90 секунд']],
+  aspect: [['9:16', 'Вертикаль 9:16 — Reels, Shorts, TikTok'], ['16:9', 'Горизонталь 16:9 — YouTube, сайт']],
+  style: [['cinema', 'Кино, фотореализм'], ['ad', 'Реклама, чистый свет'], ['cartoon', '3D-мультфильм'], ['anime', 'Аниме'], ['illustration', 'Иллюстрация'], ['custom', 'Свой стиль…']],
+  voice: [['auto', 'Авто'], ['female', 'Женский'], ['male', 'Мужской']],
+  music: [['auto', 'Авто по настроению'], ['calm', 'Спокойная'], ['upbeat', 'Бодрая'], ['dramatic', 'Драматичная'], ['none', 'Без музыки']],
+  animate: [['none', 'Без анимации'], ['some', 'Немного (3 кадра)'], ['more', 'Больше (6 кадров)']],
+};
+const VOICE_NAMES = {female: ['Leda', 'Kore', 'Aoede', 'Sulafat'], male: ['Orus', 'Charon', 'Puck', 'Fenrir']};
+let ord = null, ordJobStatus = null;
+const sel = (id, key, val) => `<select class="inp" id="${id}">${OPT[key].map(([v, t]) => `<option value="${v}" ${String(v) === String(val) ? 'selected' : ''}>${t}</option>`).join('')}</select>`;
+const ordUrl = (p = '') => `/orders/${ord.id}${p}`;
+const ordRunning = o => o && o.job && o.job.status === 'running';
+
+async function loadStudio() {
+  const list = await api('/orders');
+  $('ordList').innerHTML = list.length ? list.map(o => `<tr style="cursor:pointer" onclick="orderOpen('${o.id}')"><td class="small">${ago(o.created_at)}</td><td>${esc(o.title || 'без названия')}</td>
+    <td class="small">${esc(o.client || '—')}</td><td class="small dim">${o.duration} с · ${esc(o.aspect)}</td><td>${badge(ORD, o.status)}</td>
+    <td class="small">${o.cost_usd != null ? '$' + o.cost_usd : ''}</td><td><button class="btn sm">Открыть</button></td></tr>`).join('')
+    : '<tr><td colspan="7" class="empty">Заказов пока нет — нажмите «Новый заказ»</td></tr>';
+  if (ord) await orderRefresh();
+}
+async function orderNew() {
+  try { const r = await api('/orders', {method: 'POST', body: {}}); await loadStudio(); await orderOpen(r.id); } catch (e) { toast(e.message, true); }
+}
+async function orderOpen(id) {
+  ord = await api('/orders/' + id); ordJobStatus = ord.job && ord.job.status;
+  renderOrder(); $('ordView').scrollIntoView({behavior: 'smooth'});
+}
+async function orderRefresh() {
+  const o = await api('/orders/' + ord.id).catch(() => null);
+  if (!o) { ord = null; $('ordView').innerHTML = ''; return; }
+  const finished = ordJobStatus === 'running' && !ordRunning(o);
+  ord = o; ordJobStatus = o.job && o.job.status;
+  if (finished && o.job.type === 'order_script') renderOrder();   // сценарий пришёл — показать редактор
+  else { renderOrderStatus(); renderOrderBuild(); }
+}
+function renderOrder() {
+  const o = ord;
+  $('ordView').innerHTML = `
+  <div class="card"><h2>1 · Бриф <span id="ordStatus"></span>
+    <button class="btn sm danger" style="margin-left:auto" onclick="orderDelete()">Удалить</button></h2>
+    <div class="form">
+      <label class="f">Название ролика<input class="inp" id="oTitle" value="${esc(o.title)}" placeholder="напишет сценарист, если пусто"></label>
+      <label class="f">Клиент<input class="inp" id="oClient" value="${esc(o.client)}" placeholder="кто заказал"></label>
+      <label class="f full">Что нужно клиенту — идея, задача или готовый текст
+        <textarea class="inp" id="oBrief" rows="5" placeholder="Например: реклама кофейни «Зерно» на Садовой, 30 секунд. Акцент — свежая обжарка каждое утро, второй кофе в подарок до конца месяца. Тон — тёплый, без пафоса.">${esc(o.brief)}</textarea></label>
+      <label class="check full"><input type="checkbox" id="oFinal" ${o.text_is_final ? 'checked' : ''}> Это готовый текст — озвучить дословно, только разбить на реплики</label>
+      <label class="f">Формат${sel('oMode', 'mode', o.mode)}</label>
+      <label class="f">Длительность${sel('oDuration', 'duration', o.duration)}</label>
+      <label class="f">Кадр${sel('oAspect', 'aspect', o.aspect)}</label>
+      <label class="f">Стиль картинки${sel('oStyle', 'style', o.style)}</label>
+      <label class="f full" id="oStyleCustomWrap" style="${o.style === 'custom' ? '' : 'display:none'}">Свой стиль (лучше по-английски)
+        <input class="inp" id="oStyleCustom" value="${esc(o.style_custom)}" placeholder="Retro 80s VHS look, neon colors, film grain"></label>
+      <label class="f">Голос диктора${sel('oVoice', 'voice', o.voice)}</label>
+      <label class="f">Музыка${sel('oMusic', 'music', o.music)}</label>
+      <label class="f">Анимация кадров${sel('oAnimate', 'animate', o.animate)}</label>
+      <div class="f" style="justify-content:flex-end"><label class="check"><input type="checkbox" id="oSubs" ${o.subtitles ? 'checked' : ''}> Субтитры</label>
+        <label class="check"><input type="checkbox" id="oLip" ${o.lipsync ? 'checked' : ''}> Липсинк говорящих лиц</label></div>
+    </div>
+    <div style="margin-top:14px"><div class="small muted" style="margin-bottom:8px">Материалы клиента: фото товара, людей, места — попадут в кадры. Логотип встанет в угол ролика.</div>
+      <div class="thumbs">${o.files.map(f => `<div class="thumb"><img src="/api${ordUrl('/file/' + encodeURIComponent(f))}${tok()}"><span class="small">${esc(f)}</span>
+        <button class="btn sm danger" onclick="orderFileRemove('${esc(f)}')">Убрать</button></div>`).join('')}
+        ${o.logo ? `<div class="thumb"><img style="object-fit:contain;background:#fff" src="/api${ordUrl('/file/' + encodeURIComponent(o.logo))}${tok()}"><span class="small">логотип</span>
+        <button class="btn sm danger" onclick="orderFileRemove('${esc(o.logo)}')">Убрать</button></div>` : ''}</div>
+      <div class="row" style="margin-top:10px"><label class="btn sm">📎 Добавить фото<input type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onchange="orderUpload(this, 'asset')"></label>
+        <label class="btn sm">🏷 ${o.logo ? 'Заменить' : 'Добавить'} логотип<input type="file" accept="image/png,image/jpeg,image/webp" hidden onchange="orderUpload(this, 'logo')"></label></div>
+    </div>
+    <div class="row" style="margin-top:14px"><button class="btn" onclick="orderSave()">Сохранить</button>
+      <button class="btn pri" id="oScriptBtn" onclick="orderScript()">✍️ ${o.script ? 'Переписать сценарий' : 'Написать сценарий'}</button>
+      <span class="small dim">≈ 1–2 минуты, копейки</span></div>
+  </div>
+  <div id="ordScript">${o.script ? renderOrderScript() : ''}</div>
+  <div class="card"><h2>3 · Видео</h2><div id="ordBuild"></div></div>`;
+  $('oStyle').addEventListener('change', e => { $('oStyleCustomWrap').style.display = e.target.value === 'custom' ? '' : 'none'; });
+  renderOrderStatus(); renderOrderBuild();
+}
+function renderOrderScript() {
+  const sc = ord.script, files = ord.files;
+  const voiceSel = (c, k) => `<select class="inp" id="oCVoice${k}">${[...VOICE_NAMES.female.map(v => [v, v + ' · жен.']), ...VOICE_NAMES.male.map(v => [v, v + ' · муж.'])]
+    .map(([v, t]) => `<option value="${v}" ${v === c.voice ? 'selected' : ''}>${t}</option>`).join('')}</select>`;
+  return `<div class="card"><h2>2 · Сценарий <span class="small dim" style="font-weight:400">— правьте как хотите</span></h2>
+    <label class="f" style="margin-bottom:12px">Название<input class="inp" id="oSTitle" value="${esc(sc.title)}"></label>
+    <table style="margin-bottom:12px"><thead><tr><th>Роль</th><th>Голос</th><th>Внешность (для кадров, лучше по-английски)</th><th>Фото клиента</th></tr></thead><tbody>
+    ${sc.characters.map((c, k) => `<tr><td><b>${esc(c.role)}</b><input type="hidden" id="oCRole${k}" value="${esc(c.role)}"></td><td style="min-width:130px">${voiceSel(c, k)}</td>
+      <td><textarea class="inp" id="oCVis${k}" rows="2" ${c.role === 'ДИКТОР' ? 'placeholder="за кадром — не нужна"' : ''}>${esc(c.visual_en)}</textarea></td>
+      <td style="min-width:120px"><select class="inp" id="oCAsset${k}"><option value="">—</option>${files.map(f => `<option ${f === c.asset ? 'selected' : ''}>${esc(f)}</option>`).join('')}</select></td></tr>`).join('')}
+    </tbody></table>
+    <label class="f full">Реплики — по одной на строку: <code>РОЛЬ: [эмоция] текст</code>
+      <textarea class="inp" id="oSText" rows="${Math.min(18, sc.lines.length + 2)}">${esc(sc.lines.map(l => `${l.role}: ${l.emotion ? '[' + l.emotion + '] ' : ''}${l.text}`).join('\n'))}</textarea></label>
+    <div class="small" style="margin-top:6px;color:var(--warn)">${(sc.warnings || []).map(esc).join(' · ')}</div>
+    <div class="row" style="margin-top:12px"><span class="small dim">${sc.words} слов</span><button class="btn" onclick="orderScriptSave()">Сохранить сценарий</button>
+      <button class="btn pri" id="oBuildBtn" onclick="orderBuild()">🎬 Собрать видео (≈ $${ord.estimate_usd})</button><span class="small dim">≈ 10–15 минут</span></div>
+  </div>`;
+}
+function renderOrderStatus() {
+  if (!$('ordStatus')) return;
+  $('ordStatus').innerHTML = badge(ORD, ord.status) + (ord.error ? ` <span class="small err" style="font-weight:400">${esc(ord.error)}</span>` : '');
+  const busy = ordRunning(ord);
+  ['oScriptBtn', 'oBuildBtn'].forEach(id => { if ($(id)) $(id).disabled = busy; });
+}
+function renderOrderBuild() {
+  const o = ord, r = o.result, box = $('ordBuild');
+  if (!box) return;
+  if (box.querySelector('video') && r && o.status === 'done') return;   // не сбивать просмотр
+  let html = '';
+  if (o.job && o.job.type === 'order_build') html += `<div class="row" style="margin-bottom:10px">${badge(JOB, o.job.status)}<span class="small muted">запущено ${ago(o.job.started_at)}</span>
+    <button class="btn sm" onclick="go('jobs');showLog('${o.job.id}')">Журнал</button></div>`;
+  if (o.progress && o.progress.length && (o.status === 'building' || o.status === 'failed' || o.status === 'done'))
+    html += `<div class="stages">${o.progress.map(st => `<div class="st ${st.status}"><b>${ICON[st.status] || '·'} ${esc(st.label)}</b>${esc(st.note || (st.status === 'running' ? 'идёт…' : ''))}</div>`).join('')}</div>`;
+  if (r && o.status === 'done') {
+    const qa = r.qa || {};
+    html += `<div class="grid g2" style="margin-top:14px"><div><video class="player" style="max-width:${o.aspect === '16:9' ? '100%' : '300px'}" controls preload="metadata" src="/api${ordUrl('/video')}${tok()}"></video></div>
+      <div><div class="kpi"><div class="l">Готово</div><div class="v">${r.duration} с</div><div class="s">${esc(r.resolution)} · ${r.shots} кадров · голос ${esc(r.voice_engine)}</div></div>
+      <div class="kpi" style="margin-top:12px"><div class="l">Себестоимость</div><div class="v">$${r.cost_usd}</div><div class="s">${r.credits} кр. KIE</div></div>
+      <div style="margin-top:12px">${qa.passed === false ? `<div class="small" style="color:var(--warn)">⚠ Проверка нашла: ${esc(qa.problems.map(p => p.text).join('; '))}</div>` : qa.passed ? '<div class="small" style="color:var(--ok)">✓ Проверка звука, субтитров и кадров пройдена</div>' : ''}</div>
+      <div class="row" style="margin-top:14px"><a class="btn pri" href="/api${ordUrl('/video')}?dl=1${TOKEN ? '&token=' + encodeURIComponent(TOKEN) : ''}">⬇ Скачать MP4</a></div></div></div>`;
   }
-  $('stBuild').innerHTML = html;
+  if (!html) html = `<div class="empty">${o.script ? 'Проверьте сценарий и нажмите «Собрать видео»' : 'Сначала сценарий — шаг 1'}</div>`;
+  box.innerHTML = html;
+}
+function orderParams() {
+  return {title: $('oTitle').value, client: $('oClient').value, brief: $('oBrief').value, text_is_final: $('oFinal').checked,
+    mode: $('oMode').value, duration: +$('oDuration').value, aspect: $('oAspect').value, style: $('oStyle').value,
+    style_custom: $('oStyleCustom').value, voice: $('oVoice').value, music: $('oMusic').value, animate: $('oAnimate').value,
+    subtitles: $('oSubs').checked, lipsync: $('oLip').checked};
+}
+async function orderSave(quiet) {
+  try { ord = {...ord, ...await api(ordUrl(), {method: 'PUT', body: orderParams()})}; if (!quiet) toast('Сохранено'); loadStudio(); return true; }
+  catch (e) { toast(e.message, true); return false; }
+}
+async function orderScript() {
+  if ($('oBrief').value.trim().length < 10) return toast('Опишите задачу клиента хотя бы одной фразой', true);
+  if (ord.script && !confirm('Переписать сценарий заново? Ваши правки в нём пропадут.')) return;
+  if (!await orderSave(true)) return;
+  const j = await startJob('order_script', {order: ord.id});
+  if (j) { ordJobStatus = 'running'; ord.job = j; ord.status = 'scripting'; renderOrderStatus(); }
+}
+function scriptBody() {
+  const sc = ord.script;
+  return {script_title: $('oSTitle').value, script_text: $('oSText').value,
+    characters: sc.characters.map((c, k) => ({role: c.role, gender: VOICE_NAMES.male.includes($('oCVoice' + k).value) ? 'male' : 'female',
+      voice: $('oCVoice' + k).value, visual_en: $('oCVis' + k).value, asset: $('oCAsset' + k).value || null}))};
+}
+async function orderScriptSave(quiet) {
+  try { ord = {...ord, ...await api(ordUrl(), {method: 'PUT', body: {...orderParams(), ...scriptBody()}})};
+    if (!quiet) { toast('Сценарий сохранён'); $('ordScript').innerHTML = renderOrderScript(); } return true; }
+  catch (e) { toast(e.message, true); return false; }
+}
+async function orderBuild() {
+  if (!await orderScriptSave(true)) return;
+  if (!confirm(`Собрать видео? Это платно: ≈ $${ord.estimate_usd} (кадры, анимация, липсинк), 10–15 минут.`)) return;
+  const j = await startJob('order_build', {order: ord.id});
+  if (j) { ordJobStatus = 'running'; ord.job = j; ord.status = 'building'; ord.progress = []; ord.result = null; renderOrderStatus(); renderOrderBuild(); }
+}
+function orderUpload(input, kind) {
+  [...input.files].forEach(f => { const rd = new FileReader();
+    rd.onload = async () => { try { await api(ordUrl('/files'), {method: 'POST', body: {name: f.name, data: rd.result, kind}});
+      await orderSave(true); ord = await api(ordUrl()); renderOrder(); } catch (e) { toast(e.message, true); } };
+    rd.readAsDataURL(f); });
+}
+async function orderFileRemove(name) {
+  try { await api(ordUrl('/files/remove'), {method: 'POST', body: {name}}); await orderSave(true); ord = await api(ordUrl()); renderOrder(); } catch (e) { toast(e.message, true); }
+}
+async function orderDelete() {
+  if (!confirm('Удалить заказ вместе с файлами и видео? Это нельзя отменить.')) return;
+  try { await api(ordUrl('/delete'), {method: 'POST', body: {}}); ord = null; $('ordView').innerHTML = ''; loadStudio(); } catch (e) { toast(e.message, true); }
 }
 
 // ── аналитика ──
@@ -550,8 +671,8 @@ async function refresh(force) {
   } catch (e) { $('connPill').innerHTML = '<span class="dot err"></span>Нет связи'; }
   busy = false;
 }
-document.querySelectorAll('nav.side a').forEach(a => a.addEventListener('click', () => { window._scriptsLoaded = false; }));
 setInterval(() => { if (page !== 'series' && page !== 'scripts') refresh(); else { loadOverview().catch(() => {}); if (page === 'scripts') loadPitches().catch(() => {}); } }, 5000);
+setInterval(() => { if (page !== 'series' && page !== 'scripts') refresh(); else loadOverview().catch(() => {}); }, 5000);
 loadSeriesList().then(() => refresh(true)).catch(() => refresh());
 </script>
 </body>
