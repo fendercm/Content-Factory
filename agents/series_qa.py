@@ -90,7 +90,7 @@ def check_sync(final: np.ndarray, voice: np.ndarray, window: float = 4.0) -> tup
         if corr <= 0.4 or abs(lag) <= MAX_LAG:
             continue
         near = [w for w in windows[max(k - 1, 0):k + 2] if w is not windows[k]]
-        confirmed = any(c > 0.4 and abs(l - lag) <= 0.2 for _, l, c in near)
+        confirmed = any(c > 0.4 and abs(l) > MAX_LAG and abs(l - lag) <= 0.2 for _, l, c in near)
         if corr >= SYNC_SURE_CORR or confirmed:
             problems.append(f"голос сдвинут на {lag:+.2f} с около {t:.0f}-й секунды")
     if not lags:

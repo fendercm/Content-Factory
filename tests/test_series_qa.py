@@ -95,3 +95,17 @@ def test_check_reports_problems_by_category_and_survives_broken_check(monkeypatc
     assert r["problems"] == [{"category": "speech", "text": "реплика 2 (ВЕРА) не слышна"}]
     assert "speaker_error" in r["metrics"] and r["metrics"]["lufs"] == -16.0
     assert {p["category"] for p in r["problems"]} <= q.VOICE_CATEGORIES  # такой брак лечится переозвучкой
+
+
+def test_sync_single_weak_window_is_not_a_defect(monkeypatch):
+    """Одно слабое окно со сдвигом рядом с окнами без сдвига — шум, а не рассинхрон (эпизоды 2 и 3)."""
+    import numpy as np
+    from agents import series_qa as q
+
+    seq = iter([(0.0, 0.9), (0.0, 0.86), (-0.2, 0.46)])
+    monkeypatch.setattr(q, "_best_lag", lambda *a: next(seq))
+    voice = (0.5 * np.tile(np.r_[np.zeros(8000), np.ones(8000)], 13)).astype(np.float32)  # 13 с: фразы и паузы по 0.5 с
+    assert q.check_sync(voice, voice)[0] == []
+    seq2 = iter([(0.0, 0.9), (-3.0, 0.5), (-3.0, 0.5)])
+    monkeypatch.setattr(q, "_best_lag", lambda *a: next(seq2))
+    assert q.check_sync(voice, voice)[0]                       # сдвиг в двух окнах подряд — брак
