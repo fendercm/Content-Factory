@@ -31,6 +31,10 @@ def _fresh_providers(monkeypatch):
     monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.delenv("DISABLED_PROVIDERS", raising=False)
+    monkeypatch.delenv("LLM_TRANSIENT_RETRIES", raising=False)
+    monkeypatch.delenv("LLM_RETRY_DELAYS", raising=False)
+    # Паузы между проходами цепочки — без реального ожидания
+    monkeypatch.setattr(llm_client.time, "sleep", lambda s: None)
     yield
     providers._dead.clear()
 
@@ -86,6 +90,197 @@ def test_all_providers_failed_raises():
          patch.object(llm_client, "_openai_client", return_value=client):
         with pytest.raises(llm_client.AllProvidersFailed):
             llm_client.chat([{"role": "user", "content": "x"}])
+
+
+# ── Повторные проходы при временных сбоях ────────────────────────────────────
+
+_OK = {"candidates": [{"content": {"parts": [{"text": "готово"}]}}]}
+
+
+def _gemini_by_model(script: dict):
+    """side_effect для requests.post: модель из URL → очередь ответов/исключений; лог вызовов в .calls."""
+    calls: list[str] = []
+
+    def post(url, **kwargs):
+        model = url.split("/models/")[1].split(":")[0]
+        calls.append(model)
+        item = script[model].pop(0) if len(script[model]) > 1 else script[model][0]
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+    post.calls = calls
+    return post
+
+
+@pytest.fixture
+def free_chain(monkeypatch):
+    """Только Gemini/Gemma: Groq выключен, NVIDIA/OpenRouter без ключей, платные в BUDGET_MODE=free."""
+    monkeypatch.setenv("DISABLED_PROVIDERS", "groq")
+    monkeypatch.delenv("BUDGET_ALLOW", raising=False)
+    sleeps: list[float] = []
+    from utils import llm_client
+    monkeypatch.setattr(llm_client.time, "sleep", sleeps.append)
+    return sleeps
+
+
+def test_transient_outage_recovers_on_second_pass(free_chain):
+    """Сценарий 2026-10-23: flash 503, flash-lite ConnectTimeout, gemma 500 → через паузу проходит."""
+    import requests
+    from utils import llm_client
+    q, f, g = llm_client.gemini_quality_model(), llm_client.gemini_fast_model(), llm_client.gemma_model()
+    post = _gemini_by_model({
+        q: [_gemini_http(503, {"error": {"message": "high demand"}}), _gemini_http(200, _OK)],
+        f: [requests.ConnectTimeout("connect timeout")],
+        g: [_gemini_http(500, {"error": {"message": "internal"}})],
+    })
+    with patch.object(llm_client._requests, "post", side_effect=post):
+        resp = llm_client.chat([{"role": "user", "content": "x"}], tier="quality", caller="anthology_shots")
+    assert resp.choices[0].message.content == "готово" and resp.model == q
+    assert free_chain == [20.0]
+    assert post.calls == [q, f, g, q]
+
+
+def test_transient_retries_exhausted_raise_after_all_passes(free_chain):
+    from utils import llm_client
+    busy = _gemini_http(503, {"error": {"message": "high demand"}})
+    with patch.object(llm_client._requests, "post", return_value=busy) as post:
+        with pytest.raises(llm_client.AllProvidersFailed, match="проходов: 3"):
+            llm_client.chat([{"role": "user", "content": "x"}], tier="quality")
+    assert free_chain == [20.0, 60.0]
+    assert post.call_count == 9  # 3 модели × 3 прохода
+
+
+def test_retry_policy_from_env(free_chain, monkeypatch):
+    from utils import llm_client
+    monkeypatch.setenv("LLM_TRANSIENT_RETRIES", "3")
+    monkeypatch.setenv("LLM_RETRY_DELAYS", "5")
+    busy = _gemini_http(503, {"error": {"message": "busy"}})
+    with patch.object(llm_client._requests, "post", return_value=busy):
+        with pytest.raises(llm_client.AllProvidersFailed):
+            llm_client.chat([{"role": "user", "content": "x"}])
+    assert free_chain == [5.0, 5.0, 5.0]  # пауз меньше, чем повторов, — последняя повторяется
+
+    free_chain.clear()
+    monkeypatch.setenv("LLM_TRANSIENT_RETRIES", "0")
+    with patch.object(llm_client._requests, "post", return_value=busy) as post:
+        with pytest.raises(llm_client.AllProvidersFailed):
+            llm_client.chat([{"role": "user", "content": "x"}])
+    assert free_chain == [] and post.call_count == 2  # fast + gemma, без повторов
+
+
+def test_dead_and_skip_providers_are_not_retried(free_chain):
+    from utils import llm_client, providers
+    q, f, g = llm_client.gemini_quality_model(), llm_client.gemini_fast_model(), llm_client.gemma_model()
+    post = _gemini_by_model({
+        q: [_gemini_http(404, {"error": {"message": "not found"}})],
+        f: [_gemini_http(400, {"error": {"message": "bad request"}})],
+        g: [_gemini_http(503, {"error": {"message": "busy"}}), _gemini_http(200, _OK)],
+    })
+    with patch.object(llm_client._requests, "post", side_effect=post):
+        resp = llm_client.chat([{"role": "user", "content": "x"}], tier="quality")
+    assert resp.model == g
+    assert post.calls == [q, f, g, g]  # 404 выключен, 400 не временный — во втором проходе только gemma
+    assert not providers.is_enabled(f"gemini:{q}")
+
+
+def test_no_retry_without_transient_failures(free_chain):
+    from utils import llm_client
+    quota = {"error": {"code": 429, "message": "Quota exceeded, limit: 0"}}
+    with patch.object(llm_client._requests, "post", return_value=_gemini_http(429, quota)) as post:
+        with pytest.raises(llm_client.AllProvidersFailed, match="проходов: 1"):
+            llm_client.chat([{"role": "user", "content": "x"}])
+    assert free_chain == [] and post.call_count == 2
+
+
+def test_minute_429_is_transient_daily_429_is_dead():
+    from utils import llm_client
+    minute = llm_client._gemini_error(_gemini_http(429, {"error": {"message": "Resource exhausted"}}))
+    daily = llm_client._gemini_error(_gemini_http(429, {"error": {
+        "message": "Quota exceeded", "details": [{"quotaId": "GenerateRequestsPerDayPerProjectPerModel"}]}}))
+    assert minute.kind == "transient" and daily.kind == "dead"
+    assert llm_client._gemini_error(_gemini_http(403, {"error": {"message": "denied"}})).kind == "dead"
+
+
+@pytest.mark.parametrize("make_exc, kind", [
+    (lambda r: r.ConnectTimeout("connect timed out"), "transient"),
+    (lambda r: r.ConnectionError("HTTPSConnectionPool: NewConnectionError: Failed to establish"), "transient"),
+    (lambda r: r.ReadTimeout("read timed out"), "skip"),
+    (lambda r: r.ConnectionError("('Connection aborted.', ConnectionResetError(10054))"), "skip"),
+    (lambda r: RuntimeError("HTTP 524: таймаут шлюза KIE/Cloudflare"), "skip"),
+    (lambda r: RuntimeError("HTTP 502: таймаут шлюза KIE/Cloudflare"), "transient"),
+    (lambda r: RuntimeError("chat gpt-6-astra: 500 internal error, try again"), "transient"),
+    (lambda r: RuntimeError("chat gpt-6-astra: 402 credits insufficient"), "dead"),
+    (lambda r: RuntimeError("KIE_API_KEY не задан в .env"), "dead"),
+    (lambda r: RuntimeError("chat gpt-6-astra: 422 invalid input"), "skip"),
+])
+def test_paid_error_retries_only_before_generation(make_exc, kind):
+    import requests
+    from utils import llm_client
+    assert llm_client._paid_error(make_exc(requests)).kind == kind
+
+
+def test_kie_critic_retried_only_when_request_never_reached_kie(free_chain, monkeypatch):
+    """Критик: Astra не достучалась (ConnectTimeout) — повторяем; Fable получил 524 — мог списать, не повторяем."""
+    import requests
+    from utils import llm_client
+    monkeypatch.setenv("BUDGET_ALLOW", "kie_series")
+    astra, fable = llm_client.kie_critic_models()
+    kie_calls: list[str] = []
+
+    def kie_chat(spec, messages, max_tokens, json_mode):
+        kie_calls.append(spec)
+        if spec == astra and kie_calls.count(astra) == 1:
+            raise requests.ConnectTimeout("connect timeout")
+        if spec == fable:
+            raise RuntimeError("HTTP 524: таймаут шлюза KIE/Cloudflare")
+        return '{"score": 8}', 4.0
+
+    busy = _gemini_http(503, {"error": {"message": "busy"}})
+    with patch("utils.kie_client.chat", side_effect=kie_chat), \
+         patch.object(llm_client._requests, "post", return_value=busy):
+        resp = llm_client.chat([{"role": "user", "content": "x"}], tier="critic", json_mode=True)
+    assert resp.provider == "kie" and resp.model == astra
+    assert kie_calls == [astra, fable, astra]
+    assert free_chain == [20.0]
+
+
+def test_kie_read_timeout_is_not_repeated(free_chain, monkeypatch):
+    import requests
+    from utils import llm_client
+    monkeypatch.setenv("BUDGET_ALLOW", "kie_series")
+    busy = _gemini_http(503, {"error": {"message": "busy"}})
+    with patch("utils.kie_client.chat", side_effect=requests.ReadTimeout("read timed out")) as kie_chat, \
+         patch.object(llm_client._requests, "post", return_value=busy):
+        with pytest.raises(llm_client.AllProvidersFailed):
+            llm_client.chat([{"role": "user", "content": "x"}], tier="premium")
+    assert kie_chat.call_count == 2  # Argon и Astra по разу — повторные проходы только по бесплатным
+    assert free_chain == [20.0, 60.0]
+
+
+def test_openai_compat_classifies_transient_and_daily_limits(monkeypatch):
+    from utils import llm_client
+
+    class StatusError(Exception):
+        def __init__(self, msg, status_code):
+            super().__init__(msg)
+            self.status_code = status_code
+
+    def kind_of(exc, name="groq"):
+        client = MagicMock()
+        client.chat.completions.create.side_effect = exc
+        with patch.object(llm_client, "_openai_client", return_value=client):
+            with pytest.raises(llm_client._ProviderError) as info:
+                llm_client.openai_compat_call(name, [{"role": "user", "content": "x"}])
+        return info.value.kind
+
+    monkeypatch.setenv("CEREBRAS_API_KEY", "c-key")
+    monkeypatch.setattr(llm_client, "_cerebras_throttle", lambda: None)
+    assert kind_of(StatusError("Service unavailable", 503)) == "transient"
+    assert kind_of(StatusError("Rate limit reached: requests per minute", 429)) == "transient"
+    assert kind_of(StatusError("Rate limit reached: tokens per day (TPD)", 429)) == "dead"
+    assert kind_of(type("APITimeoutError", (Exception,), {})("timed out")) == "transient"
+    assert kind_of(type("APITimeoutError", (Exception,), {})("timed out"), "cerebras") == "skip"
 
 
 def test_cerebras_is_paid_in_budget_mode():

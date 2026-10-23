@@ -23,6 +23,23 @@ LLM-клиент: единая цепочка провайдеров с авто
 Каждый провайдер/модель при исчерпании дневной квоты, неверном ключе или 404
 выключается до конца процесса (utils.providers.mark_dead) — без спама ретраями.
 
+Отказы делятся на три вида (_ProviderError.kind):
+  dead      — постоянный: 401/403/404, 402, дневная квота («limit: 0», PerDay) → mark_dead;
+  transient — временный: 500/502/503/504/524, минутный 429, таймаут, обрыв соединения;
+  skip      — прочее (400, пустой ответ) — просто следующий провайдер.
+Если вся цепочка отказала и среди отказов есть временные, chat() делает ещё до
+LLM_TRANSIENT_RETRIES (2) проходов с паузами LLM_RETRY_DELAYS (20,60 с). В повторный проход
+попадают только провайдеры с временным отказом в прошлом проходе; выключенные (mark_dead)
+и «skip» не повторяются. Ночная сборка сериала так переживает минутные перегрузки Gemini.
+
+Платные провайдеры (KIE kie_series, Yandex) — чтобы не платить дважды, их отказ считается
+временным, только если запрос гарантированно не дошёл до генерации (_paid_error):
+  - ConnectTimeout или ошибка установки соединения (DNS, отказ, прокси/VPN);
+  - ответ шлюза/API 429, 500, 502, 503, 504 — генерация не состоялась, кредиты не списаны.
+Таймаут чтения, обрыв посреди ответа и Cloudflare 524 («origin не ответил за 100 с») значат,
+что запрос уже принят и модель могла отработать и списать кредиты, — такой отказ «skip»:
+повторно эту KIE-модель не зовём, цепочка уходит к резерву и бесплатным провайдерам.
+
 API:
     chat(messages, tier="fast", temperature, max_tokens, json_mode, caller) → response
         response.choices[0].message.content, response.provider, response.model
@@ -89,11 +106,65 @@ class AllProvidersFailed(RuntimeError):
 
 
 class _ProviderError(Exception):
-    """kind: dead (выключить до конца процесса) | skip (перейти к следующему)."""
+    """kind: dead (выключить до конца процесса) | transient (временный, можно повторить проходом
+    позже) | skip (перейти к следующему, не повторять)."""
 
     def __init__(self, message: str, kind: str = "skip"):
         super().__init__(message)
         self.kind = kind
+
+
+_TRANSIENT_STATUS = frozenset({429, 500, 502, 503, 504, 524})
+# Ошибка на этапе установки соединения — запрос до сервера не дошёл
+_CONNECT_PHASE_RE = re.compile(
+    r"NewConnectionError|NameResolution|Failed to establish|getaddrinfo|ProxyError|Connection refused", re.I)
+_STATUS_IN_TEXT_RE = re.compile(r"(?:^|HTTP |: )(\d{3})\b")
+_PER_DAY_RE = re.compile(r"per ?day|limit: 0", re.I)
+
+
+def _exc_status(exc: BaseException) -> int | None:
+    """HTTP-статус из исключения: .status_code, .response.status_code или «HTTP 503» / «: 500» в тексте."""
+    for obj in (exc, getattr(exc, "response", None)):
+        status = getattr(obj, "status_code", None)
+        if isinstance(status, int):
+            return status
+    m = _STATUS_IN_TEXT_RE.search(str(exc))
+    return int(m.group(1)) if m else None
+
+
+def _paid_error(exc: BaseException) -> _ProviderError:
+    """Классификация отказа платного провайдера (KIE, Yandex): временным считаем только отказ ДО
+    генерации, чтобы повторный проход не списал оплату второй раз (см. докстринг модуля)."""
+    from utils.providers import looks_like_no_credits
+    text = str(exc)
+    short = f"{type(exc).__name__}: {text[:180]}"
+    if isinstance(exc, _requests.ConnectTimeout) or (
+            isinstance(exc, _requests.ConnectionError) and _CONNECT_PHASE_RE.search(text)):
+        return _ProviderError(short, "transient")
+    status = _exc_status(exc)
+    if looks_like_no_credits(text) or status in (401, 402, 403) or "не задан" in text or "выключен" in text:
+        return _ProviderError(short, "dead")
+    if status == 524 or isinstance(exc, (_requests.Timeout, _requests.ConnectionError,
+                                         _requests.exceptions.ChunkedEncodingError)):
+        return _ProviderError(f"{short} [запрос дошёл до провайдера — не повторяем, чтобы не платить дважды]",
+                              "skip")
+    if status in _TRANSIENT_STATUS:
+        return _ProviderError(short, "transient")
+    return _ProviderError(short, "skip")
+
+
+def _retry_policy() -> tuple[int, list[float]]:
+    """LLM_TRANSIENT_RETRIES (по умолчанию 2) и LLM_RETRY_DELAYS (секунды через запятую, «20,60»);
+    если пауз меньше, чем повторов, последняя пауза используется дальше."""
+    try:
+        retries = max(0, int(_env("LLM_TRANSIENT_RETRIES", "2")))
+    except ValueError:
+        retries = 2
+    try:
+        delays = [max(0.0, float(x)) for x in _env("LLM_RETRY_DELAYS", "20,60").split(",") if x.strip()]
+    except ValueError:
+        delays = []
+    return retries, delays or [20.0, 60.0]
 
 
 def _wrap(text: str, provider: str, model: str) -> SimpleNamespace:
@@ -220,8 +291,8 @@ def _gemini_error(resp: _requests.Response) -> _ProviderError:
     if status == 429:
         # Дневная квота — выключаем модель; минутная — просто идём дальше по цепочке
         per_day = "PerDay" in details or "per day" in message.lower() or "limit: 0" in message
-        return _ProviderError(f"HTTP 429: {message[:200]}", "dead" if per_day else "skip")
-    return _ProviderError(f"HTTP {status}: {message[:200]}", "skip")
+        return _ProviderError(f"HTTP 429: {message[:200]}", "dead" if per_day else "transient")
+    return _ProviderError(f"HTTP {status}: {message[:200]}", "transient" if status in _TRANSIENT_STATUS else "skip")
 
 
 def gemini_call(
@@ -264,8 +335,8 @@ def gemini_call(
         try:
             resp = _requests.post(_GEMINI_URL.format(model=model), headers={"X-Goog-Api-Key": api_key},
                                   json=body, timeout=timeout)
-        except _requests.RequestException as exc:
-            raise _ProviderError(f"{type(exc).__name__}", "skip") from exc
+        except _requests.RequestException as exc:  # таймаут, обрыв, VPN — бесплатно, можно повторить
+            raise _ProviderError(f"{type(exc).__name__}", "transient") from exc
         if resp.status_code == 400 and "thinking" in resp.text.lower() and "thinkingConfig" in gen_cfg:
             gen_cfg.pop("thinkingConfig")  # модель за алиасом не поддерживает thinkingLevel
             continue
@@ -343,8 +414,13 @@ def openai_compat_call(
         status = getattr(exc, "status_code", None)
         from utils.providers import looks_like_no_credits
         if status in (401, 403, 404) or looks_like_no_credits(text) or "invalid api key" in text.lower() \
-                or "decommissioned" in text.lower() or "model_not_found" in text.lower():
+                or "decommissioned" in text.lower() or "model_not_found" in text.lower() \
+                or (status == 429 and _PER_DAY_RE.search(text)):
             raise _ProviderError(text[:200], "dead") from exc
+        # Cerebras платный: таймаут может значить, что токены уже списаны, — повторяем только по статусу
+        network = name != "cerebras" and type(exc).__name__ in ("APITimeoutError", "APIConnectionError")
+        if (status in _TRANSIENT_STATUS and status != 524) or network:
+            raise _ProviderError(text[:200], "transient") from exc
         raise _ProviderError(text[:200], "skip") from exc
     content = _THOUGHT_RE.sub("", resp.choices[0].message.content or "").strip()
     if not content:
@@ -385,8 +461,8 @@ def _chain(tier: str, needs_vision: bool) -> list[tuple[str, str, object]]:
             from utils import kie_client
             try:
                 text, _credits = kie_client.chat(spec, m, max_tokens=mt, json_mode=j)
-            except Exception as exc:  # KieError, сеть, таймаут шлюза — переходим к резерву
-                raise _ProviderError(str(exc)[:200], "skip") from exc
+            except Exception as exc:  # KieError, сеть, таймаут шлюза — к резерву; повтор только если не списали
+                raise _paid_error(exc) from exc
             if j:
                 text = _strip_code_fence(text)
             return _wrap(text, "kie", spec)
@@ -434,6 +510,8 @@ def chat(
     """
     Отправляет messages (формат OpenAI, content может содержать image_url data-URI)
     по цепочке провайдеров. Возвращает первый успешный ответ, иначе AllProvidersFailed.
+    Если цепочка отказала из-за временных сбоев — повторные проходы по провайдерам с временным
+    отказом (LLM_TRANSIENT_RETRIES / LLM_RETRY_DELAYS, см. докстринг модуля).
     """
     from utils.providers import is_enabled, mark_dead
 
@@ -443,38 +521,62 @@ def chat(
         and any(isinstance(p, dict) and p.get("type") == "image_url" for p in m["content"])
         for m in messages
     )
+    chain = _chain(tier, needs_vision)
+    retries, delays = _retry_policy()
+    passes = retries + 1
     errors: list[str] = []
-    for gate, label, fn in _chain(tier, needs_vision):
-        if not is_enabled(gate) or not is_enabled(gate.split(":")[0]):
-            continue
-        try:
-            if gate == "yandex_llm":
-                if not (os.environ.get("YANDEX_API_KEY") and os.environ.get("YANDEX_FOLDER_ID")):
-                    continue
-                resp = yandex_call(messages, model=yandex_model, temperature=temperature,
-                                   max_tokens=max_tokens,
-                                   response_format={"type": "json_object"} if json_mode else None,
-                                   caller=caller)
-            else:
-                resp = fn(messages, temperature, max_tokens, json_mode)
-        except _ProviderError as exc:
-            errors.append(f"{label}: {exc}")
-            if exc.kind == "dead":
-                mark_dead(gate, str(exc)[:200])
-            logger.warning("LLM%s: %s недоступен (%s) — следующий провайдер", tag, label, str(exc)[:160])
-            continue
-        except Exception as exc:  # Yandex и неожиданные ошибки
-            from utils.providers import looks_like_no_credits
-            errors.append(f"{label}: {exc}")
-            if looks_like_no_credits(exc) or "401" in str(exc) or "403" in str(exc):
-                mark_dead(gate, str(exc)[:200])
-            logger.warning("LLM%s: %s ошибка (%s) — следующий провайдер", tag, label, str(exc)[:160])
-            continue
-        _track(caller, resp)
-        if errors:
-            logger.info("LLM%s: ответил %s/%s после %d отказов", tag, resp.provider, resp.model, len(errors))
-        return resp
-    raise AllProvidersFailed(f"LLM{tag}: все провайдеры недоступны: " + " | ".join(errors[-6:]))
+    to_try: set[int] | None = None  # None — первый проход, вся цепочка
+    for attempt in range(passes):
+        pass_tag = f"{tag} [проход {attempt + 1}/{passes}]" if attempt else tag
+        transient: list[int] = []
+        for idx, (gate, label, fn) in enumerate(chain):
+            if to_try is not None and idx not in to_try:
+                continue
+            if not is_enabled(gate) or not is_enabled(gate.split(":")[0]):
+                continue
+            try:
+                if gate == "yandex_llm":
+                    if not (os.environ.get("YANDEX_API_KEY") and os.environ.get("YANDEX_FOLDER_ID")):
+                        continue
+                    try:
+                        resp = yandex_call(messages, model=yandex_model, temperature=temperature,
+                                           max_tokens=max_tokens,
+                                           response_format={"type": "json_object"} if json_mode else None,
+                                           caller=caller)
+                    except Exception as exc:
+                        raise _paid_error(exc) from exc
+                else:
+                    resp = fn(messages, temperature, max_tokens, json_mode)
+            except Exception as exc:
+                # Неожиданные ошибки бесплатных провайдеров классифицируем так же осторожно, как платных
+                err = exc if isinstance(exc, _ProviderError) else _paid_error(exc)
+                errors.append(f"{label}{' #' + str(attempt + 1) if attempt else ''}: {err}")
+                if err.kind == "dead":
+                    mark_dead(gate, str(err)[:200])
+                    why = "выключен до конца процесса"
+                elif err.kind == "transient":
+                    transient.append(idx)
+                    why = "временный сбой"
+                else:
+                    why = "отказ"
+                logger.warning("LLM%s: %s — %s (%s) — следующий провайдер", pass_tag, label, why, str(err)[:160])
+                continue
+            _track(caller, resp)
+            if attempt:
+                logger.info("LLM%s: ответил %s/%s на повторном проходе после %d отказов",
+                            pass_tag, resp.provider, resp.model, len(errors))
+            elif errors:
+                logger.info("LLM%s: ответил %s/%s после %d отказов", tag, resp.provider, resp.model, len(errors))
+            return resp
+        if not transient or attempt + 1 >= passes:
+            break
+        delay = delays[min(attempt, len(delays) - 1)]
+        logger.warning("LLM%s: проход %d/%d — все провайдеры отказали; временные сбои у %s — повтор через %g с",
+                       tag, attempt + 1, passes, ", ".join(chain[i][1] for i in transient), delay)
+        time.sleep(delay)
+        to_try = set(transient)
+    raise AllProvidersFailed(f"LLM{tag}: все провайдеры недоступны (проходов: {attempt + 1}): "
+                             + " | ".join(errors[-6:]))
 
 
 def _track(caller: str, resp: SimpleNamespace) -> None:
