@@ -15,15 +15,26 @@ KIE и Telegram подменены моками. Маркер `heavy` (`pytest.i
 
 CI: `.github/workflows/tests.yml` — Ubuntu и Windows, Python 3.13, ffmpeg, `pytest -q -m "not heavy"`.
 
-## Покрытие (2026-10-23)
+## Покрытие
 
-Базовое до новых тестов: 194 теста, 49 % по `agents/` и `utils/`; `scheduler.py` ни один тест не импортировал.
+Базовое (2026-10-23), до новых тестов: 194 теста, 49 % по `agents/` и `utils/`; `scheduler.py` ни один тест не импортировал.
 Слабее всего: visual_agent 16 %, voice_agent 22 %, music_agent 27 %, scene_agent 27 %, quality_scorer 28 %,
 kie_client 34 %, assembly_agent 38 %, order_agent 39 %, notify_agent 43 %, series_assembly 44 %,
 series_qa 66 %, publisher_agent 76 %, analytics_agent 78 %, vk_publisher 93 %.
 
-Добавлено: `test_publisher_flow.py`, `test_notify_agent.py`, `test_scheduler.py` (+86 тестов).
-Не успели: дополнительные тесты для `series_qa`, `analytics_agent`, `vk_publisher`.
+После (2026-10-24): 327 тестов + 2 xfail, 53 % (с `scheduler.py` в отчёте).
+
+| Модуль | Было | Стало | Файл с тестами |
+|---|---|---|---|
+| `agents/publisher_agent.py` | 76 % | 94 % | `test_publisher_flow.py` |
+| `agents/notify_agent.py` | 43 % | 95 % | `test_notify_agent.py` |
+| `scheduler.py` | — | 95 % | `test_scheduler.py` |
+| `agents/series_qa.py` | 66 % | 100 % | `test_series_qa_checks.py` |
+| `agents/analytics_agent.py` | 78 % | 96 % | `test_analytics_run.py` |
+| `agents/vk_publisher.py` | 93 % | 100 % | `test_vk_publisher_edges.py` |
+
+Непокрытые строки — в основном блоки `if __name__ == "__main__"`. Следующие кандидаты: `kie_client`
+(платные вызовы — только на моках), `series_assembly`, `cost_tracker`, `housekeeping`.
 
 ## Найденные проблемы (исходники не менялись)
 
@@ -45,6 +56,12 @@ series_qa 66 %, publisher_agent 76 %, analytics_agent 78 %, vk_publisher 93 %.
 6. `send_photo` при ошибке шлёт текст с уровнем `success` даже из `alert_queued` (ожидается `info`) — мелочь.
 7. `scheduler.has_ready/published_today` берут БД по умолчанию из `_ROOT/pipeline.db`, а `job_daily_digest`
    — `pipeline.db` относительно текущей папки. Фикс: одна функция пути к БД.
+8. **VK: HTTP 5xx при загрузке файла не повторяется** — `_upload` ретраит только обрыв и таймаут, а
+   `raise_for_status()` на 502/503 сразу роняет публикацию (video.save уже создал пустую запись видео).
+   Фикс: ретраить `HTTPError` с кодом ≥ 500, как в `publisher_agent._with_retries`.
+9. **Аналитика: `content: null` у поста роняет весь сбор** — `post.get("content", "")[:80]` даёт `TypeError`
+   на `None`. Фикс: `(post.get("content") or "")[:80]`. Там же: при не-HTTP ошибке `_fetch_posts`
+   (обрыв соединения) соединение с SQLite не закрывается — `try/finally` вокруг всего `run()`.
 
 ## Трудно тестировать
 
