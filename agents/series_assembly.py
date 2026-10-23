@@ -135,6 +135,7 @@ def assemble(shots: list[dict], dialogue: dict, subtitle_path: str | None, out_p
     """size — кадр (заказы бывают 16:9); subtitle_path=None — без субтитров; logo_path — логотип в углу;
     max_still — смена крупности (None — кадр держится всю реплику, как в заказах)."""
     from agents.assembly_agent import _esc
+    from utils.ffmpeg import concat_line
 
     out_path = Path(out_path)
     work = out_path.parent / f"{out_path.stem}_segments"
@@ -153,7 +154,7 @@ def assemble(shots: list[dict], dialogue: dict, subtitle_path: str | None, out_p
         seg_files.append(seg_out)
 
     concat_list = work / "concat.txt"
-    concat_list.write_text("".join(f"file '{Path(p).as_posix()}'\n" for p in seg_files), encoding="utf-8")
+    concat_list.write_text("".join(concat_line(p) for p in seg_files), encoding="utf-8")
     video_only = str(work / "video_only.mp4")
     _ff(["-f", "concat", "-safe", "0", "-i", str(concat_list), "-c", "copy", video_only], "series concat")
 

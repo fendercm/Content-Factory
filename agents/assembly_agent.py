@@ -127,7 +127,9 @@ def _pick_transitions(n_gaps: int) -> list[tuple[str, float]]:
 
 
 def _esc(path: str) -> str:
-    return path.replace("\\", "/").replace(":", "\\:")
+    """Путь для фильтра внутри одинарных кавычек (subtitles='…') — см. utils.ffmpeg.filter_path."""
+    from utils.ffmpeg import filter_path
+    return filter_path(path)
 
 
 def _ken_burns_filter(width: int, height: int, seg_d: float, is_hook: bool = False) -> str:
@@ -1266,7 +1268,7 @@ def _assemble_with_clips(
         for fp in ["C:/Windows/Fonts/impact.ttf", "C:/Windows/Fonts/ariblk.ttf",
                    "C:/Windows/Fonts/arialbd.ttf"]:
             if os.path.exists(fp):
-                font_path = fp.replace("\\", "/").replace(":", "\\:")
+                font_path = _esc(fp)
                 break
         try:
             for ci, co in enumerate(counter_overlays):
