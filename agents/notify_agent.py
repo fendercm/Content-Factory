@@ -33,7 +33,7 @@ _ICONS = {"info": "ℹ️", "success": "✅", "warning": "⚠️", "error": "❌
 
 def _esc(text: str) -> str:
     """HTML-escape для безопасной вставки в Telegram HTML parse_mode."""
-    return html.escape(str(text)) if text else ""
+    return html.escape(str(text)) if text is not None else ""
 
 
 def _describe_error(exc: Exception) -> str:
@@ -169,6 +169,9 @@ def send_video(video_path: str, caption: str, chat_id: str | None = None) -> dic
     token, target = _token_and_chat(chat_id)
     if not token:
         return {"ok": False, "error": "credentials missing"}
+    if not os.path.isfile(video_path):
+        logger.error("Telegram: ролика нет на диске: %s", video_path)
+        return {"ok": False, "error": f"file not found: {os.path.basename(video_path)}"}
     if os.path.getsize(video_path) > TELEGRAM_VIDEO_LIMIT:
         logger.warning("Telegram: %s больше 50 МБ — отправляю только текст", os.path.basename(video_path))
         return send(f"{caption}\nФайл: <code>{_esc(video_path)}</code>", chat_id=chat_id, level="info")

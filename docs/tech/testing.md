@@ -38,21 +38,21 @@ series_qa 66 %, publisher_agent 76 %, analytics_agent 78 %, vk_publisher 93 %.
 
 ## Найденные проблемы (исходники не менялись)
 
-1. **Пульс планировщика устаревает во время выпуска.** `scheduler.main()` выполняет задачи синхронно
+1. ✅ *Исправлено 2026-10-24: пульс в потоке `start_heartbeat`.* **Пульс планировщика устаревает во время выпуска.** `scheduler.main()` выполняет задачи синхронно
    (`schedule.run_pending()`, `catch_up_series()` при старте), а `job_series_publish` ждёт `main.py` до часа.
    Всё это время `logs/scheduler.heartbeat` не обновляется, через 90–120 с панель считает планировщик мёртвым
    и `_autostart_scheduler()` при перезапуске панели запустит второй экземпляр — возможен двойной выпуск.
    Фикс: обновлять пульс в отдельном потоке-демоне (раз в 30 с) или запускать задачи в потоках.
-2. **Неверное время в конфиге роняет планировщик.** `schedule.time = "7pm"` → `ScheduleValueError` в
+2. ✅ *Исправлено 2026-10-24: `series_schedules` пропускает сериал с неверным `ЧЧ:ММ`.* **Неверное время в конфиге роняет планировщик.** `schedule.time = "7pm"` → `ScheduleValueError` в
    `sync_series_jobs()` внутри бесконечного цикла, процесс завершается; `catch_up_series` упадёт на `int()`.
    Фикс: проверять формат `HH:MM` в `series_schedules()` и пропускать сериал с предупреждением.
-   Тест: `test_sync_survives_bad_time_in_config` (xfail).
-3. **Конфиг сериала без `id` роняет `series_schedules()`** (`KeyError` не входит в `(OSError, ValueError)`).
-   Фикс: `cfg.get("id") or path.stem`, либо ловить `KeyError`. Тест: `test_series_schedules_skips_config_without_id` (xfail).
-4. **`notify_agent.send_video` падает, если файла нет**: `os.path.getsize` стоит до `try`, поэтому
+   Тест: `test_sync_survives_bad_time_in_config` (был xfail, теперь обычный тест).
+3. ✅ *Исправлено 2026-10-24.* **Конфиг сериала без `id` роняет `series_schedules()`** (`KeyError` не входит в `(OSError, ValueError)`).
+   Фикс: `cfg.get("id") or path.stem`, либо ловить `KeyError`. Тест: `test_series_schedules_skips_config_without_id` (был xfail, теперь обычный тест).
+4. ✅ *Исправлено 2026-10-24: `{"ok": False}` вместо исключения.* **`notify_agent.send_video` падает, если файла нет**: `os.path.getsize` стоит до `try`, поэтому
    `send_manual_upload` с отсутствующим роликом бросает `FileNotFoundError` вместо `{"ok": False}`.
    Фикс: проверить `os.path.exists` и вернуть ошибку/текстовое сообщение.
-5. **`notify_agent._esc(0)` возвращает пустую строку** (проверка `if text`). Фикс: `if text is None`.
+5. ✅ *Исправлено 2026-10-24.* **`notify_agent._esc(0)` возвращает пустую строку** (проверка `if text`). Фикс: `if text is None`.
 6. `send_photo` при ошибке шлёт текст с уровнем `success` даже из `alert_queued` (ожидается `info`) — мелочь.
 7. `scheduler.has_ready/published_today` берут БД по умолчанию из `_ROOT/pipeline.db`, а `job_daily_digest`
    — `pipeline.db` относительно текущей папки. Фикс: одна функция пути к БД.

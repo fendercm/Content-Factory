@@ -30,7 +30,7 @@ def tg(monkeypatch):
     ("<b>&\"'", "&lt;b&gt;&amp;&quot;&#x27;"),
     ("", ""),
     (None, ""),
-    (0, ""),                                     # falsy число съедается — см. docs/tech/testing.md
+    (0, "0"),                                     # falsy число съедается — см. docs/tech/testing.md
     (42, "42"),
 ])
 def test_esc(raw, expected):
@@ -157,10 +157,10 @@ def test_send_video_over_limit_text_has_escaped_path(tg, tmp_path, monkeypatch):
     assert "a&amp;b.mp4" in text and text.startswith("ℹ️ <b>подпись</b>")
 
 
-def test_send_video_missing_file_raises(tg):
-    """Известное поведение: размер файла читается вне try — см. docs/tech/testing.md."""
-    with pytest.raises(OSError):
-        na.send_video("нет_такого.mp4", "c")
+def test_send_video_missing_file_returns_error(tg):
+    """Ролика нет на диске — ошибка в ответе, а не исключение (send_manual_upload ждёт {"ok": False})."""
+    out = na.send_video("нет_такого.mp4", "c")
+    assert out["ok"] is False and "нет_такого.mp4" in out["error"]
 
 
 # ── send_manual_upload ───────────────────────────────────────────────────────

@@ -27,6 +27,7 @@ import io
 import json
 import logging
 import os
+import re
 import sqlite3
 import sys
 
@@ -247,8 +248,15 @@ def series_schedules() -> dict[str, tuple[str, str]]:
         except (OSError, ValueError):
             continue
         sch = cfg.get("schedule") or {}
-        if sch.get("enabled"):
-            out[cfg["id"]] = (sch.get("time", "19:00"), sch.get("platform", "youtube"))
+        if not sch.get("enabled"):
+            continue
+        # Кривой конфиг одного сериала не должен ронять цикл планировщика: остальные выйдут по расписанию
+        at = str(sch.get("time", "19:00")).strip()
+        if not cfg.get("id") or not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", at):
+            logger.error("Сериал %s: расписание пропущено — нет id или время «%s» не в формате ЧЧ:ММ",
+                         cfg.get("id") or path.name, at)
+            continue
+        out[cfg["id"]] = (at, sch.get("platform", "youtube"))
     return out
 
 
@@ -270,6 +278,25 @@ def sync_series_jobs() -> None:
 
 HEARTBEAT = _ROOT / "logs" / "scheduler.heartbeat"
 HEARTBEAT_FRESH = 90  # с — пульс моложе: планировщик уже работает, второй экземпляр не нужен
+
+
+def start_heartbeat(period: float = 30.0, stop: threading.Event | None = None) -> threading.Thread:
+    """Пульс в отдельном потоке: выпуск серии идёт синхронно до часа, и без этого пульс устаревал —
+    панель считала планировщик мёртвым и могла запустить второй экземпляр (двойной выпуск).
+    Путь фиксируется при старте; stop — остановить поток (тесты)."""
+    path, stop = HEARTBEAT, stop or threading.Event()
+
+    def beat():
+        while not stop.is_set():
+            try:
+                path.touch()
+            except OSError as exc:
+                logger.warning("Пульс планировщика не записан: %s", exc)
+            stop.wait(period)
+
+    thread = threading.Thread(target=beat, name="scheduler-heartbeat", daemon=True)
+    thread.start()
+    return thread
 
 
 def already_running() -> bool:
@@ -330,6 +357,7 @@ def main() -> None:
         return
     HEARTBEAT.parent.mkdir(parents=True, exist_ok=True)
     HEARTBEAT.touch()
+    start_heartbeat()
     niches_env = os.getenv("SCHEDULER_NICHES", "")
     niches = [n.strip() for n in niches_env.split(",") if n.strip()] if niches_env else [_NICHE_DEFAULT]
 

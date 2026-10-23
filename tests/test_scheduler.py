@@ -14,6 +14,7 @@ import os
 import sqlite3
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime, timedelta, timezone, time as dtime
 from pathlib import Path
@@ -95,7 +96,6 @@ def test_series_schedules_reads_real_config_shape(sched):
         assert 0 <= int(hh) < 24 and 0 <= int(mm) < 60 and platform
 
 
-@pytest.mark.xfail(reason="конфиг без id роняет series_schedules (KeyError) — docs/tech/testing.md", strict=False)
 def test_series_schedules_skips_config_without_id(env, sched):
     (env["root"] / "config" / "series" / "noid.json").write_text(
         json.dumps({"schedule": {"enabled": True}}), encoding="utf-8")
@@ -134,11 +134,10 @@ def test_sync_picks_up_panel_changes_and_disable(env, sched):
     assert _series_jobs() == [] and len(schedule.get_jobs()) == 1
 
 
-@pytest.mark.xfail(reason="время из панели в неверном формате роняет цикл планировщика — docs/tech/testing.md",
-                   strict=False)
 def test_sync_survives_bad_time_in_config(env, sched):
     _series(env["root"], "kabinet7", {"enabled": True, "time": "7pm"})
     sched.sync_series_jobs()
+    assert _series_jobs() == []                                  # кривое время — сериал пропущен, цикл жив
 
 
 # ── already_running ──────────────────────────────────────────────────────────
@@ -365,6 +364,7 @@ class _Stop(Exception):
 
 def _run_main(sched, monkeypatch):
     monkeypatch.setattr(sched, "catch_up_series", MagicMock(return_value=[]))
+    monkeypatch.setattr(sched, "start_heartbeat", MagicMock())       # поток пульса не нужен и не должен утечь
     monkeypatch.setattr(sched.time, "sleep", MagicMock(side_effect=_Stop))
     with pytest.raises(_Stop):
         sched.main()
@@ -392,3 +392,21 @@ def test_main_series_from_configs_wins_over_clips(env, sched, monkeypatch):
     jobs = _run_main(sched, monkeypatch)
     assert (dtime(19), sched.job_series_publish) in jobs
     assert not any(f is sched.job_pipeline for _, f in jobs)
+
+
+def test_heartbeat_thread_keeps_pulse_during_long_jobs(env, sched):
+    sched.HEARTBEAT.parent.mkdir(parents=True)
+    stop = threading.Event()
+    thread = sched.start_heartbeat(period=0.05, stop=stop)
+    deadline = time.time() + 5
+    while not sched.HEARTBEAT.exists() and time.time() < deadline:
+        time.sleep(0.02)
+    first = sched.HEARTBEAT.stat().st_mtime
+    old = first - 300
+    os.utime(sched.HEARTBEAT, (old, old))                       # как будто выпуск шёл 5 минут
+    while sched.HEARTBEAT.stat().st_mtime <= old and time.time() < deadline:
+        time.sleep(0.02)
+    assert thread.daemon and sched.already_running() is True
+    stop.set()
+    thread.join(timeout=2)
+    assert not thread.is_alive()
