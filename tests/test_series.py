@@ -605,3 +605,22 @@ def test_plan_pieces_snaps_to_frames_and_replaces_frozen_clip_tail():
                     ({"index": 2, "duration": 9.0, "clip": True}, {"max_still": 3.0}),
                     ({"index": 1, "duration": 9.0, "clip": True}, {})):
         assert [p["clip"] for p in plan_pieces([seg], shots, **kw)] == [True]
+
+
+def test_lipsync_first_line_audio_starts_where_its_shot_starts(tmp_path):
+    """Кадр первой реплики в монтаже — с 0.0; если озвучка начинается позже, звук клипа режется тоже с 0,
+    иначе губы опережают голос на start первой реплики."""
+    from agents import lipsync_agent as ls
+    lines = [{"role": "ЛЕВ", "text": "Скрипку я продал.", "start": 0.4, "end": 2.0},
+             {"role": "ВЕРА", "text": "Зачем?", "start": 2.3, "end": 3.0},
+             {"role": "ЛЕВ", "text": "Не слышу.", "start": 3.3, "end": 5.0}]
+    plan = {"turn_line": 2, "assignment": [{"slot": "client_open", "shot": 0}, {"slot": "vera_ask", "shot": 1},
+                                           {"slot": "client_turn", "shot": 2}]}
+    shots = [{"image_url": f"u{i}"} for i in range(3)]
+    cuts = []
+    kie = MagicMock(upload_file=lambda *a: "url", download=lambda url, dest: dest,
+                    run_task=lambda *a, **k: {"urls": ["v"], "credits": 1})
+    with patch.object(ls, "_cut_audio", side_effect=lambda src, s, e, dest: cuts.append((s, e)) or dest), \
+         patch.dict("sys.modules", {"utils.kie_client": kie}), patch("utils.kie_client", kie, create=True):
+        clips = ls.render(SERIES, plan, shots, {"audio_path": "d.wav", "lines": lines}, tmp_path)
+    assert sorted(clips) == [0, 2] and sorted(cuts) == [(0.0, 2.0), (3.3, 5.0)]

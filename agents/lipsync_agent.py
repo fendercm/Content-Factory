@@ -72,7 +72,9 @@ def render(series: dict, plan: dict, shots: list[dict], dialogue: dict, out_dir:
         line = lines[i]
         shot = shots[plan["assignment"][i]["shot"]]
         try:
-            audio = _cut_audio(dialogue["audio_path"], line["start"], line["end"], out_dir / f"lip_{i:02d}.mp3")
+            # Первый кадр монтажа стоит с 0.0, а не со старта реплики — звук клипа режется оттуда же
+            start = 0.0 if i == 0 else line["start"]
+            audio = _cut_audio(dialogue["audio_path"], start, line["end"], out_dir / f"lip_{i:02d}.mp3")
             image_url = shot.get("image_url") or kie_client.upload_file(shot["image_path"], f"content-factory/{series['id']}")
             audio_url = kie_client.upload_file(audio, f"content-factory/{series['id']}")
             res = kie_client.run_task(MODEL, {"image_url": image_url, "audio_url": audio_url,
