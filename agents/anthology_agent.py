@@ -989,16 +989,26 @@ def assign_shots(lines: list[dict], marks: dict, hero_role: str = "ВЕРА") ->
     turn, detail, story = (_line_no(marks.get(k), n) for k in ("turn_line", "detail_line", "story_line"))
     narrator = any(l["role"] == "РАССКАЗЧИК" for l in lines)
     key_question = turn - 1 if turn and lines[turn - 1]["role"] == hero_role else None
+    spoken = [i for i, l in enumerate(lines) if l["role"] != "РАССКАЗЧИК"]
+    last = spoken[-1] if spoken else None
+    raw = marks.get("memory_lines")
+    raw = [_line_no(i, n) for i in raw] if isinstance(raw, list) else []
+    # Деталь не встаёт на первую, последнюю реплику и поворот — там лицо и липсинк. Раскадровщик ставил
+    # detail_line=0 (или null) — кадр-деталь пропадал; теперь он переезжает на следующую реплику клиента,
+    # по возможности не занятую сценой из жизни
+    if detail in (None, 0, turn, last) or lines[detail]["role"] == "РАССКАЗЧИК":
+        base = detail or 0
+        free = [i for i, l in enumerate(lines)
+                if l["role"] not in (hero_role, "РАССКАЗЧИК") and i not in (0, turn, last)]
+        free.sort(key=lambda i: (i in raw, i <= base, i))
+        detail = free[0] if free else None
     wide_line = next((i for i, l in enumerate(lines)
                       if l["role"] == hero_role and i not in (0, detail, key_question)), None)
     # Сцены из жизни — только на рассказе клиента: первая, последняя реплика и поворот остаются лицом
     # (там же липсинк), деталь — своим кадром
-    spoken = [i for i, l in enumerate(lines) if l["role"] != "РАССКАЗЧИК"]
-    raw = marks.get("memory_lines")
     memory: dict[int, str] = {}
-    for slot, i in zip(MEMORY_SLOTS, raw if isinstance(raw, list) else []):
-        i = _line_no(i, n)
-        if (i is None or i in memory or i in (0, detail) or i == spoken[-1]
+    for slot, i in zip(MEMORY_SLOTS, raw):
+        if (i is None or i in memory or i in (0, detail) or i == last
                 or (turn is not None and i >= turn) or lines[i]["role"] in (hero_role, "РАССКАЗЧИК")):
             continue
         memory[i] = slot
@@ -1077,7 +1087,8 @@ def build_plan(data: dict, episode: dict, key: int, simple: int, hero_role: str 
             or f"a {case['age']}-year-old Russian {case['gender']} {case['occupation']}",
             "shots": shots, "assignment": assignment,
             "memory_lines": [i for i, a in enumerate(assignment) if a["slot"] in MEMORY_SLOTS],
-            **{k: _line_no(data.get(k), len(episode["lines"])) for k in ("turn_line", "detail_line", "story_line")}}
+            **{k: _line_no(data.get(k), len(episode["lines"])) for k in ("turn_line", "story_line")},
+            "detail_line": next((i for i, a in enumerate(assignment) if a["slot"] == "detail"), None)}
 
 
 def plan_shots(series: dict, episode: dict) -> dict:

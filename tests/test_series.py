@@ -534,3 +534,18 @@ def test_scene_prompt_uses_memory_setting():
     memory = _shot_prompt(SERIES, plan, {"characters": ["CLIENT"], "prompt_en": "coats", "setting_en": "cloakroom"})
     assert SERIES["location_en"] in office and "Setting: cloakroom." in memory and SERIES["location_en"] not in memory
     assert "CLIENT (reference image 1): Grigory" in memory
+
+
+def test_detail_moves_off_first_turn_and_last_line():
+    """detail_line=0 (или null, или поворот) — кадр-деталь не пропадает, а встаёт на следующую реплику
+    клиента: не первую, не поворот, не последнюю и, если можно, не занятую сценой из жизни."""
+    episode, data = _plan_input()   # клиент: 0, 2, 4, 6 (поворот), 8 (последняя)
+    for detail, memory, expected in [(0, [], 2), (None, [], 2), (0, [2], 4), (6, [], 2), (8, [], 2), (2, [], 2)]:
+        plan = aa.build_plan({**data, "detail_line": detail, "memory_lines": memory}, episode, key=0, simple=3)
+        slots = [a["slot"] for a in plan["assignment"]]
+        assert slots.count("detail") == 1 and slots[expected] == "detail", (detail, memory, slots)
+        assert slots[0] == "client_open" and slots[6] == "client_turn" and slots[8] == "client_turn"
+        assert plan["detail_line"] == expected
+    # деталь на реплике Веры — как поставил раскадровщик
+    slots = [a["slot"] for a in aa.build_plan({**data, "detail_line": 3}, episode, key=0, simple=3)["assignment"]]
+    assert slots[3] == "detail"
