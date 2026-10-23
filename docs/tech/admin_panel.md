@@ -31,8 +31,8 @@
 | `script` | `main.py … --script <file>` | `file` из `config/series/scripts/` |
 | `resume` | `main.py … --resume RUN_ID [--script]` | `run_id`, `file?` |
 | `publish_next` | `main.py … --publish-next` | **`confirm: true` обязателен** |
-| `lab` | `scripts/script_lab.py` | `n`, `same`, `idea?`, `pitch_ids?` |
-| `pitches` | `script_lab.py --pitches` | `n` 3–20, `idea?` |
+| `lab` | `scripts/script_lab.py` | `n`, `same`, `idea?`, `pitch_ids?`, `max_usd?` (0–50 $ → `--max-usd`) |
+| `pitches` | `script_lab.py --pitches` | `n` 3–20, `idea?`, `max_usd?` |
 | `heroine` | `scripts/series_setup.py <id>` | — |
 | `analytics` | `agents/analytics_agent.py --days N` | `days` |
 | `scheduler` | `scheduler.py` | — |
