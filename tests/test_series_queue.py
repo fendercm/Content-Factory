@@ -159,3 +159,55 @@ def test_resume_loads_saved_episode_and_paid_scenes(tmp_path):
     out = json.loads(result.read_text(encoding="utf-8"))
     assert out == {"title": "Смотритель", "topic": "kabinet7:y", "assign": 1, "scenes": True,
                    "scenes_after_loss": False}   # пропал файл — кадры перегенерируются, а не ломают сборку
+
+
+
+_CATCH_UP = """
+import json, os, sqlite3, sys
+from datetime import datetime, timezone
+sys.path.insert(0, %(root)r)
+for _k in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "ZERNIO_API_KEY"):
+    os.environ[_k] = ""
+db = %(db)r
+conn = sqlite3.connect(db)
+conn.execute("CREATE TABLE anthology_episodes (series_id TEXT, status TEXT, published_at TEXT)")
+conn.execute("INSERT INTO anthology_episodes VALUES ('kabinet7', 'ready', NULL)")
+conn.commit()
+os.environ["DB_PATH"] = db
+import scheduler
+scheduler.series_schedules = lambda: {"kabinet7": ("19:00", "youtube")}
+calls = []
+scheduler.job_series_publish = lambda sid, pl: calls.append([sid, pl])
+out = {"early": scheduler.catch_up_series(datetime(2026, 10, 23, 18, 0)),
+       "missed": scheduler.catch_up_series(datetime(2026, 10, 23, 20, 50))}
+now = datetime.now()
+conn.execute("INSERT INTO anthology_episodes VALUES ('kabinet7', 'published', ?)",
+             (now.astimezone(timezone.utc).isoformat(),))
+conn.commit()
+out["again"] = scheduler.catch_up_series(now.replace(hour=23, minute=0))
+conn.execute("DELETE FROM anthology_episodes")
+conn.commit()
+out["empty"] = scheduler.catch_up_series(datetime(2026, 10, 24, 20, 0))
+out["calls"] = calls
+open(%(result)r, "w", encoding="utf-8").write(json.dumps(out))
+"""
+
+
+def test_scheduler_catch_up_publishes_missed_release(tmp_path):
+    """Планировщик не работал в 19:00 — при старте выпускает пропущенное, но не дважды за день
+    и не при пустой очереди (иначе алерт «очередь пуста» на каждый перезапуск)."""
+    import json
+    import subprocess
+    import sys
+    import textwrap
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    result = tmp_path / "r.json"
+    code = _CATCH_UP % {"root": str(root), "db": str(tmp_path / "p.db"), "result": str(result)}
+    proc = subprocess.run([sys.executable, "-c", textwrap.dedent(code)], capture_output=True, cwd=str(tmp_path),
+                          timeout=120)
+    assert result.exists(), proc.stderr.decode("utf-8", "replace")[-3000:]
+    out = json.loads(result.read_text(encoding="utf-8"))
+    assert out == {"early": [], "missed": ["kabinet7"], "again": [], "empty": [],
+                   "calls": [["kabinet7", "youtube"]]}

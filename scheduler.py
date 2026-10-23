@@ -268,11 +268,73 @@ def sync_series_jobs() -> None:
     _synced = current
 
 
+HEARTBEAT = _ROOT / "logs" / "scheduler.heartbeat"
+HEARTBEAT_FRESH = 90  # с — пульс моложе: планировщик уже работает, второй экземпляр не нужен
+
+
+def already_running() -> bool:
+    try:
+        return time.time() - HEARTBEAT.stat().st_mtime < HEARTBEAT_FRESH
+    except OSError:
+        return False
+
+
+def has_ready(series_id: str) -> bool:
+    try:
+        conn = sqlite3.connect(os.getenv("DB_PATH", str(_ROOT / "pipeline.db")), timeout=10)
+        n = conn.execute("SELECT COUNT(*) FROM anthology_episodes WHERE series_id=? AND status='ready'",
+                         (series_id,)).fetchone()[0]
+        conn.close()
+        return n > 0
+    except sqlite3.Error:
+        return False
+
+
+def published_today(series_id: str, now: datetime | None = None) -> bool:
+    """Выходила ли серия сегодня (по местному времени)."""
+    now = now or datetime.now()
+    try:
+        conn = sqlite3.connect(os.getenv("DB_PATH", str(_ROOT / "pipeline.db")), timeout=10)
+        rows = conn.execute("SELECT published_at FROM anthology_episodes WHERE series_id=? AND status='published' "
+                            "AND published_at IS NOT NULL", (series_id,)).fetchall()
+        conn.close()
+    except sqlite3.Error:
+        return False
+    for (iso,) in rows:
+        try:
+            if datetime.fromisoformat(iso).astimezone().date() == now.date():
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def catch_up_series(now: datetime | None = None) -> list[str]:
+    """Выпуск, пропущенный, пока планировщик не работал (компьютер выключен, панель закрыта): если время
+    сегодняшнего выпуска прошло, а серия сегодня не выходила — выпускаем сейчас. schedule такие пропуски
+    не догоняет. → id сериалов, для которых запущен выпуск."""
+    now = now or datetime.now()
+    started = []
+    for series_id, (at, platform) in series_schedules().items():
+        hh, mm = (int(x) for x in at.split(":"))
+        if now.time() >= dtime(hh, mm) and not published_today(series_id, now) and has_ready(series_id):
+            logger.info("Сериал %s: выпуск в %s пропущен — выпускаю сейчас", series_id, at)
+            job_series_publish(series_id, platform)
+            started.append(series_id)
+    return started
+
+
 def main() -> None:
+    if already_running():
+        logger.info("Планировщик уже работает (пульс свежий) — второй экземпляр не запускаю")
+        return
+    HEARTBEAT.parent.mkdir(parents=True, exist_ok=True)
+    HEARTBEAT.touch()
     niches_env = os.getenv("SCHEDULER_NICHES", "")
     niches = [n.strip() for n in niches_env.split(",") if n.strip()] if niches_env else [_NICHE_DEFAULT]
 
     sync_series_jobs()
+    catch_up_series()
     if _synced:
         logger.info("Scheduler запущен | Сериалы по расписанию из конфигов: %s", ", ".join(_synced))
     elif os.getenv("SCHEDULER_MODE", "clips") == "series":
@@ -291,11 +353,10 @@ def main() -> None:
     schedule.every().day.at("04:00").do(job_housekeeping)
 
     logger.info("Ожидание по расписанию... (Ctrl+C для остановки)")
-    heartbeat = _ROOT / "logs" / "scheduler.heartbeat"
     while True:
         sync_series_jobs()
         schedule.run_pending()
-        heartbeat.touch()  # панель видит, что планировщик жив
+        HEARTBEAT.touch()  # панель видит, что планировщик жив
         time.sleep(30)
 
 

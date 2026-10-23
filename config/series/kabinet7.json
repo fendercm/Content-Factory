@@ -63,5 +63,10 @@
   "lines_max": 12,
   "animated_key": 0,
   "animated_simple": 3,
-  "lipsync_lines": "key"
+  "lipsync_lines": "key",
+  "schedule": {
+    "enabled": true,
+    "time": "19:00",
+    "platform": "youtube"
+  }
 }

@@ -556,6 +556,25 @@ def _job_command(kind: str, series: dict | None, data: dict) -> list[str]:
     raise ValueError(f"неизвестная задача: {kind}")
 
 
+_CREATE_BREAKAWAY_FROM_JOB = 0x01000000
+
+
+def _spawn(kind: str, cmd: list[str], log) -> subprocess.Popen:
+    """Процесс задачи. Планировщик отвязывается от панели: закрыли панель (или окно, в котором она
+    запущена) — выпуск по расписанию продолжается (2026-10-22 планировщик погиб вместе с панелью)."""
+    kwargs = dict(cwd=str(ROOT_DIR), stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+    if os.name != "nt":
+        return subprocess.Popen(cmd, start_new_session=(kind == "scheduler"), **kwargs)
+    flags = subprocess.CREATE_NEW_PROCESS_GROUP
+    if kind != "scheduler":
+        return subprocess.Popen(cmd, creationflags=flags, **kwargs)
+    try:
+        return subprocess.Popen(cmd, creationflags=flags | subprocess.DETACHED_PROCESS | _CREATE_BREAKAWAY_FROM_JOB,
+                                **kwargs)
+    except OSError:  # job-объект родителя не разрешает отвязку — хотя бы без консоли родителя
+        return subprocess.Popen(cmd, creationflags=flags | subprocess.DETACHED_PROCESS, **kwargs)
+
+
 def _watch(job_id: str) -> None:
     proc = _procs[job_id]
     code = proc.wait()
@@ -616,9 +635,7 @@ def api_job_start():
         JOBS_DIR.mkdir(parents=True, exist_ok=True)
         log_path = JOBS_DIR / f"{job_id}.log"
         log = open(log_path, "w", encoding="utf-8")
-        flags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
-        proc = subprocess.Popen(cmd, cwd=str(ROOT_DIR), stdout=log, stderr=subprocess.STDOUT,
-                                stdin=subprocess.DEVNULL, creationflags=flags)
+        proc = _spawn(kind, cmd, log)
         _procs[job_id] = proc
         _jobs[job_id] = {"id": job_id, "type": kind, "title": _JOB_TITLES[kind], "series": data.get("series"),
                          "params": {k: v for k, v in data.items() if k not in ("type", "series", "confirm")},
@@ -1038,6 +1055,17 @@ def api_logs():
 
 _load_jobs()
 
+
+def _autostart_scheduler() -> bool:
+    """Расписание включено, а планировщик не работает — запустить его вместе с панелью."""
+    if _scheduler_alive() or not any(_schedule(s)["enabled"] for s in _all_series()):
+        return False
+    headers = {"Host": "localhost", **({"X-Admin-Token": ADMIN_TOKEN} if ADMIN_TOKEN else {})}
+    resp = app.test_client().post("/api/jobs", json={"type": "scheduler"}, headers=headers)
+    print("Планировщик запущен — выпуск по расписанию" if resp.status_code == 201
+          else f"Планировщик не запустился: {resp.get_json()}")
+    return resp.status_code == 201
+
 if __name__ == "__main__":
     port = int(os.getenv("API_PORT", 5000))
     if API_HOST not in _LOOPBACK_HOSTS and not ADMIN_TOKEN:
@@ -1046,4 +1074,5 @@ if __name__ == "__main__":
     if API_HOST not in _LOOPBACK_HOSTS:
         print("Внимание: для доступа по IP/имени хоста добавьте его в API_ALLOWED_HOSTS")
     print(f"Панель управления → http://localhost:{port}")
+    _autostart_scheduler()
     app.run(host=API_HOST, port=port, debug=False, threaded=True)
