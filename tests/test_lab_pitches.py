@@ -161,3 +161,20 @@ def test_critic_tier_starts_with_kie_critics(monkeypatch):
     labels = [label for _gate, label, _fn in llm_client._chain("critic", False)]
     assert labels[:2] == ["kie:codex:gpt-x", "kie:claude:claude-fable-5"]
     assert not any(l.startswith("kie:gemini:gemini-4-argon") for l in labels)   # сценарист себя не судит
+
+
+def test_critic_script_numbered_bold_escaped_or_list_is_parsed(monkeypatch, series):
+    """Критик видит реплики с номерами и так же их возвращает; бывают **РОЛЬ:**, «\n» вместо переводов
+    строк и сценарий списком — правка не должна теряться."""
+    lines = BUBLIK["lines"]
+    numbered = "НАЗВАНИЕ: Бублик\nСЦЕНАРИЙ:\n" + "\n".join(
+        f"{i}. **{l['role']}:** [тихо] «{l['text']}»" for i, l in enumerate(lines, 1))
+    for script in (numbered, numbered.replace("\n", "\n"), numbered.split("\n")):
+        monkeypatch.setattr(aa, "_llm", lambda *a, script=script, **k: json.dumps(
+            {"checks": {}, "watch": 6, "fixes": [], "script": script}, ensure_ascii=False))
+        review = aa.critique_episode({"lines": lines}, series, edit=True)
+        ep = aa.parse_screenplay(review["script"], BUBLIK["case"]["client_name"].upper())
+        assert [l["text"] for l in ep["lines"]] == [l["text"] for l in lines]
+        assert ep["title"] == "Бублик" and ep["lines"][0]["emotion"] == "тихо"
+    monkeypatch.setattr(aa, "_llm", lambda *a, **k: '{"watch": 6, "script": "  "}')
+    assert aa.critique_episode({"lines": lines}, series, edit=True)["script"] is None

@@ -424,6 +424,8 @@ _SHOT_RE = re.compile(r"^\s*\d+[.)]\s*(\[ОЖИВИТЬ\])?\s*(.+)$")
 
 def parse_screenplay(text: str, client_role: str, hero_role: str = "ВЕРА") -> dict:
     """Разбирает «НАЗВАНИЕ / СЦЕНАРИЙ / КАДРЫ» в структуру. Роли нормализуются."""
+    if "\n" not in text and "\\n" in text:  # критик вернул в JSON дважды экранированные переводы строк
+        text = text.replace("\\n", "\n")
     title_m = re.search(r"НАЗВАНИЕ\s*:\s*(.+)", text)
     body = text.split("СЦЕНАРИЙ:", 1)[-1]
     script_part, _, shots_part = body.partition("КАДРЫ:")
@@ -431,7 +433,8 @@ def parse_screenplay(text: str, client_role: str, hero_role: str = "ВЕРА") -
     allowed = {hero_role: hero_role, client_role: client_role, "РАССКАЗЧИК": "РАССКАЗЧИК", "НАРРАТОР": "РАССКАЗЧИК"}
     lines = []
     for raw in script_part.splitlines():
-        m = _LINE_RE.match(raw)
+        # Критик видит реплики с номерами («3. ВЕРА: …») и так же их возвращает; бывает и **ВЕРА:**
+        m = _LINE_RE.match(re.sub(r"^\s*(?:\d+[.)]\s*)?", "", raw).replace("**", ""))
         if not m:
             continue
         role, said = m.group(1).strip(), m.group(2).strip()
@@ -886,6 +889,8 @@ def critique_episode(episode: dict, series: dict | None = None, edit: bool = Fal
     drop = data.get("drop_line")
     drop = drop if isinstance(drop, int) and not isinstance(drop, bool) and 1 <= drop <= len(episode["lines"]) else None
     script = data.get("script") if edit else None
+    if isinstance(script, list):  # сценарий построчно — тоже правка
+        script = "\n".join(str(s) for s in script)
     return {"score": score, "failed": failed, "fixes": [str(f) for f in data.get("fixes") or []][:5],
             "drop_line": drop, "script": script if isinstance(script, str) and script.strip() else None}
 
