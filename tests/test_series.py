@@ -1,5 +1,6 @@
 """Тесты сериального пайплайна без сети: разбор сценария, раскадровка, таймлайн, озвучка, KIE."""
 
+from itertools import accumulate
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -534,3 +535,108 @@ def test_scene_prompt_uses_memory_setting():
     memory = _shot_prompt(SERIES, plan, {"characters": ["CLIENT"], "prompt_en": "coats", "setting_en": "cloakroom"})
     assert SERIES["location_en"] in office and "Setting: cloakroom." in memory and SERIES["location_en"] not in memory
     assert "CLIENT (reference image 1): Grigory" in memory
+
+
+def test_detail_moves_off_first_turn_and_last_line():
+    """detail_line=0 (или null, или поворот) — кадр-деталь не пропадает, а встаёт на следующую реплику
+    клиента: не первую, не поворот, не последнюю и, если можно, не занятую сценой из жизни."""
+    episode, data = _plan_input()   # клиент: 0, 2, 4, 6 (поворот), 8 (последняя)
+    for detail, memory, expected in [(0, [], 2), (None, [], 2), (0, [2], 4), (6, [], 2), (8, [], 2), (2, [], 2)]:
+        plan = aa.build_plan({**data, "detail_line": detail, "memory_lines": memory}, episode, key=0, simple=3)
+        slots = [a["slot"] for a in plan["assignment"]]
+        assert slots.count("detail") == 1 and slots[expected] == "detail", (detail, memory, slots)
+        assert slots[0] == "client_open" and slots[6] == "client_turn" and slots[8] == "client_turn"
+        assert plan["detail_line"] == expected
+    # деталь на реплике Веры — как поставил раскадровщик
+    slots = [a["slot"] for a in aa.build_plan({**data, "detail_line": 3}, episode, key=0, simple=3)["assignment"]]
+    assert slots[3] == "detail"
+
+
+def test_memory_scene_prompt_drops_office_light_keeps_series_look():
+    from agents.scene_agent import SCENE_LIGHT, _shot_prompt, scene_style
+    plan = {"client_visual_en": "Grigory"}
+    office = _shot_prompt(SERIES, plan, {"characters": [], "prompt_en": "wide"})
+    memory = _shot_prompt(SERIES, plan, {"characters": ["CLIENT"], "prompt_en": "coats", "setting_en": "cloakroom"})
+    assert "desk-lamp" in office and SCENE_LIGHT not in office          # кабинет — как раньше
+    assert "desk-lamp" not in memory and "window" not in memory and SCENE_LIGHT in memory
+    for keep in ("Photorealistic cinematic still", "35mm lens", "teal and amber", "consistent character appearance",
+                 "No text, no captions, no watermark.", "keep each face"):
+        assert keep in memory
+    assert scene_style("Cinematic, warm lamp light. No text.") == "Cinematic. No text."
+
+
+def test_storyboard_dark_light_is_brightened():
+    """Раскадровщик пишет «Dimly lit», хотя просим светло: тёмный свет заменяется, цвет волос и одежды — нет."""
+    assert aa.brighten("Dimly lit kitchen at night, moody shadows.") == "brightly lit kitchen in the early evening, soft shadows."
+    assert aa.brighten("A dark hallway, he sits in the dark.") == "A bright hallway, he sits in soft daylight."
+    keep = "VERA with dark-chestnut hair in a dark-green cardigan, client in a dark coat."
+    assert aa.brighten(keep) == keep
+    assert "ЗАПРЕЩЕНЫ тёмные сцены" in aa._SHOTS_PROMPT
+    episode, data = _plan_input()
+    data["shots"]["memory_1"].update(prompt_en="Dimly lit stairwell, Alina climbs.", setting_en="a dark kitchen at night")
+    data["memory_lines"] = [2]
+    shots = {s["slot"]: s for s in aa.build_plan(data, episode, key=0, simple=3)["shots"]}
+    assert shots["memory_1"]["prompt_en"] == "brightly lit stairwell, Alina climbs."
+    assert shots["memory_1"]["setting_en"] == "a bright kitchen in the early evening"
+    from agents.scene_agent import _shot_prompt   # кадры из старой раскадровки (возобновление) — тоже
+    assert "Dimly" not in _shot_prompt(SERIES, {"client_visual_en": "x"}, {"characters": [], "prompt_en": "Dimly lit hall"})
+
+
+def test_plan_pieces_snaps_to_frames_and_replaces_frozen_clip_tail():
+    from agents.series_assembly import FPS, plan_pieces
+    shots = [{"image_path": "a.png"}, {"image_path": "d.png", "video_path": "d.mp4"},
+             {"image_path": "l.png", "video_path": "l.mp4", "lipsync": True}]
+    # отрезки серии 2 после темпа ×1.15: без привязки к сетке кадров копилось до 0.15 с
+    durations = [6.035, 3.113, 6.939, 6.122, 2.226, 5.948, 1.913, 6.243, 4.939, 6.087, 4.835, 3.073]
+    timeline = [{"index": 0, "duration": d, "clip": False} for d in durations]
+    pieces = plan_pieces(timeline, shots, max_still=3.0)
+    for p in pieces:
+        assert p["duration"] * FPS == pytest.approx(round(p["duration"] * FPS))   # целое число кадров
+    assert sum(p["duration"] for p in pieces) == pytest.approx(sum(durations), abs=0.5 / FPS)
+    edges = list(accumulate(p["duration"] for p in pieces))
+    for seg_end in accumulate(durations):                          # каждая смена кадра — не дальше полукадра
+        assert min(abs(e - seg_end) for e in edges) <= 0.5 / FPS + 1e-9
+    # анимация 5 с на 7.98-секундном отрезке: 6 с клипа с замедлением, остаток — снимок с наездом, не стоп-кадр
+    pieces = plan_pieces([{"index": 1, "duration": 7.98, "clip": True}], shots, max_still=3.0, clip_seconds={1: 5.0})
+    assert [(p["clip"], p["punch"]) for p in pieces] == [(True, False), (False, True)]
+    assert pieces[0]["duration"] == pytest.approx(6.0) and pieces[1]["duration"] == pytest.approx(1.98, abs=1 / FPS)
+    # хвост короче секунды, липсинк и монтаж без max_still — один кусок клипа, как раньше
+    for seg, kw in (({"index": 1, "duration": 6.5, "clip": True}, {"max_still": 3.0}),
+                    ({"index": 2, "duration": 9.0, "clip": True}, {"max_still": 3.0}),
+                    ({"index": 1, "duration": 9.0, "clip": True}, {})):
+        assert [p["clip"] for p in plan_pieces([seg], shots, **kw)] == [True]
+
+
+def test_lipsync_first_line_audio_starts_where_its_shot_starts(tmp_path):
+    """Кадр первой реплики в монтаже — с 0.0; если озвучка начинается позже, звук клипа режется тоже с 0,
+    иначе губы опережают голос на start первой реплики."""
+    from agents import lipsync_agent as ls
+    lines = [{"role": "ЛЕВ", "text": "Скрипку я продал.", "start": 0.4, "end": 2.0},
+             {"role": "ВЕРА", "text": "Зачем?", "start": 2.3, "end": 3.0},
+             {"role": "ЛЕВ", "text": "Не слышу.", "start": 3.3, "end": 5.0}]
+    plan = {"turn_line": 2, "assignment": [{"slot": "client_open", "shot": 0}, {"slot": "vera_ask", "shot": 1},
+                                           {"slot": "client_turn", "shot": 2}]}
+    shots = [{"image_url": f"u{i}"} for i in range(3)]
+    cuts = []
+    kie = MagicMock(upload_file=lambda *a: "url", download=lambda url, dest: dest,
+                    run_task=lambda *a, **k: {"urls": ["v"], "credits": 1})
+    with patch.object(ls, "_cut_audio", side_effect=lambda src, s, e, dest: cuts.append((s, e)) or dest), \
+         patch.dict("sys.modules", {"utils.kie_client": kie}), patch("utils.kie_client", kie, create=True):
+        clips = ls.render(SERIES, plan, shots, {"audio_path": "d.wav", "lines": lines}, tmp_path)
+    assert sorted(clips) == [0, 2] and sorted(cuts) == [(0.0, 2.0), (3.3, 5.0)]
+
+
+def test_punch_keeps_face_height_out_of_subtitles(tmp_path):
+    """Наезд держит лицо на высоте FACE_Y, а не в центре: иначе субтитры закрывают рот (серия 2)."""
+    import subprocess
+    from agents.series_assembly import FACE_Y, _render_still
+    w, h = 108, 192
+    img, out = tmp_path / "face.png", tmp_path / "punch.mp4"
+    y0 = int(h * FACE_Y)                       # белая полоса «лица» на высоте FACE_Y
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"color=black:s={w}x{h}", "-vf",
+                    f"drawbox=x=0:y={y0 - 2}:w={w}:h=4:color=white:t=fill", "-frames:v", "1", str(img)], check=True)
+    _render_still(str(img), 0.2, str(out), zoom_in=True, size=(w, h), punch=True)
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(out), "-frames:v", "1", "-f", "rawvideo",
+                          "-pix_fmt", "gray", "-"], capture_output=True, check=True).stdout
+    rows = np.frombuffer(raw, np.uint8).reshape(h, w).mean(axis=1)
+    assert abs(int(rows.argmax()) - y0) <= 3, (int(rows.argmax()), y0)

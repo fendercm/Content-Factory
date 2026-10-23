@@ -227,6 +227,8 @@ _SHOTS_PROMPT = """Ты — оператор-постановщик вертик
   "prompt_en" (что в кадре), "setting_en" (место и свет, по-английски), "with_client": true, если CLIENT
   в кадре. Никто в этих кадрах не говорит: CLIENT — со спины, в профиль или занят делом, рот закрыт;
   другие люди — со спины, издали или руки в кадре, без крупных лиц. Светло: день или тёплый вечерний свет.
+  ЗАПРЕЩЕНЫ тёмные сцены: ночь, полумрак, свечи, тени на лицах, слова dim, dimly lit, dark room, night,
+  moody, low-key, shadowy — тёмные кадры портят ролик. Пиши bright, daylight, well-lit.
 Для detail, wide, story и memory_* добавь "motion_en" — одно простое движение на 5 секунд по-английски:
 руки и предметы, дождь за окном, медленное движение камеры. Лиц крупно не показывай и рты не двигай —
 говорящие лица не оживляются, губы не совпали бы с речью.
@@ -424,6 +426,8 @@ _SHOT_RE = re.compile(r"^\s*\d+[.)]\s*(\[ОЖИВИТЬ\])?\s*(.+)$")
 
 def parse_screenplay(text: str, client_role: str, hero_role: str = "ВЕРА") -> dict:
     """Разбирает «НАЗВАНИЕ / СЦЕНАРИЙ / КАДРЫ» в структуру. Роли нормализуются."""
+    if "\n" not in text and "\\n" in text:  # критик вернул в JSON дважды экранированные переводы строк
+        text = text.replace("\\n", "\n")
     title_m = re.search(r"НАЗВАНИЕ\s*:\s*(.+)", text)
     body = text.split("СЦЕНАРИЙ:", 1)[-1]
     script_part, _, shots_part = body.partition("КАДРЫ:")
@@ -431,7 +435,8 @@ def parse_screenplay(text: str, client_role: str, hero_role: str = "ВЕРА") -
     allowed = {hero_role: hero_role, client_role: client_role, "РАССКАЗЧИК": "РАССКАЗЧИК", "НАРРАТОР": "РАССКАЗЧИК"}
     lines = []
     for raw in script_part.splitlines():
-        m = _LINE_RE.match(raw)
+        # Критик видит реплики с номерами («3. ВЕРА: …») и так же их возвращает; бывает и **ВЕРА:**
+        m = _LINE_RE.match(re.sub(r"^\s*(?:\d+[.)]\s*)?", "", raw).replace("**", ""))
         if not m:
             continue
         role, said = m.group(1).strip(), m.group(2).strip()
@@ -886,6 +891,8 @@ def critique_episode(episode: dict, series: dict | None = None, edit: bool = Fal
     drop = data.get("drop_line")
     drop = drop if isinstance(drop, int) and not isinstance(drop, bool) and 1 <= drop <= len(episode["lines"]) else None
     script = data.get("script") if edit else None
+    if isinstance(script, list):  # сценарий построчно — тоже правка
+        script = "\n".join(str(s) for s in script)
     return {"score": score, "failed": failed, "fixes": [str(f) for f in data.get("fixes") or []][:5],
             "drop_line": drop, "script": script if isinstance(script, str) and script.strip() else None}
 
@@ -901,10 +908,18 @@ def _lab_problems(ep: dict, series: dict) -> list[str]:
     return problems
 
 
+def _review_rank(review: dict) -> tuple:
+    """Чем больше, тем лучше версия. Проваленный пункт стоит балла «досмотрит»: 8 с двумя провалами
+    хуже 7 без провалов; при равенстве — меньше провалов. Без оценки (критик упал) — хуже любой оценённой."""
+    if review["score"] is None:
+        return (float("-inf"), 0)
+    return (review["score"] - len(review["failed"]), -len(review["failed"]))
+
+
 def write_from_pitch(series: dict, pitch: dict, episode_no: int = 1) -> dict:
     """
     Завязка → история → диалог по тактам → критик оценивает и сам правит текст → до CRITIC_ROUNDS кругов.
-    Возвращает лучший вариант (по оценке критика среди прошедших проверки) с историей и замечаниями.
+    Возвращает лучший вариант (_review_rank: оценка минус проваленные пункты) с историей и замечаниями.
     """
     dev = develop_story(series, pitch)
     case, story = dev["case"], dev["story"]
@@ -942,7 +957,7 @@ def write_from_pitch(series: dict, pitch: dict, episode_no: int = 1) -> dict:
         review = critique_episode(ep, series, edit=rnd < CRITIC_ROUNDS)
         rounds.append({"score": review["score"], "failed": review["failed"], "fixes": review["fixes"],
                        "drop_line": review["drop_line"], "words": len(spoken_text(ep).split())})
-        if best is None or (review["score"] or 0) > (best[1]["score"] or 0):
+        if best is None or _review_rank(review) > _review_rank(best[1]):
             best = (ep, review)
         passed = review["score"] is None or (review["score"] >= CRITIC_PASS and not review["failed"])
         if passed or not review.get("script"):
@@ -976,16 +991,26 @@ def assign_shots(lines: list[dict], marks: dict, hero_role: str = "ВЕРА") ->
     turn, detail, story = (_line_no(marks.get(k), n) for k in ("turn_line", "detail_line", "story_line"))
     narrator = any(l["role"] == "РАССКАЗЧИК" for l in lines)
     key_question = turn - 1 if turn and lines[turn - 1]["role"] == hero_role else None
+    spoken = [i for i, l in enumerate(lines) if l["role"] != "РАССКАЗЧИК"]
+    last = spoken[-1] if spoken else None
+    raw = marks.get("memory_lines")
+    raw = [_line_no(i, n) for i in raw] if isinstance(raw, list) else []
+    # Деталь не встаёт на первую, последнюю реплику и поворот — там лицо и липсинк. Раскадровщик ставил
+    # detail_line=0 (или null) — кадр-деталь пропадал; теперь он переезжает на следующую реплику клиента,
+    # по возможности не занятую сценой из жизни
+    if detail in (None, 0, turn, last) or lines[detail]["role"] == "РАССКАЗЧИК":
+        base = detail or 0
+        free = [i for i, l in enumerate(lines)
+                if l["role"] not in (hero_role, "РАССКАЗЧИК") and i not in (0, turn, last)]
+        free.sort(key=lambda i: (i in raw, i <= base, i))
+        detail = free[0] if free else None
     wide_line = next((i for i, l in enumerate(lines)
                       if l["role"] == hero_role and i not in (0, detail, key_question)), None)
     # Сцены из жизни — только на рассказе клиента: первая, последняя реплика и поворот остаются лицом
     # (там же липсинк), деталь — своим кадром
-    spoken = [i for i, l in enumerate(lines) if l["role"] != "РАССКАЗЧИК"]
-    raw = marks.get("memory_lines")
     memory: dict[int, str] = {}
-    for slot, i in zip(MEMORY_SLOTS, raw if isinstance(raw, list) else []):
-        i = _line_no(i, n)
-        if (i is None or i in memory or i in (0, detail) or i == spoken[-1]
+    for slot, i in zip(MEMORY_SLOTS, raw):
+        if (i is None or i in memory or i in (0, detail) or i == last
                 or (turn is not None and i >= turn) or lines[i]["role"] in (hero_role, "РАССКАЗЧИК")):
             continue
         memory[i] = slot
@@ -1025,6 +1050,25 @@ def assign_shots(lines: list[dict], marks: dict, hero_role: str = "ВЕРА") ->
     return out
 
 
+# Раскадровщик пишет «Dimly lit», хотя просим светло, а тёмные кадры портили ролики. Заменяются только
+# формулировки света: «dark» само по себе не трогаем — это цвет волос и одежды (dark-chestnut hair)
+_DARK_LIGHT = [
+    (r"\bdimly[- ]lit\b", "brightly lit"), (r"\bpoorly[- ]lit\b", "well-lit"), (r"\bcandle[- ]?lit\b", "warmly lit"),
+    (r"\blow[- ]key\b", "soft high-key"), (r"\b(?:in|into) (?:the )?dark(?:ness)?\b", "in soft daylight"),
+    (r"\bdark(?:ened)? (room|kitchen|hallway|corridor|apartment|stairwell|street|bedroom|scene)\b", r"bright \1"),
+    (r"\b(?:late )?at night\b", "in the early evening"), (r"\bnight[- ]?time\b", "early evening"),
+    (r"\bmidnight\b", "early evening"), (r"\bdarkness\b", "soft light"), (r"\bdim\b", "soft"),
+    (r"\b(?:moody|gloomy|murky|shadowy)\b", "soft"), (r"\bdeep shadows?\b", "soft shadows"),
+]
+
+
+def brighten(text: str) -> str:
+    """Убирает из описания кадра тёмный свет (ночь, полумрак); прочий текст не меняется."""
+    for pattern, repl in _DARK_LIGHT:
+        text = re.sub(pattern, repl, text, flags=re.I)
+    return text
+
+
 def build_plan(data: dict, episode: dict, key: int, simple: int, hero_role: str = "ВЕРА") -> dict:
     """Ответ раскадровщика → кадры только используемых слотов + назначение кадра каждой реплике."""
     case = episode["case"]
@@ -1048,10 +1092,13 @@ def build_plan(data: dict, episode: dict, key: int, simple: int, hero_role: str 
         spec = specs.get(slot) or {}
         if slot in MEMORY_SLOTS:
             chars = ["CLIENT"] if spec.get("with_client") else []
-        shot = {"slot": slot, "characters": chars, "prompt_en": spec.get("prompt_en") or _SLOT_DEFAULTS[slot],
+        shot = {"slot": slot, "characters": chars, "prompt_en": brighten(spec.get("prompt_en") or _SLOT_DEFAULTS[slot]),
                 "animate": slot in animate_key | animate_simple}
         if spec.get("setting_en"):
-            shot["setting_en"] = spec["setting_en"]
+            shot["setting_en"] = brighten(spec["setting_en"])
+        if (shot["prompt_en"], shot.get("setting_en")) != (spec.get("prompt_en") or _SLOT_DEFAULTS[slot],
+                                                            spec.get("setting_en") or None):
+            logger.info("Anthology: кадр %s — тёмный свет заменён светлым", slot)
         if shot["animate"]:
             shot["priority"] = "key" if slot in animate_key else "simple"
             shot["motion_en"] = spec.get("motion_en") or "Subtle natural movement: blinking, breathing, slow push-in."
@@ -1064,7 +1111,8 @@ def build_plan(data: dict, episode: dict, key: int, simple: int, hero_role: str 
             or f"a {case['age']}-year-old Russian {case['gender']} {case['occupation']}",
             "shots": shots, "assignment": assignment,
             "memory_lines": [i for i, a in enumerate(assignment) if a["slot"] in MEMORY_SLOTS],
-            **{k: _line_no(data.get(k), len(episode["lines"])) for k in ("turn_line", "detail_line", "story_line")}}
+            **{k: _line_no(data.get(k), len(episode["lines"])) for k in ("turn_line", "story_line")},
+            "detail_line": next((i for i, a in enumerate(assignment) if a["slot"] == "detail"), None)}
 
 
 def plan_shots(series: dict, episode: dict) -> dict:

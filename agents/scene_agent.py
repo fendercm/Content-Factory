@@ -13,6 +13,7 @@ API:
 """
 
 import logging
+import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -44,6 +45,23 @@ def _video_request(engine: str, image_url: str, motion: str) -> tuple[str, dict]
                                             "nsfw_checker": False}
 
 
+# Части style_en про свет и обстановку кабинета: в сценах вне кабинета (setting_en) они давали «кабинетный»
+# свет настольной лампы и окно на улице или в гардеробе (2026-10-23)
+_OFFICE_CUES = ("lamp", "window", "office", "room", "interior", "armchair", "bookshel")
+SCENE_LIGHT = ("Bright, well-lit scene: natural daylight or warm early-evening light that fits the place, "
+               "faces and hands clearly visible, no darkness, no night, no heavy shadows.")
+
+
+def scene_style(style_en: str) -> str:
+    """Общий стиль сериала без кабинетных деталей: оптика, палитра, кожа, руки, лица — остаются."""
+    out = []
+    for sentence in re.split(r"(?<=\.)\s+", style_en.strip()):
+        parts = [p for p in sentence.rstrip(".").split(", ") if not any(cue in p.lower() for cue in _OFFICE_CUES)]
+        if parts:
+            out.append(", ".join(parts) + ".")
+    return " ".join(out)
+
+
 def _shot_prompt(series: dict, plan: dict, shot: dict) -> str:
     chars = shot["characters"]
     who = []
@@ -52,9 +70,14 @@ def _shot_prompt(series: dict, plan: dict, shot: dict) -> str:
         who.append(f"{c} (reference image {i}): {desc}")
     cast = ("Characters — keep each face, hairstyle and clothing exactly as in its reference image: "
             + "; ".join(who) + ". ") if who else ""
-    # Сцены из жизни клиента — своё место действия, не кабинет
-    return (f"{series['style_en']} Setting: {shot.get('setting_en') or series['location_en']}. {cast}"
-            f"Shot: {shot['prompt_en']}")
+    from agents.anthology_agent import brighten  # и для раскадровок прошлых запусков (возобновление)
+
+    # Сцены из жизни клиента — своё место действия и свет, не кабинет; тёмные кадры портили ролики
+    if shot.get("setting_en"):
+        return (f"{scene_style(series['style_en'])} Setting: {brighten(shot['setting_en'])}. {SCENE_LIGHT} {cast}"
+                f"Shot: {brighten(shot['prompt_en'])}")
+    return (f"{series['style_en']} Setting: {series['location_en']}. {cast}"
+            f"Shot: {brighten(shot['prompt_en'])}")
 
 
 def render(series: dict, plan: dict, out_dir: Path) -> dict:
