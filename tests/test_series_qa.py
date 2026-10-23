@@ -1,6 +1,7 @@
 """Series QA: каждая проверка ловит свою поломку и молчит на целом эпизоде (синтетический звук, без сети)."""
 
 import numpy as np
+import pytest
 
 from agents import series_qa as q
 
@@ -37,6 +38,7 @@ def _tone(seconds: float, f0: float, bright: bool, seed: int) -> np.ndarray:
     return (sig * 0.2 + np.random.default_rng(seed).normal(0, 0.01, len(t))).astype(np.float32)
 
 
+@pytest.mark.heavy  # librosa, ~7 с
 def test_speakers_flag_line_in_other_voice():
     roles = ["АРТЁМ", "ВЕРА"] * 4
     voices = {"АРТЁМ": (110, True), "ВЕРА": (230, False)}
