@@ -403,10 +403,11 @@ def _cosyvoice(text: str, gender: str, output_path: str) -> None:
             with open(tmp, "wb") as f:
                 f.write(part)
             tmp_files.append(tmp)
+        from utils.ffmpeg import concat_line
         list_file = output_path + ".cosyconcat.txt"
         with open(list_file, "w", encoding="utf-8") as f:
             for p in tmp_files:
-                f.write(f"file '{p}'\n")
+                f.write(concat_line(p))
         result = subprocess.run(
             ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", list_file,
              "-codec:a", "copy", output_path],
@@ -471,10 +472,11 @@ def _silero(text: str, gender: str, output_path: str) -> None:
         wav_parts.append(part_wav)
 
     # Конкатенируем WAV через ffmpeg
+    from utils.ffmpeg import concat_line
     list_file = output_path + ".concat.txt"
     with open(list_file, "w", encoding="utf-8") as f:
         for p in wav_parts:
-            f.write(f"file '{p}'\n")
+            f.write(concat_line(p))
     result = subprocess.run(
         ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", list_file,
          "-codec:a", "libmp3lame", "-q:a", "4", output_path],
@@ -593,10 +595,11 @@ def _yandex_v3(text: str, voice: str, output_path: str) -> None:
             tmp_files.append(tmp)
 
         # Конкатенируем через ffmpeg concat demuxer
+        from utils.ffmpeg import concat_line
         list_file = output_path + ".concat.txt"
         with open(list_file, "w", encoding="utf-8") as f:
             for p in tmp_files:
-                f.write(f"file '{p}'\n")
+                f.write(concat_line(p))
         result = subprocess.run(
             ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", list_file,
              "-codec:a", "copy", output_path],

@@ -1,39 +1,49 @@
+# Версии закреплены по рабочему окружению (pip freeze, 2026-10-23) и проверены
+# pip-audit. Где у закреплённой версии были известные уязвимости — поднята до
+# исправленной (тесты зелёные на новых версиях). Подробности: docs/tech/security.md.
+# Обновлять осознанно: поднять версию → py -X utf8 -m pytest -q → pip-audit.
+
 # ── LLM ─────────────────────────────────────────────────────────────────────
-groq>=0.9.0
-openai>=1.30.0            # Cerebras client (OpenAI-compatible)
-google-genai>=0.5.0       # Gemini 2.0 Flash (safety + quality scorer)
+openai==2.36.0            # OpenAI-совместимые провайдеры (Cerebras и др.); Gemini/Yandex — через requests
 
 # ── Env ──────────────────────────────────────────────────────────────────────
-python-dotenv>=1.0.0
+python-dotenv==1.2.2
 
 # ── Voice ────────────────────────────────────────────────────────────────────
-edge-tts>=7.3.1           # 7.2.x получают 403 от Microsoft (Sec-MS-GEC), исправлено в 7.3
-requests>=2.31.0
+edge-tts==7.3.1           # 7.2.x получают 403 от Microsoft (Sec-MS-GEC), исправлено в 7.3
+requests==2.33.1
 
 # ── Subtitles ────────────────────────────────────────────────────────────────
-openai-whisper>=20231117
+openai-whisper==20250625  # тянет torch; см. security.md про torch < 2.13
 
 # ── Image / Video processing ─────────────────────────────────────────────────
-Pillow>=10.0.0
-numpy>=1.24.0             # fast gradient rendering in assembly_agent
+pillow==13.0.0            # 12.2.0: 48 уязвимостей в разборе изображений/шрифтов
+numpy==2.4.4              # fast gradient rendering in assembly_agent
 
-# ── Beat sync (optional, improves cut timing) ────────────────────────────────
-librosa>=0.10.0           # Series QA (тембр реплик), beat-sync; requires ffmpeg
-soundfile>=0.12.1         # required by librosa
+# ── Beat sync / Series QA ────────────────────────────────────────────────────
+librosa==0.11.0           # Series QA (тембр реплик), beat-sync; requires ffmpeg
+soundfile==0.13.1         # required by librosa
 
 # ── Research ─────────────────────────────────────────────────────────────────
-pytrends>=4.9.0           # Google Trends
-feedparser>=6.0.10        # RSS feeds (Google News, Habr, vc.ru)
-ddgs>=5.0.0               # DuckDuckGo search (no key required)
+pytrends==4.9.2           # Google Trends
+feedparser==6.0.12        # RSS feeds (Google News, Habr, vc.ru)
+ddgs==9.14.4              # DuckDuckGo search (no key required)
 
 # ── Web API server (Admin Panel) ─────────────────────────────────────────────
-flask>=3.0.0
+flask==3.1.3
 
 # ── Scheduler ────────────────────────────────────────────────────────────────
-schedule>=1.2.0
+schedule==1.2.2
 
 # ── Тесты ────────────────────────────────────────────────────────────────────
-pytest>=8.0.0
+pytest==9.0.3
+
+# ── Транзитивные зависимости: минимум без известных уязвимостей ──────────────
+urllib3==2.8.0            # requests; 1.26.x — утечка заголовков при редиректах, decompression bomb
+werkzeug==3.1.9           # flask; 3.1.8 — safe_join пропускал имена устройств Windows
+aiohttp==3.14.5           # edge-tts; 3.13.x — 22 уязвимости
+idna==3.20                # requests; DoS на длинных доменах
+certifi>=2026.10.19       # корневые сертификаты: не закрепляем жёстко, чтобы не устаревали
 
 # ── Silero TTS (optional, local CPU inference) ───────────────────────────────
 # torch>=2.0.0            # uncomment for Silero TTS; large download ~2GB

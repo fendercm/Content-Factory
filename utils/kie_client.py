@@ -123,9 +123,19 @@ def balance() -> float:
 
 # ── Файлы ─────────────────────────────────────────────────────────────────────
 
+# Наружу уходят только медиа-референсы. Файл получает публичную ссылку на 24 часа,
+# поэтому .env, базы, json со сценариями и прочее сюда попасть не должны.
+UPLOAD_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".webp", ".mp3", ".wav", ".m4a",
+                               ".ogg", ".aac", ".mp4", ".mov", ".webm"})
+
+
 def upload_file(path: str | Path, upload_path: str = "content-factory") -> str:
-    """Загружает локальный файл, возвращает URL (живёт 24 часа)."""
+    """Загружает локальный медиафайл, возвращает публичный URL (живёт 24 часа)."""
     path = Path(path)
+    if path.suffix.lower() not in UPLOAD_EXTENSIONS:
+        raise KieError(f"загрузка {path.name}: разрешены только медиафайлы ({', '.join(sorted(UPLOAD_EXTENSIONS))})")
+    if not path.is_file():
+        raise KieError(f"загрузка {path.name}: файл не найден")
     last: Exception | None = None
     for url in UPLOAD_URLS:
         try:
