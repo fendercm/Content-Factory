@@ -494,6 +494,20 @@ _JOB_TITLES = {"prepare": "Собрать эпизоды", "script": "Собра
                "pitches": "Завязки серий"}
 
 
+def _max_usd_args(data: dict) -> list[str]:
+    """Лимит трат KIE лаборатории (--max-usd): пусто — без лимита, иначе 0–50 $."""
+    raw = data.get("max_usd")
+    if raw in (None, ""):
+        return []
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        raise ValueError("max_usd — число в $") from None
+    if not 0 <= value <= 50:  # NaN тоже сюда
+        raise ValueError("max_usd — от 0 до 50 $")
+    return ["--max-usd", f"{value:g}"]
+
+
 def _job_command(kind: str, series: dict | None, data: dict) -> list[str]:
     py = [sys.executable, "-X", "utf8"]
     if kind == "analytics":
@@ -516,20 +530,21 @@ def _job_command(kind: str, series: dict | None, data: dict) -> list[str]:
         n = max(3, min(int(data.get("n", 12)), 20))
         idea = str(data.get("idea") or "").strip()[:2000]
         return py + [str(ROOT_DIR / "scripts" / "script_lab.py"), "--series", sid, "--pitches", "--n", str(n)] + \
-            (["--idea", idea] if idea else [])
+            (["--idea", idea] if idea else []) + _max_usd_args(data)
     if kind == "lab" and data.get("pitch_ids"):
         ids = [int(i) for i in data["pitch_ids"] if str(i).isdigit()][:6]
         if not ids:
             raise ValueError("отметьте завязки")
         return py + [str(ROOT_DIR / "scripts" / "script_lab.py"), "--series", sid, "--same",
-                     "--from-pitches", ",".join(map(str, ids))]
+                     "--from-pitches", ",".join(map(str, ids))] + _max_usd_args(data)
     if kind == "lab":
         n = max(1, min(int(data.get("n", 4)), 8))
         idea = str(data.get("idea") or "").strip()
         if len(idea) > 2000:
             raise ValueError("идея длиннее 2000 символов")
         return py + [str(ROOT_DIR / "scripts" / "script_lab.py"), "--series", sid, "--n", str(n)] + \
-            (["--same"] if data.get("same", True) else []) + (["--idea", idea] if idea else [])
+            (["--same"] if data.get("same", True) else []) + (["--idea", idea] if idea else []) + \
+            _max_usd_args(data)
     platform = data.get("platform") or _schedule(series)["platform"]
     if platform not in _PLATFORMS:
         raise ValueError("неизвестная площадка")
@@ -795,9 +810,12 @@ def api_lab_list():
             continue
         if not isinstance(data, dict):
             continue
-        items = [_lab_item(label, item) for label, item in data.items() if isinstance(item, dict)]
+        # "_run" — траты прогона, не вариант сценария
+        items = [_lab_item(label, item) for label, item in data.items()
+                 if isinstance(item, dict) and not label.startswith("_")]
         out.append({"stamp": path.stem, "count": len(items), "titles": [it["title"] for it in items],
-                    "scores": [(it["critic"] or {}).get("score") for it in items]})
+                    "scores": [(it["critic"] or {}).get("score") for it in items],
+                    "cost_usd": (data.get("_run") or {}).get("cost_usd")})
     return jsonify(out[:30])
 
 
@@ -850,8 +868,9 @@ def api_lab_get(stamp: str):
     if not isinstance(data, dict):
         return jsonify({"error": "файл прогона в старом формате"}), 422
     key = key if isinstance(key, dict) else {}
-    return jsonify({"stamp": stamp, "items": [_lab_item(label, item, key.get(label))
-                                              for label, item in data.items() if isinstance(item, dict)]})
+    return jsonify({"stamp": stamp, "run": data.get("_run"),
+                    "items": [_lab_item(label, item, key.get(label)) for label, item in data.items()
+                              if isinstance(item, dict) and not label.startswith("_")]})
 
 
 def _scripts(series_id: str) -> list[dict]:

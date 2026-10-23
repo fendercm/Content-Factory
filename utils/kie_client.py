@@ -14,6 +14,8 @@ LLM:     claude:<m>  → POST /claude/v1/messages                (Anthropic Mess
          файл живёт 24 часа — референсы загружаем в каждом прогоне.
 
 KIE отдаёт ошибки с HTTP 200 — всегда смотрим на code в теле. 200 кредитов = $1.
+Лимит трат процесса: set_spend_limit($) — когда учтённые траты дошли до лимита, chat/create_task
+не отправляют запрос и бросают KieLimitError (уже идущие вызовы доживают, перерасход — их цена).
 Платный провайдер: вызовы гейтятся utils.providers.is_enabled("kie_series") — отдельно от "kie",
 которым гейтятся старые пути (Kling в visual_agent, ElevenLabs и Suno через KIE).
 """
@@ -22,6 +24,7 @@ import json
 import logging
 import os
 import re
+import threading
 import time
 from pathlib import Path
 
@@ -39,6 +42,36 @@ CREDITS_PER_USD = 200
 
 class KieError(RuntimeError):
     pass
+
+
+class KieLimitError(KieError):
+    """Траты процесса дошли до лимита set_spend_limit — платный вызов не отправлен."""
+
+
+_spend_lock = threading.Lock()
+_spend_limit: float | None = None
+_spent = 0.0
+
+
+def set_spend_limit(max_usd: float | None) -> None:
+    """Лимит трат KIE на этот процесс в $ (None — без лимита); счётчик трат обнуляется."""
+    global _spend_limit, _spent
+    with _spend_lock:
+        _spend_limit, _spent = max_usd, 0.0
+
+
+def spent_usd() -> float:
+    """Траты KIE этого процесса с последнего set_spend_limit — те же суммы, что пишутся в costs."""
+    return _spent
+
+
+def limit_reached() -> bool:
+    return _spend_limit is not None and _spent >= _spend_limit - 1e-9
+
+
+def check_spend_limit(what: str) -> None:
+    if limit_reached():
+        raise KieLimitError(f"лимит ${_spend_limit:.2f} исчерпан (потрачено ${_spent:.2f}) — {what} не запущен")
 
 
 def _key() -> str:
@@ -71,8 +104,11 @@ def _check(data: dict, what: str) -> dict:
 
 
 def _track(operation: str, credits: float | None, model: str) -> None:
+    global _spent
     if not credits:
         return
+    with _spend_lock:
+        _spent += credits / CREDITS_PER_USD
     try:
         from utils.cost_tracker import log_cost
         log_cost(f"kie:{model}", "kie", operation, 1, unit_cost_usd=credits / CREDITS_PER_USD)
@@ -107,6 +143,7 @@ def upload_file(path: str | Path, upload_path: str = "content-factory") -> str:
 # ── Медиа-задачи ──────────────────────────────────────────────────────────────
 
 def create_task(model: str, input_: dict) -> str:
+    check_spend_limit(f"createTask {model}")
     data = requests.post(f"{BASE}/api/v1/jobs/createTask", headers=_headers(),
                          json={"model": model, "input": input_}, timeout=60).json()
     return _check(data, f"createTask {model}")["data"]["taskId"]
@@ -229,6 +266,7 @@ def chat(model_spec: str, messages: list[dict], max_tokens: int = 4000, json_mod
     → (текст, кредиты)
     """
     adapter, model = model_spec.split(":", 1)
+    check_spend_limit(f"chat {model}")
     system = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
     user_msgs = [m for m in messages if m["role"] != "system"]
 

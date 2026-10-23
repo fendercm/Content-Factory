@@ -112,4 +112,9 @@ ID моделей устаревают за месяцы — перед смен
 `run_task(model, input, timeout_s, retries=1, pause_s=30)` повторяет задачу при временных сбоях
 (5xx, «internal error / try again», обрыв сети); не повторяет 402, выключенный KIE и таймаут задачи.
 `upload_file` — ссылка живёт 24 ч. `chat(model_spec, …)` — LLM через KIE (стриминг). Расходы пишутся в
-`costs` (`kie:<model>`). Баланс — `balance()`.
+`costs` (`kie:<model>`). Баланс — `balance()` (в кредитах, 200 кр = $1).
+
+Лимит трат процесса: `set_spend_limit(usd)` обнуляет счётчик `spent_usd()` (те же суммы, что идут в
+`costs`); когда он дошёл до лимита, `chat` и `create_task` не отправляют запрос и бросают `KieLimitError`
+(`limit_reached()`, `check_spend_limit(what)`). По умолчанию лимита нет; ставит его `script_lab.py --max-usd`.
+Оценка эпизода сериала и сверка с балансом — `utils/series_budget.py` ([series.md](series.md#себестоимость-kie-200-кр--1)).
