@@ -549,3 +549,16 @@ def test_detail_moves_off_first_turn_and_last_line():
     # деталь на реплике Веры — как поставил раскадровщик
     slots = [a["slot"] for a in aa.build_plan({**data, "detail_line": 3}, episode, key=0, simple=3)["assignment"]]
     assert slots[3] == "detail"
+
+
+def test_memory_scene_prompt_drops_office_light_keeps_series_look():
+    from agents.scene_agent import SCENE_LIGHT, _shot_prompt, scene_style
+    plan = {"client_visual_en": "Grigory"}
+    office = _shot_prompt(SERIES, plan, {"characters": [], "prompt_en": "wide"})
+    memory = _shot_prompt(SERIES, plan, {"characters": ["CLIENT"], "prompt_en": "coats", "setting_en": "cloakroom"})
+    assert "desk-lamp" in office and SCENE_LIGHT not in office          # кабинет — как раньше
+    assert "desk-lamp" not in memory and "window" not in memory and SCENE_LIGHT in memory
+    for keep in ("Photorealistic cinematic still", "35mm lens", "teal and amber", "consistent character appearance",
+                 "No text, no captions, no watermark.", "keep each face"):
+        assert keep in memory
+    assert scene_style("Cinematic, warm lamp light. No text.") == "Cinematic. No text."
