@@ -330,7 +330,7 @@ def test_repeated_phrase_blocks_lines_that_say_the_same():
 
 def _confession():
     roles = ["ДЕНИС", "ВЕРА", "ДЕНИС", "ДЕНИС", "ВЕРА", "ДЕНИС", "ДЕНИС", "ВЕРА", "ДЕНИС", "ВЕРА"]
-    lines = [{"role": r, "text": " ".join(f"слово{i}_{k}" for k in range(13))} for i, r in enumerate(roles)]
+    lines = [{"role": r, "text": " ".join(f"слово{i}_{k}" for k in range(11))} for i, r in enumerate(roles)]
     lines[1]["text"] = "Денис, " + lines[1]["text"]
     return {"lines": lines, "case": {"client_name": "Денис", "occupation": "столяр"}, "client_role": "ДЕНИС"}
 
@@ -504,3 +504,33 @@ def test_hook_question_rejects_spoiler_and_bad_format():
         assert aa.hook_question(SERIES, episode, turn_line=2) is None   # не вопрос
     with patch.object(aa, "_llm", side_effect=RuntimeError("нет сети")):
         assert aa.hook_question(SERIES, episode) is None
+
+
+def test_build_plan_memory_scenes_on_client_story_lines():
+    episode, data = _plan_input()
+    data["shots"]["memory_1"].update(setting_en="a restaurant cloakroom", with_client=True)
+    data["shots"]["memory_3"] = {}                       # без описания — сцены нет
+    # 0 — первая реплика, 6 — поворот, 1 — реплика Веры, 2 — повтор: всё это не сцены
+    data["memory_lines"] = [2, 4, 0]
+    plan = aa.build_plan(data, episode, key=0, simple=3)
+    slots = [a["slot"] for a in plan["assignment"]]
+    assert slots[2] == "memory_1" and slots[4] == "memory_2" and "memory_3" not in slots
+    assert slots[0] == "client_open" and slots[6] == "client_turn"
+    assert plan["memory_lines"] == [2, 4]
+    shots = {s["slot"]: s for s in plan["shots"]}
+    assert shots["memory_1"]["characters"] == ["CLIENT"] and shots["memory_1"]["setting_en"] == "a restaurant cloakroom"
+    assert shots["memory_2"]["characters"] == []          # клиента в кадре нет — без его референса
+    # оживление — сначала сцены из жизни, потом деталь
+    assert {s for s, sh in shots.items() if sh["animate"]} == {"memory_1", "memory_2", "detail"}
+    data["memory_lines"] = [2, 8, 3]                      # 8 — после поворота, 3 — деталь
+    slots = [a["slot"] for a in aa.build_plan(data, episode, key=0, simple=3)["assignment"]]
+    assert slots.count("memory_1") == 1 and "memory_2" not in slots and slots[3] == "detail"
+
+
+def test_scene_prompt_uses_memory_setting():
+    from agents.scene_agent import _shot_prompt
+    plan = {"client_visual_en": "Grigory"}
+    office = _shot_prompt(SERIES, plan, {"characters": [], "prompt_en": "wide"})
+    memory = _shot_prompt(SERIES, plan, {"characters": ["CLIENT"], "prompt_en": "coats", "setting_en": "cloakroom"})
+    assert SERIES["location_en"] in office and "Setting: cloakroom." in memory and SERIES["location_en"] not in memory
+    assert "CLIENT (reference image 1): Grigory" in memory

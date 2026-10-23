@@ -1413,7 +1413,7 @@ def run_series_pipeline(
             scenes, music = scenes or f_scenes.result(), f_music.result()
         # Кадры прошлых запусков могли оживлять лица — такие клипы не берём: губы не в такт речи
         from agents.anthology_agent import ANIMATE_ORDER
-        allowed = set(ANIMATE_ORDER[:series["animated_key"] + series["animated_simple"]])
+        allowed = set(ANIMATE_ORDER)
         for shot in scenes["shots"]:
             if shot.get("video_path") and shot.get("slot") not in allowed:
                 logger.info("Монтаж: клип кадра %s не используется (лицо) — статичный кадр", shot.get("slot"))

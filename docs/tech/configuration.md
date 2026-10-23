@@ -14,6 +14,7 @@
 | `GEMINI_TTS_MODEL` | список моделей TTS через запятую (переопределяет встроенную очередь) |
 | `KIE_API_KEY` | KIE.ai — сценаристы premium, Nano Banana, Wan, Kling Avatar, загрузка файлов |
 | `SERIES_WRITER_MODEL`, `SERIES_WRITER_FALLBACK` | сценаристы premium (по умолчанию `gemini:gemini-4-argon`, `codex:gpt-6-astra`) |
+| `SERIES_CRITIC_MODEL`, `SERIES_CRITIC_FALLBACK` | критик сценариев, tier `critic` (по умолчанию `codex:gpt-6-astra`, `claude:claude-fable-5`) |
 | `GROQ_API_KEY`, `GROQ_MODEL`, `GROQ_VISION_MODEL` | Groq — **выключен** решением 2026-10-21 (`DISABLED_PROVIDERS=groq`) |
 | `NVIDIA_API_KEY`/`NVIDIA_MODEL`, `OPENROUTER_API_KEY`/`OPENROUTER_MODEL` | необязательные бесплатные резервы |
 | `YANDEX_API_KEY`, `YANDEX_FOLDER_ID` | Yandex AI Studio / SpeechKit / YandexART (платно) |

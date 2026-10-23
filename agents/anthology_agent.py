@@ -176,12 +176,16 @@ SLOTS: list[tuple[str, list[str]]] = [
     ("vera_ask", ["VERA"]),            # средний план Веры: задаёт вопрос
     ("detail", ["CLIENT"]),            # макро: деталь-привычка клиента
     ("story", []),                     # предмет из истории или кадр к реплике рассказчика
+    ("memory_1", ["CLIENT"]),          # сцены из жизни клиента вне кабинета — под его рассказ;
+    ("memory_2", ["CLIENT"]),          # клиент в кадре, только если with_client (иначе без референса)
+    ("memory_3", ["CLIENT"]),
 ]
-# Какие кадры оживлять, по убыванию важности. Первые animated_key — Kling 3.0 (ключевые),
-# следующие animated_simple — Wan 2.6 Flash. Только кадры без говорящих лиц: оживлённое лицо
-# двигает губами не в такт речи, и зритель видит, что голос и картинка не совпадают (2026-10-21).
-# Лица остаются кадрами с плавным наездом, пока нет липсинка.
-ANIMATE_ORDER = ["detail", "wide", "story"]
+MEMORY_SLOTS = ("memory_1", "memory_2", "memory_3")
+# Какие кадры оживлять, по убыванию важности (берутся первые из использованных в эпизоде). Первые
+# animated_key — Kling 3.0 (ключевые), следующие animated_simple — Wan 2.6 Flash. Только кадры без
+# говорящих лиц: оживлённое лицо двигает губами не в такт речи (2026-10-21). Лица — кадры с наездом
+# и липсинк. Сцены из жизни впереди: в середине серии зрители уходили от статичного кабинета (2026-10-23).
+ANIMATE_ORDER = ["memory_1", "memory_2", "detail", "memory_3", "wide", "story"]
 
 _SLOT_DEFAULTS = {
     "wide": "Wide shot: VERA and CLIENT sit in two vintage armchairs facing each other, the whole office visible.",
@@ -192,10 +196,12 @@ _SLOT_DEFAULTS = {
     "vera_ask": "Medium shot of VERA leaning slightly forward, asking a question, red notebook in hand.",
     "detail": "Macro shot of CLIENT's hands with the telling detail.",
     "story": "Atmospheric still life of an object from the story, no people.",
+    **{slot: "A moment from the client's life outside the office, no one speaking." for slot in MEMORY_SLOTS},
 }
 
 _SHOTS_PROMPT = """Ты — оператор-постановщик вертикального сериала. Монтаж строится по говорящему:
-пока звучит реплика, на экране лицо того, кто её говорит. Опиши кадры фиксированного набора.
+пока звучит реплика, на экране лицо того, кто её говорит, — кроме реплик, где клиент рассказывает
+историю: там зритель видит сцены из его жизни. Опиши кадры фиксированного набора.
 
 ПЕРСОНАЖИ:
 - VERA: {vera_visual}
@@ -216,17 +222,26 @@ _SHOTS_PROMPT = """Ты — оператор-постановщик вертик
 - vera_ask: средний план VERA — задаёт вопрос, чуть подалась вперёд, красный блокнот в руке.
 - detail: макро рук CLIENT: {detail}.
 - story: без людей — {story_target}.
-Для detail, wide и story добавь "motion_en" — одно простое движение на 5 секунд по-английски:
+- memory_1, memory_2, memory_3: три сцены из жизни клиента ВНЕ кабинета — то, о чём он рассказывает:
+  место, событие, близкий человек, вещь. Пока звучит рассказ, зритель видит саму историю. Для каждой —
+  "prompt_en" (что в кадре), "setting_en" (место и свет, по-английски), "with_client": true, если CLIENT
+  в кадре. Никто в этих кадрах не говорит: CLIENT — со спины, в профиль или занят делом, рот закрыт;
+  другие люди — со спины, издали или руки в кадре, без крупных лиц. Светло: день или тёплый вечерний свет.
+Для detail, wide, story и memory_* добавь "motion_en" — одно простое движение на 5 секунд по-английски:
 руки и предметы, дождь за окном, медленное движение камеры. Лиц крупно не показывай и рты не двигай —
 говорящие лица не оживляются, губы не совпали бы с речью.
 
 Выбери номера реплик (или null):
 - "turn_line": где клиент вслух произносит настоящую причину;
 - "detail_line": где замечают или обсуждают деталь;
-- "story_line": реплика клиента, где упоминается предмет из кадра story{story_line_hint}.
+- "story_line": реплика клиента, где упоминается предмет из кадра story{story_line_hint};
+- "memory_lines": три номера реплик КЛИЕНТА для memory_1, memory_2, memory_3 по порядку — где он
+  рассказывает о месте или событии из сцены. Не первая и не последняя реплика, не turn_line.
 
 Верни JSON: {{"client_visual_en": "...", "turn_line": 0, "detail_line": 0, "story_line": null,
-"shots": {{"wide": {{"prompt_en": "..."}}, "client_open": {{"prompt_en": "...", "motion_en": "..."}}, ...}}}}"""
+"memory_lines": [2, 3, 5],
+"shots": {{"wide": {{"prompt_en": "..."}}, "client_open": {{"prompt_en": "...", "motion_en": "..."}},
+"memory_1": {{"prompt_en": "...", "setting_en": "...", "with_client": true, "motion_en": "..."}}, ...}}}}"""
 
 
 def _ngram_list(text: str, n: int) -> list[tuple[str, ...]]:
@@ -356,7 +371,8 @@ def bible_text(series: dict) -> str:
     h = series["heroine"]
     return (f"СЕРИАЛ: «{series['name']}» — {series['format']}.\n"
             f"ГЕРОИНЯ: {h['name']}, {h['bio']}\nГолос героини: {h['voice_ru']}\n"
-            f"ЛИНИЯ СЕЗОНА: {series['season_arc']}")
+            f"ЛИНИЯ СЕЗОНА: {series['season_arc']}\n"
+            f"ЗРИТЕЛЬ: {series.get('audience') or DEFAULT_AUDIENCE}")
 
 
 # ── LLM ──────────────────────────────────────────────────────────────────────
@@ -631,10 +647,14 @@ _STORY_PROMPT = """{bible}
 историю и каким поступком всё кончается. Причины и чувства — простыми словами, без психологических
 терминов. Проверь логику: каждый поступок объясним, поворот следует из фактов, а не из совпадения.
 
-Верни JSON: {{"story": "проза",
+Затем разложи историю на пять открытий — фактов в том порядке, в котором зритель их узнает. Каждое
+меняет понимание или поднимает ставки; главная тайна не раскрывается первым же фактом, поворот — последний.
+
+Верни JSON: {{"story": "проза", "reveals": ["открытие 1", "открытие 2", "открытие 3", "открытие 4", "поворот"],
   "title": "название эпизода до 30 символов", "surface_complaint": "с чем пришёл, одной фразой",
   "stakes": "что клиент теряет и когда", "secret": "что скрывает", "real_reason": "настоящая причина",
-  "hook": "первая фраза клиента", "signature_detail": "вещь в кадре, связанная с тайной",
+  "hook": "первая фраза клиента: странный конкретный поступок без объяснения зачем",
+  "signature_detail": "вещь в кадре, связанная с тайной",
   "psych_concept": "механизм по-русски, 1-3 слова", "research_query": "2-5 слов"}}"""
 
 _BEATS_PROMPT = """{bible}
@@ -642,23 +662,32 @@ _BEATS_PROMPT = """{bible}
 ИСТОРИЯ ЭПИЗОДА:
 {story}
 
+ОТКРЫТИЯ (в этом порядке):
+{reveals}
+
 Клиент: {client_name}, {age}, {occupation}. Вещь в кадре: {signature_detail}.
 
 Напиши сцену {setting}: {words_min}-{words_max} слов во всех репликах вместе, {lines_min}-{lines_max} реплик.
 
+РИТМ. Зритель уходит, как только ему нечего ждать. Каждые 20-25 слов (8-10 секунд) звучит новое
+открытие — факт, который меняет понимание истории или поднимает ставки. Тайна раскрывается по частям:
+первая реплика задаёт вопрос, а не отвечает на него.
+
 ТАКТЫ (порядок обязателен, формулировки — свои):
-1. Клиент: признание в лоб — что он делает или скрывает. Понятно без контекста, до 20 слов.
-2. {hero_name}: имя клиента и короткий вопрос о близком человеке — до 6 слов.
-3. Клиент: как он поддерживает ложь — конкретная привычка или вещь.
-4. Клиент: «а сегодня…» — что случилось сегодня, ставки здесь и сейчас.
-5. {hero_name}: короткий вопрос о том, что знает или думает близкий.
-6. Клиент: ответ, от которого ставки становятся выше.
+1. Клиент: странный конкретный поступок без объяснения зачем — до 15 слов. Зритель должен спросить
+   «почему?». Что скрыто и почему — пока не говорить.
+2. {hero_name}: имя клиента и короткий вопрос — до 6 слов.
+3. Клиент — открытие 1: что на самом деле стоит за этим поступком.
+4. Клиент — открытие 2: «а сегодня…» — что случилось сегодня, правда вот-вот вскроется.
+5. {hero_name}: короткий вопрос о близком человеке.
+6. Клиент — открытие 3: ставки выше — кто ещё пострадает или что клиент потеряет.
 7. {hero_name}: прямой вопрос «почему» о главном поступке — до 6 слов.
-8. Клиент: настоящая причина — коротко, простыми словами, голос срывается.
+8. Клиент — открытие 4: настоящая причина — коротко, простыми словами, голос срывается.
 9. {hero_name}: вопрос, который смотрит с другой стороны — о другом человеке или о времени.
-10. Клиент: ответ, в котором всплывает факт, переворачивающий историю (одна-две реплики).
+10. Клиент — поворот: факт, после которого первая реплика звучит иначе. Понятен с первого
+    прослушивания, без загадок и недомолвок.
 11. {hero_name}: одна тёплая фраза, после которой всё видно иначе — до 15 слов. Не мораль и не совет.
-12. Клиент: поступок или решение — до 6 слов.
+12. Клиент: поступок или решение — до 6 слов; зрителю ясно, что именно он сделает.
 
 РЕЧЬ:
 - Короткие фразы, как говорят вслух. Реплика клиента — до 25 слов, у {hero_name} — до 15.
@@ -675,19 +704,26 @@ _BEATS_PROMPT = """{bible}
 ..."""
 
 _CRITIC_CHECKS = {
-    "clear_start": "Первая реплика понятна без контекста и цепляет — хочется узнать, что дальше",
+    "clear_start": "Первая реплика — странный конкретный поступок: понятна без контекста, хочется спросить "
+                   "«почему?», а главная тайна в ней не раскрыта",
+    "reveals": "Каждые 2-3 реплики (20-25 слов, 8-10 секунд) — новое открытие: факт, который меняет понимание "
+               "или поднимает ставки. Середина не провисает на объяснениях",
     "object": "Ложь или тайна живёт в конкретной вещи или действии, которые можно показать",
     "now": "Ставки — сегодня: что-то случилось прямо сейчас",
     "hero_short": "Героиня говорит коротко, задаёт простые вопросы о людях, не читает лекций и не ставит диагнозов",
-    "turn": "Поворот всплывает из ответа на вопрос героини и меняет смысл первой реплики",
-    "ending_action": "Финал — поступок или решение клиента, а не вывод и не мораль",
+    "turn": "Поворот всплывает из ответа на вопрос героини, меняет смысл первой реплики и понятен с первого "
+            "прослушивания — без загадок и недомолвок",
+    "ending_action": "Финал — поступок или решение клиента, и зрителю ясно, что именно он сделает; не вывод и не мораль",
     "live_speech": "Речь живая: короткие фразы, нет книжных оборотов, канцелярита и терминов",
     "no_repeats": "Мысли и фразы не повторяются, каждая реплика добавляет новое",
     "logic": "История логична: поступки объяснимы, нет натяжек и совпадений",
 }
 
-_CRITIC_PROMPT = """Ты — строгий редактор вертикального сериала. Зрителю 25-45 лет, он смотрит в ленте вполуха
-и пролистывает на третьей секунде скуки. Оцени сценарий по пунктам.
+_CRITIC_PROMPT = """Ты — придирчивый редактор вертикального сериала, тебе платят за найденные слабости, а не
+за похвалу. Зритель: {audience} Смотрит в ленте вполуха, с субтитрами, и пролистывает, как только ему
+нечего ждать. По статистике канала зрители досматривают начало, но уходят в середине серии.
+
+Оцени сценарий по пунктам. Пункт засчитывается, только если выполнен без оговорок.
 
 ПУНКТЫ:
 {checks}
@@ -696,31 +732,26 @@ _CRITIC_PROMPT = """Ты — строгий редактор вертикаль�
 {lines}
 
 Верни JSON: {{"checks": {{"<код пункта>": true|false, ...}},
-  "watch": <1-10: досмотрит ли зритель до конца и захочет ли следующую серию>,
+  "watch": <1-10: досмотрит ли зритель до конца и захочет ли следующую серию; 8+ — только сильный эпизод>,
+  "drop_line": <номер реплики, на которой зритель вероятнее всего уйдёт, или null>,
   "fixes": ["реплика N: что именно не так и как исправить", ...]}}
-Fixes — только по проваленным пунктам и по самым слабым местам, не больше пяти."""
+Fixes — по проваленным пунктам и по реплике drop_line, конкретно (что сказать вместо), не больше пяти."""
 
-_REWRITE_PROMPT = """Перепиши сценарий по замечаниям редактора. Сохрани историю, роли, такты и пометки
-в квадратных скобках; меняй только то, на что указали. Объём {words_min}-{words_max} слов.
+# Правки вносит сам критик: сценарист, переписывая по пересказу замечаний, чинил одно и ломал другое
+# (оценки 6→5→6→6 на прогоне 2026-10-23), а у критика замены уже готовые
+_CRITIC_EDIT = """
 
-ИСТОРИЯ:
-{story}
+Затем сам внеси свои правки в текст и верни исправленный сценарий в поле "script". Меняй только то, что
+в fixes; остальные реплики, роли, имена и пометки в квадратных скобках оставь как есть. Ритм: каждые
+20-25 слов — новое открытие, тайна раскрывается по частям. Объём {words_min}-{words_max} слов, {lines_min}-{lines_max} реплик:
+если длиннее — сократи объяснения, не открытия. Если все пункты выполнены и watch от 8 — "script": null.
+Формат поля: "НАЗВАНИЕ: <название>\\nСЦЕНАРИЙ:\\n<РОЛЬ>: [как сказать] <реплика>\\n...\""""
 
-СЦЕНАРИЙ:
-{lines}
+DEFAULT_AUDIENCE = "взрослые 30+: у них есть пары, дети, стареющие родители, деньги в семье и старые обиды."
 
-ЗАМЕЧАНИЯ:
-{fixes}
-
-ФОРМАТ ОТВЕТА (строго):
-НАЗВАНИЕ: {title}
-СЦЕНАРИЙ:
-<РОЛЬ>: [как сказать] <реплика>
-..."""
-
-_LAB_NGRAMS = _ngrams(_PITCHES_PROMPT + _STORY_PROMPT + _BEATS_PROMPT + _REWRITE_PROMPT, 4)
-CRITIC_PASS = 7       # «досмотрит» от 7 из 10 и все пункты — сценарий принят без переписки
-CRITIC_ROUNDS = 2     # переписок по замечаниям
+_LAB_NGRAMS = _ngrams(_PITCHES_PROMPT + _STORY_PROMPT + _BEATS_PROMPT + _CRITIC_EDIT, 4)
+CRITIC_PASS = 8       # «досмотрит» от 8 из 10 и все пункты — сценарий принят без правок
+CRITIC_ROUNDS = 3     # кругов правок критика
 
 
 def _pitch_conn(db_path: str) -> sqlite3.Connection:
@@ -818,7 +849,8 @@ def develop_story(series: dict, pitch: dict) -> dict:
                   "psych_concept", "research_query")})
     case["title"] = case["title"] or pitch["title"]
     case["signature_detail"] = case["signature_detail"] or pitch["object"]
-    return {"case": case, "story": data["story"].strip()}
+    reveals = [str(r).strip() for r in data.get("reveals") or [] if str(r).strip()]
+    return {"case": case, "story": data["story"].strip(), "reveals": reveals}
 
 
 def _lines_numbered(lines: list[dict]) -> str:
@@ -826,27 +858,42 @@ def _lines_numbered(lines: list[dict]) -> str:
                      for i, l in enumerate(lines, 1))
 
 
-def critique_episode(episode: dict) -> dict:
-    """Оценка по чек-листу (другой моделью, не сценаристом). Сбой критика — None в score."""
+def critique_episode(episode: dict, series: dict | None = None, edit: bool = False) -> dict:
+    """
+    Оценка по чек-листу моделью другого семейства, чем сценарист (tier="critic": GPT-6 Astra через KIE →
+    Claude Fable 5 → бесплатные). Сбой критика — None в score. drop_line — реплика, где зритель уйдёт.
+    edit=True — тем же вызовом критик возвращает сценарий со своими правками ("script", иначе None).
+    """
+    series = series or {}
     checks_txt = "\n".join(f"- {k}: {v}" for k, v in _CRITIC_CHECKS.items())
+    prompt = _CRITIC_PROMPT.format(audience=series.get("audience") or DEFAULT_AUDIENCE, checks=checks_txt,
+                                   lines=_lines_numbered(episode["lines"]))
+    if edit:
+        prompt += _CRITIC_EDIT.format(words_min=series.get("words_min", 100), words_max=series.get("words_max", 125),
+                                      lines_min=series.get("lines_min", 10), lines_max=series.get("lines_max", 12))
     try:
-        data = _json(_llm([{"role": "user", "content": _CRITIC_PROMPT.format(
-            checks=checks_txt, lines=_lines_numbered(episode["lines"]))}],
-            tier="quality", json_mode=True, max_tokens=1200, caller="anthology_critic"))
+        data = _json(_llm([{"role": "user", "content": prompt}], tier="critic", json_mode=True,
+                          max_tokens=3500 if edit else 1500, caller="anthology_critic"))
     except Exception as exc:
         logger.warning("Anthology: критик не ответил (%s)", str(exc)[:120])
-        return {"score": None, "failed": [], "fixes": []}
+        return {"score": None, "failed": [], "fixes": [], "drop_line": None, "script": None}
     checks = data.get("checks") or {}
     failed = [k for k in _CRITIC_CHECKS if checks.get(k) is False]
     try:
         score = max(1, min(int(data.get("watch")), 10))
     except (TypeError, ValueError):
         score = None
-    return {"score": score, "failed": failed, "fixes": [str(f) for f in data.get("fixes") or []][:5]}
+    drop = data.get("drop_line")
+    drop = drop if isinstance(drop, int) and not isinstance(drop, bool) and 1 <= drop <= len(episode["lines"]) else None
+    script = data.get("script") if edit else None
+    return {"score": score, "failed": failed, "fixes": [str(f) for f in data.get("fixes") or []][:5],
+            "drop_line": drop, "script": script if isinstance(script, str) and script.strip() else None}
 
 
 def _lab_problems(ep: dict, series: dict) -> list[str]:
-    problems = validate_episode(ep, series)
+    """Брак в лаборатории. Длина — не брак: Argon стабильно пишет на 10-20 слов длиннее рамки, и оплаченный
+    сценарий выбрасывался (2026-10-23); длину сокращает критик своей правкой."""
+    problems = [p for p in validate_episode(ep, series) if not p.startswith("длина ")]
     for line in ep["lines"]:
         if _ngrams(line["text"], 4) & (_BRIEF_NGRAMS | _LAB_NGRAMS):
             problems.append(f"реплика «{line['text']}» скопирована из инструкции")
@@ -856,14 +903,15 @@ def _lab_problems(ep: dict, series: dict) -> list[str]:
 
 def write_from_pitch(series: dict, pitch: dict, episode_no: int = 1) -> dict:
     """
-    Завязка → история → диалог по тактам → критик → до CRITIC_ROUNDS переписок.
+    Завязка → история → диалог по тактам → критик оценивает и сам правит текст → до CRITIC_ROUNDS кругов.
     Возвращает лучший вариант (по оценке критика среди прошедших проверки) с историей и замечаниями.
     """
     dev = develop_story(series, pitch)
     case, story = dev["case"], dev["story"]
+    reveals = "\n".join(f"{i}. {r}" for i, r in enumerate(dev["reveals"], 1)) or "— разложи историю сам"
     client_role = case["client_name"].upper()
     hero = series["heroine"]["role"]
-    fields = dict(bible=bible_text(series), story=story, client_name=case["client_name"], age=case["age"],
+    fields = dict(bible=bible_text(series), story=story, reveals=reveals, client_name=case["client_name"], age=case["age"],
                   occupation=case["occupation"], signature_detail=case["signature_detail"],
                   words_min=series["words_min"], words_max=series["words_max"], client_role=client_role,
                   lines_min=series.get("lines_min", 10), lines_max=series.get("lines_max", 18),
@@ -891,27 +939,24 @@ def write_from_pitch(series: dict, pitch: dict, episode_no: int = 1) -> dict:
 
     best, rounds = None, []
     for rnd in range(CRITIC_ROUNDS + 1):
-        review = critique_episode(ep)
-        rounds.append({"score": review["score"], "failed": review["failed"], "fixes": review["fixes"]})
+        review = critique_episode(ep, series, edit=rnd < CRITIC_ROUNDS)
+        rounds.append({"score": review["score"], "failed": review["failed"], "fixes": review["fixes"],
+                       "drop_line": review["drop_line"], "words": len(spoken_text(ep).split())})
         if best is None or (review["score"] or 0) > (best[1]["score"] or 0):
             best = (ep, review)
         passed = review["score"] is None or (review["score"] >= CRITIC_PASS and not review["failed"])
-        if passed or rnd == CRITIC_ROUNDS or not review["fixes"]:
+        if passed or not review.get("script"):
             break
-        raw = _llm([system, {"role": "user", "content": _REWRITE_PROMPT.format(
-            story=story, lines=_lines_numbered(ep["lines"]), fixes="\n".join(f"- {f}" for f in review["fixes"]),
-            title=ep["title"], words_min=series["words_min"], words_max=series["words_max"])}],
-            tier="premium", json_mode=False, max_tokens=3000, caller="anthology_episode")
-        candidate = parse(raw, ep["title"])
+        candidate = parse(review["script"], ep["title"])
         bad = _lab_problems(candidate, series)
-        if bad:
-            logger.warning("Anthology lab: переписка не прошла проверку (%s) — оставляю прошлую", "; ".join(bad))
+        if bad:  # правка критика сломала сценарий (роли, повтор) — оставляем лучшую версию
+            logger.warning("Anthology lab: правка критика не прошла проверку (%s)", "; ".join(bad))
             break
         ep = candidate
     ep, review = best
-    return {**ep, "story": story, "pitch": pitch,
+    return {**ep, "story": story, "reveals": dev["reveals"], "pitch": pitch,
             "critic": {"score": review["score"], "failed": review["failed"], "fixes": review["fixes"],
-                       "rounds": rounds}}
+                       "drop_line": review["drop_line"], "rounds": rounds}}
 
 
 # ── Раскадровка: монтаж по говорящему ────────────────────────────────────────
@@ -923,7 +968,8 @@ def _line_no(value, n: int) -> int | None:
 def assign_shots(lines: list[dict], marks: dict, hero_role: str = "ВЕРА") -> list[dict]:
     """
     Слот кадра на каждую реплику: на экране тот, кто говорит. marks — номера реплик от раскадровщика:
-    turn_line (клиент произносит причину), detail_line (деталь), story_line (предмет из истории).
+    turn_line (клиент произносит причину), detail_line (деталь), story_line (предмет из истории),
+    memory_lines (реплики клиента под сцены memory_1..3; None — сцены нет).
     → [{"slot", "clip"}]; clip=True — где использовать анимацию слота (один раз на слот).
     """
     n = len(lines)
@@ -932,6 +978,17 @@ def assign_shots(lines: list[dict], marks: dict, hero_role: str = "ВЕРА") ->
     key_question = turn - 1 if turn and lines[turn - 1]["role"] == hero_role else None
     wide_line = next((i for i, l in enumerate(lines)
                       if l["role"] == hero_role and i not in (0, detail, key_question)), None)
+    # Сцены из жизни — только на рассказе клиента: первая, последняя реплика и поворот остаются лицом
+    # (там же липсинк), деталь — своим кадром
+    spoken = [i for i, l in enumerate(lines) if l["role"] != "РАССКАЗЧИК"]
+    raw = marks.get("memory_lines")
+    memory: dict[int, str] = {}
+    for slot, i in zip(MEMORY_SLOTS, raw if isinstance(raw, list) else []):
+        i = _line_no(i, n)
+        if (i is None or i in memory or i in (0, detail) or i == spoken[-1]
+                or (turn is not None and i >= turn) or lines[i]["role"] in (hero_role, "РАССКАЗЧИК")):
+            continue
+        memory[i] = slot
 
     out, vera_n, client_n = [], 0, 0
     for i, line in enumerate(lines):
@@ -950,6 +1007,8 @@ def assign_shots(lines: list[dict], marks: dict, hero_role: str = "ВЕРА") ->
             else:
                 slot = ("vera_listen", "vera_ask")[vera_n % 2]
                 vera_n += 1
+        elif i in memory:
+            slot = memory[i]
         elif turn is not None and i >= turn:
             slot = "client_turn"
         elif i == story and not narrator:
@@ -975,16 +1034,24 @@ def build_plan(data: dict, episode: dict, key: int, simple: int, hero_role: str 
     if sum(1 for slot, _ in SLOTS if (specs.get(slot) or {}).get("prompt_en")) < 5:
         raise ValueError(f"Anthology: раскадровка неполная: {sorted(specs)}")
 
-    assignment = assign_shots(episode["lines"], data, hero_role)
+    # Сцена без описания не ставится: её реплика остаётся лицом
+    mem = data.get("memory_lines") if isinstance(data.get("memory_lines"), list) else []
+    mem = [i if (specs.get(slot) or {}).get("prompt_en") else None for slot, i in zip(MEMORY_SLOTS, mem)]
+    assignment = assign_shots(episode["lines"], {**data, "memory_lines": mem}, hero_role)
     used = list(dict.fromkeys(a["slot"] for a in assignment))
-    animate_key, animate_simple = set(ANIMATE_ORDER[:key]), set(ANIMATE_ORDER[key:key + simple])
+    order = [s for s in ANIMATE_ORDER if s in used]   # бюджет анимации — на кадры, которые есть в эпизоде
+    animate_key, animate_simple = set(order[:key]), set(order[key:key + simple])
     shots = []
     for slot, chars in SLOTS:
         if slot not in used:
             continue
         spec = specs.get(slot) or {}
+        if slot in MEMORY_SLOTS:
+            chars = ["CLIENT"] if spec.get("with_client") else []
         shot = {"slot": slot, "characters": chars, "prompt_en": spec.get("prompt_en") or _SLOT_DEFAULTS[slot],
                 "animate": slot in animate_key | animate_simple}
+        if spec.get("setting_en"):
+            shot["setting_en"] = spec["setting_en"]
         if shot["animate"]:
             shot["priority"] = "key" if slot in animate_key else "simple"
             shot["motion_en"] = spec.get("motion_en") or "Subtle natural movement: blinking, breathing, slow push-in."
@@ -996,6 +1063,7 @@ def build_plan(data: dict, episode: dict, key: int, simple: int, hero_role: str 
     return {"client_visual_en": data.get("client_visual_en")
             or f"a {case['age']}-year-old Russian {case['gender']} {case['occupation']}",
             "shots": shots, "assignment": assignment,
+            "memory_lines": [i for i, a in enumerate(assignment) if a["slot"] in MEMORY_SLOTS],
             **{k: _line_no(data.get(k), len(episode["lines"])) for k in ("turn_line", "detail_line", "story_line")}}
 
 
@@ -1014,7 +1082,7 @@ def plan_shots(series: dict, episode: dict) -> dict:
         vera_visual=series["heroine"]["visual_en"], client_desc=client_desc, location=series["location_en"],
         lines=lines_txt, detail=case["signature_detail"], story_target=story_target,
         story_line_hint=story_line_hint)}],
-        tier="quality", json_mode=True, max_tokens=3500, caller="anthology_shots")
+        tier="quality", json_mode=True, max_tokens=5000, caller="anthology_shots")
     return build_plan(_json(raw), episode, series["animated_key"], series["animated_simple"],
                       series["heroine"]["role"])
 

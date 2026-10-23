@@ -37,12 +37,14 @@ def test_pitches_votes_and_taste(tmp_path, series):
     assert [p["title"] for p in aa.list_pitches(series["id"], db, ids=[ids[0]])] == ["Бублик"]
 
 
-def test_write_from_pitch_rewrites_by_critic(monkeypatch, series):
+def test_write_from_pitch_critic_edits_text_itself(monkeypatch, series):
     weak = [dict(l) for l in BUBLIK["lines"]]
     weak[-1] = {**weak[-1], "text": "Наверное, мне стоит подумать."}
-    calls, critic = [], iter([
-        {"checks": {"ending_action": False}, "watch": 5, "fixes": ["реплика 13: финал — вывод, нужен поступок"]},
-        {"checks": {k: True for k in aa._CRITIC_CHECKS}, "watch": 8, "fixes": []},
+    calls, prompts = [], []
+    critic = iter([
+        {"checks": {"ending_action": False}, "watch": 5, "fixes": ["реплика 13: финал — вывод, нужен поступок"],
+         "script": _screenplay(BUBLIK["lines"])},
+        {"checks": {k: True for k in aa._CRITIC_CHECKS}, "watch": 8, "fixes": [], "script": None},
     ])
 
     def fake_llm(messages, tier, json_mode, max_tokens, caller):
@@ -51,17 +53,35 @@ def test_write_from_pitch_rewrites_by_critic(monkeypatch, series):
             return json.dumps({"story": "Артём два года шлёт маме фото собаки...", **BUBLIK["case"]},
                               ensure_ascii=False)
         if caller == "anthology_critic":
+            prompts.append(messages[-1]["content"])
             return json.dumps(next(critic), ensure_ascii=False)
-        prompt = messages[-1]["content"]
-        return _screenplay(BUBLIK["lines"] if "ЗАМЕЧАНИЯ" in prompt else weak)
+        return _screenplay(weak)
 
     monkeypatch.setattr(aa, "_llm", fake_llm)
     ep = aa.write_from_pitch(series, PITCH)
-    assert calls == ["anthology_story", "anthology_episode", "anthology_critic", "anthology_episode",
-                     "anthology_critic"]
-    assert ep["lines"][-1]["text"] == "Позовите её. Пожалуйста."
+    assert calls == ["anthology_story", "anthology_episode", "anthology_critic", "anthology_critic"]  # сценарист не переписывает
+    assert '"script"' in prompts[0]
+    assert ep["lines"][-1]["text"] == "Позовите её. Пожалуйста."                  # правка критика в тексте
     assert ep["critic"]["score"] == 8 and [r["score"] for r in ep["critic"]["rounds"]] == [5, 8]
     assert ep["story"].startswith("Артём") and ep["case"]["signature_detail"]
+
+
+def test_long_draft_is_not_rejected_and_broken_edit_keeps_best(monkeypatch, series):
+    long_lines = [{**l, "text": l["text"] + " " + " ".join(f"доп{i}x{k}" for k in range(6))}
+                  for i, l in enumerate(BUBLIK["lines"])]   # ~190 слов
+    critic = iter([{"checks": {"reveals": False}, "watch": 6, "fixes": ["сократить"], "script": "не сценарий"}])
+
+    def fake_llm(messages, tier, json_mode, max_tokens, caller):
+        if caller == "anthology_story":
+            return json.dumps({"story": "история", **BUBLIK["case"]}, ensure_ascii=False)
+        if caller == "anthology_critic":
+            return json.dumps(next(critic), ensure_ascii=False)
+        return _screenplay(long_lines)
+
+    monkeypatch.setattr(aa, "_llm", fake_llm)
+    ep = aa.write_from_pitch(series, PITCH)
+    assert ep["critic"]["score"] == 6 and ep["critic"]["rounds"][0]["words"] > series["words_max"] + 10
+    assert ep["lines"][0]["text"].endswith("доп0x5")    # испорченная правка не заменила сценарий
 
 
 def test_write_from_pitch_keeps_best_when_critic_down(monkeypatch, series):
@@ -96,3 +116,48 @@ def test_api_pitches_vote_and_jobs(tmp_path):
     assert out["vote"] == 200 and out["bad_vote"] == 400 and out["list"] == [1]
     assert out["pitches_cmd"] == ["--series", "kabinet7", "--pitches", "--n", "12"]
     assert out["lab_cmd"][-2:] == ["--from-pitches", "1"] and "--same" in out["lab_cmd"]
+
+
+def test_critic_gets_audience_reveals_and_drop_line(monkeypatch, series):
+    seen = {}
+
+    def fake_llm(messages, tier, json_mode, max_tokens, caller):
+        seen.update(tier=tier, prompt=messages[-1]["content"])
+        return json.dumps({"checks": {"reveals": False, "turn": True}, "watch": 6, "drop_line": 5,
+                           "fixes": ["реплика 5: объяснение вместо открытия"]}, ensure_ascii=False)
+
+    monkeypatch.setattr(aa, "_llm", fake_llm)
+    review = aa.critique_episode({"lines": BUBLIK["lines"]}, {**series, "audience": "взрослые 30+."})
+    assert seen["tier"] == "critic" and "Зритель: взрослые 30+." in seen["prompt"]
+    assert "- reveals:" in seen["prompt"]
+    assert review == {"score": 6, "failed": ["reveals"], "fixes": ["реплика 5: объяснение вместо открытия"],
+                      "drop_line": 5, "script": None}
+    monkeypatch.setattr(aa, "_llm", lambda *a, **k: '{"watch": 7, "drop_line": 99}')
+    assert aa.critique_episode({"lines": BUBLIK["lines"]})["drop_line"] is None   # номер вне сценария
+
+
+def test_story_reveals_reach_beats_prompt(monkeypatch, series):
+    prompts = {}
+
+    def fake_llm(messages, tier, json_mode, max_tokens, caller):
+        prompts.setdefault(caller, messages[-1]["content"])
+        if caller == "anthology_story":
+            return json.dumps({"story": "история", "reveals": ["носит пустой кофр", "скрипка продана"],
+                               **BUBLIK["case"]}, ensure_ascii=False)
+        if caller == "anthology_critic":
+            return json.dumps({"checks": {k: True for k in aa._CRITIC_CHECKS}, "watch": 9, "fixes": []})
+        return _screenplay(BUBLIK["lines"])
+
+    monkeypatch.setattr(aa, "_llm", fake_llm)
+    ep = aa.write_from_pitch(series, PITCH)
+    assert "1. носит пустой кофр\n2. скрипка продана" in prompts["anthology_episode"]
+    assert "ЗРИТЕЛЬ: " in prompts["anthology_episode"] and ep["reveals"] == ["носит пустой кофр", "скрипка продана"]
+
+
+def test_critic_tier_starts_with_kie_critics(monkeypatch):
+    from utils import llm_client
+    monkeypatch.setenv("SERIES_CRITIC_MODEL", "codex:gpt-x")
+    monkeypatch.delenv("SERIES_CRITIC_FALLBACK", raising=False)
+    labels = [label for _gate, label, _fn in llm_client._chain("critic", False)]
+    assert labels[:2] == ["kie:codex:gpt-x", "kie:claude:claude-fable-5"]
+    assert not any(l.startswith("kie:gemini:gemini-4-argon") for l in labels)   # сценарист себя не судит

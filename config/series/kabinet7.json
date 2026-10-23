@@ -57,9 +57,10 @@
     "Wibes",
     "VK Клипы"
   ],
-  "words_min": 115,
-  "words_max": 140,
-  "lines_min": 8,
+  "audience": "взрослые 30+: у них есть пары, дети, стареющие родители, деньги в семье и старые обиды.",
+  "words_min": 100,
+  "words_max": 125,
+  "lines_min": 10,
   "lines_max": 12,
   "animated_key": 0,
   "animated_simple": 3,

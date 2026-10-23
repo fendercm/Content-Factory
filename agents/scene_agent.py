@@ -52,7 +52,8 @@ def _shot_prompt(series: dict, plan: dict, shot: dict) -> str:
         who.append(f"{c} (reference image {i}): {desc}")
     cast = ("Characters — keep each face, hairstyle and clothing exactly as in its reference image: "
             + "; ".join(who) + ". ") if who else ""
-    return (f"{series['style_en']} Setting: {series['location_en']}. {cast}"
+    # Сцены из жизни клиента — своё место действия, не кабинет
+    return (f"{series['style_en']} Setting: {shot.get('setting_en') or series['location_en']}. {cast}"
             f"Shot: {shot['prompt_en']}")
 
 

@@ -14,6 +14,8 @@ LLM-клиент: единая цепочка провайдеров с авто
 Порядок цепочки:
   tier="premium": KIE writer (Gemini 4 Argon) → KIE fallback (GPT-6 Astra) → далее как quality
                   (сценарии сериала; модели выбраны слепым тестом 2026-10-19, см. scripts/model_bakeoff.py)
+  tier="critic":  KIE GPT-6 Astra → KIE Claude Fable 5 → далее как quality
+                  (критик сценариев сериала — другое семейство, чем сценарист)
   tier="quality": Yandex* → Gemini quality → Groq → Gemini fast → NVIDIA → OpenRouter → Gemma → Cerebras*
   tier="fast":    Yandex* → Gemini fast → Groq → NVIDIA → OpenRouter → Gemma → Cerebras*
   (* — платные, пропускаются в BUDGET_MODE=free)
@@ -70,6 +72,13 @@ def kie_writer_models() -> list[str]:
     """Сценаристы сериала через KIE: основной и резерв (формат <адаптер>:<модель>)."""
     return [_env("SERIES_WRITER_MODEL", "gemini:gemini-4-argon"),
             _env("SERIES_WRITER_FALLBACK", "codex:gpt-6-astra")]
+
+
+def kie_critic_models() -> list[str]:
+    """Критик сценариев сериала через KIE — другое семейство, чем сценарист: модели хвалят своё.
+    Astra вдвое дешевле Claude Fable 5 ($0.04 против $0.09 за оценку) при тех же замечаниях (2026-10-23)."""
+    return [_env("SERIES_CRITIC_MODEL", "codex:gpt-6-astra"),
+            _env("SERIES_CRITIC_FALLBACK", "claude:claude-fable-5")]
 
 
 _REASONING_HEADROOM = 1024  # gpt-oss тратит часть max_tokens на рассуждение
@@ -385,8 +394,9 @@ def _chain(tier: str, needs_vision: bool) -> list[tuple[str, str, object]]:
 
     groq = ("groq", "groq", compat("groq", groq_vision_model() if needs_vision else None))
     chain: list[tuple[str, str, object]] = []
-    if tier == "premium" and not needs_vision:
-        chain += [("kie_series", f"kie:{spec}", kie(spec)) for spec in kie_writer_models()]
+    if tier in ("premium", "critic") and not needs_vision:
+        specs = kie_writer_models() if tier == "premium" else kie_critic_models()
+        chain += [("kie_series", f"kie:{spec}", kie(spec)) for spec in specs]
         tier = "quality"
     if not needs_vision:
         chain.append(("yandex_llm", "yandex", None))  # обрабатывается отдельно (свои модели)
