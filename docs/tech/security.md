@@ -71,14 +71,20 @@ Groq отключён). Полный набор тестов прогнан на
 ## 4. Подпроцессы и FFmpeg
 
 - Все вызовы `subprocess` — списком аргументов, `shell=True`/`os.system` нет.
-- **Осталось** (не исправлено — agents/* правят другие сессии):
-  - `agents/assembly_agent.py:_esc` экранирует только `:`; путь с `'` ломает
-    `subtitles='…'` (`assembly_agent.py:1256,1360`, `series_assembly.py:179`). Правильно:
-    `p.replace("\\","/").replace(":","\:").replace("'","\'").replace("'","'\''")`
-    (экранирование уровня опции, затем уровня графа) + тест с путём `O'Brien`.
-  - concat-списки `file '{p}'` (`voice_agent.py:409,477,599`, `series_assembly.py:156`) не экранируют
-    `'` — нужно `p.replace("'", "'\''")`; `-safe 0` разрешает любые пути.
-  - `drawtext ... fontfile='{font_path}'` (`assembly_agent.py:1284`) — путь без экранирования.
+- **Найдено**: `assembly_agent._esc` экранировал только `:` — путь с `'` (папка `O'Brien`,
+  файл `sub's.ass`) обрывал `subtitles='…'`; concat-списки `file '{p}'` в `voice_agent` (3 места)
+  и `series_assembly` не экранировали `'`; `drawtext fontfile=` собирался вручную.
+- **Исправлено** — `utils/ffmpeg.py`:
+  - `filter_path(path)` — путь для опции фильтра внутри `'…'`. FFmpeg разбирает строку дважды:
+    граф фильтров (кавычки, `[],;`) и опции фильтра (`:`, `\`, `'`). Слеши Windows → `/`,
+    `:` → `\:`, `'` → `\'` (уровень опций), затем каждая `'` → `'\''` (уровень графа).
+    `assembly_agent._esc` делегирует сюда — им пользуются `subtitles` (`assembly_agent`,
+    `series_assembly`) и `drawtext fontfile`.
+  - `concat_line(path)` — строка concat-списка `file '…'` с `'` → `'\''`; ей пишут списки
+    `series_assembly` и `voice_agent`.
+  - Тесты `tests/test_security.py`: строковые + прогон настоящего ffmpeg (`subtitles` и concat)
+    на путях с `'`, пробелами, `[],;=` и кириллицей; пропускаются, если ffmpeg нет в `PATH`.
+- `-safe 0` у concat оставлен: списки собирает сам проект из своих файлов, внешних путей там нет.
 
 ## 5. Админ-панель (`utils/api_server.py`, `admin_panel.html`) — не менялись
 
