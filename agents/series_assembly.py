@@ -6,17 +6,22 @@ anthology_agent.assign_shots, тайминги — из dialogue_voice); сос�
 склеиваются, последний длится до конца речи + хвост. Статичные кадры — плавный наезд
 (Ken Burns); анимированный клип (5 с) идёт один раз — на реплике с clip=True: длиннее
 отрезка → обрезка, короче → лёгкое замедление (до 1.2x) и удержание последнего кадра.
+Смена крупности (max_still): статичный кадр длиннее max_still режется на равные куски, и каждый
+следующий показ кадра чередует полный кадр и наезд на лицо (PUNCH_ZOOM) — картинка меняется
+каждые 2–3 с без новых генераций.
 
 Звук: диалог (loudnorm −16 LUFS) + музыка, приглушаемая под голос (sidechain).
 Субтитры: ASS из subtitle_agent.write_dialogue_ass (стиль файла, без force_style).
 
 API:
     build_timeline(assignment, lines, speech_end, tail) → [{"index", "start", "duration", "clip"}]
-    assemble(shots, dialogue, subtitle_path, out_path, assignment, music_path?) → {"video_path", "duration", ...}
+    plan_pieces(timeline, shots, max_still?) → [{"index", "duration", "clip", "punch"}]
+    assemble(shots, dialogue, subtitle_path, out_path, assignment, music_path?, max_still?) → {"video_path", ...}
 """
 
 import json
 import logging
+import math
 import subprocess
 from pathlib import Path
 
@@ -27,6 +32,8 @@ MIN_SHOT = 1.0      # секунд — короче кадр не смотрит
 TAIL = 0.8          # хвост после последней реплики
 MAX_SLOWDOWN = 1.2  # насколько можно замедлить 5-секундный клип
 GRADE = "eq=saturation=1.05:contrast=1.03"
+PUNCH_ZOOM = 1.3    # наезд при смене крупности
+FACE_Y = 0.38       # где по высоте обычно лицо в вертикальном кадре — центр наезда
 
 
 def _ff(args: list[str], what: str, timeout: int = 600) -> None:
@@ -71,13 +78,36 @@ def build_timeline(assignment: list[dict], lines: list[dict], speech_end: float,
     return merged
 
 
-def _render_still(image: str, duration: float, out: str, zoom_in: bool, size: tuple[int, int] = (W, H)) -> None:
+def plan_pieces(timeline: list[dict], shots: list[dict], max_still: float | None = None) -> list[dict]:
+    """
+    Отрезки таймлайна → куски рендера. Клип (анимация, липсинк) — один кусок. Статичный кадр длиннее
+    max_still делится на равные куски; крупность чередуется по числу показов кадра: первый показ —
+    полный кадр, следующий — наезд (punch), и так далее, в том числе при возврате к кадру позже.
+    """
+    pieces, shown = [], {}
+    for seg in timeline:
+        if seg["clip"] and shots[seg["index"]].get("video_path"):
+            pieces.append({"index": seg["index"], "duration": seg["duration"], "clip": True, "punch": False})
+            continue
+        n = max(1, math.ceil(seg["duration"] / max_still - 1e-6)) if max_still else 1
+        for _ in range(n):
+            k = shown.get(seg["index"], 0)
+            shown[seg["index"]] = k + 1
+            pieces.append({"index": seg["index"], "duration": seg["duration"] / n, "clip": False,
+                           "punch": bool(max_still) and k % 2 == 1})
+    return pieces
+
+
+def _render_still(image: str, duration: float, out: str, zoom_in: bool, size: tuple[int, int] = (W, H),
+                  punch: bool = False) -> None:
     w, h = size
     frames = max(int(round(duration * FPS)), 1)
     step = 0.08 / frames
-    z = f"min(1+{step:.6f}*on,1.08)" if zoom_in else f"max(1.08-{step:.6f}*on,1.0)"
+    base = PUNCH_ZOOM if punch else 1.0
+    z = f"min({base}+{step:.6f}*on,{base + 0.08})" if zoom_in else f"max({base + 0.08}-{step:.6f}*on,{base})"
+    y = f"max(0,min(ih*{FACE_Y}-ih/zoom/2,ih-ih/zoom))" if punch else "ih/2-(ih/zoom/2)"
     vf = (f"scale={w * 2}:{h * 2}:force_original_aspect_ratio=increase,crop={w * 2}:{h * 2},"
-          f"zoompan=z='{z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={frames}:s={w}x{h}:fps={FPS},"
+          f"zoompan=z='{z}':x='iw/2-(iw/zoom/2)':y='{y}':d={frames}:s={w}x{h}:fps={FPS},"
           f"{GRADE},format=yuv420p")
     _ff(["-loop", "1", "-i", image, "-vf", vf, "-frames:v", str(frames), "-r", str(FPS),
          "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-an", out], "series still")
@@ -101,23 +131,25 @@ def _render_clip(video: str, duration: float, out: str, slowdown: bool = True,
 
 def assemble(shots: list[dict], dialogue: dict, subtitle_path: str | None, out_path: str, assignment: list[dict],
              music_path: str | None = None, music_volume: float = 0.14, size: tuple[int, int] = (W, H),
-             logo_path: str | None = None) -> dict:
-    """size — кадр (заказы бывают 16:9); subtitle_path=None — без субтитров; logo_path — логотип в углу."""
+             logo_path: str | None = None, max_still: float | None = None) -> dict:
+    """size — кадр (заказы бывают 16:9); subtitle_path=None — без субтитров; logo_path — логотип в углу;
+    max_still — смена крупности (None — кадр держится всю реплику, как в заказах)."""
     from agents.assembly_agent import _esc
 
     out_path = Path(out_path)
     work = out_path.parent / f"{out_path.stem}_segments"
     work.mkdir(parents=True, exist_ok=True)
 
-    timeline = build_timeline(assignment, dialogue["lines"], dialogue["duration"])
+    timeline = plan_pieces(build_timeline(assignment, dialogue["lines"], dialogue["duration"]), shots, max_still)
     seg_files = []
     for n, seg in enumerate(timeline):
         shot = shots[seg["index"]]
         seg_out = str(work / f"seg_{n:02d}.mp4")
-        if seg["clip"] and shot.get("video_path"):
+        if seg["clip"]:
             _render_clip(shot["video_path"], seg["duration"], seg_out, slowdown=not shot.get("lipsync"), size=size)
         else:
-            _render_still(shot["image_path"], seg["duration"], seg_out, zoom_in=n % 2 == 0, size=size)
+            _render_still(shot["image_path"], seg["duration"], seg_out, zoom_in=n % 2 == 0, size=size,
+                          punch=seg["punch"])
         seg_files.append(seg_out)
 
     concat_list = work / "concat.txt"

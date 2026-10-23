@@ -338,10 +338,13 @@ def write_dialogue_ass(
     intro_labels: dict[str, str] | None = None,
     label_fontsize: int = 46,
     play_res: tuple[int, int] = (1080, 1920),
+    question: str | None = None,
+    question_end: float | None = None,
 ) -> int:
     """
     lines: [{role, text, start, end}] — из dialogue_voice. Цвет — по роли (ASS BGR, «&HAABBGGRR&»).
     brand_text: плашка сериала вверху кадра на первые brand_seconds секунд.
+    question: вопрос-крючок под плашкой сериала — с начала до question_end (до поворота; None — до конца).
     labels: {роль: подпись} — имя говорящего над субтитрами, пока звучит его реплика;
     intro_labels: подпись при первом появлении роли (имя + кто это). Роль без подписи — без плашки.
     Возвращает число событий.
@@ -356,13 +359,17 @@ def write_dialogue_ass(
         "MarginL, MarginR, MarginV, Encoding\n"
         f"Style: Default,Impact,{fontsize},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,2,0,1,8,0,2,60,60,{margin_v},1\n"
         "Style: Brand,Arial,46,&H00FFFFFF,&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,6,0,3,4,0,8,60,60,150,1\n"
-        f"Style: Speaker,Arial,{label_fontsize},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,4,0,1,5,0,2,60,60,{label_margin},1\n\n"
+        f"Style: Speaker,Arial,{label_fontsize},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,4,0,1,5,0,2,60,60,{label_margin},1\n"
+        "Style: Question,Arial,80,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,1,0,3,16,0,8,70,70,250,1\n\n"
         "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
     pop = r"\fscx85\fscy85\t(0,90,\fscx112\fscy112)\t(90,170,\fscx100\fscy100)"
     events = []
     if brand_text:
         events.append(f"Dialogue: 1,{_ts(0)},{_ts(brand_seconds)},Brand,,0,0,0,,{{\\fad(200,300)}}{brand_text.upper()}")
+    if question and lines:
+        end = question_end if question_end is not None else lines[-1]["end"]
+        events.append(f"Dialogue: 3,{_ts(0)},{_ts(end)},Question,,0,0,0,,{{\\fad(150,300)}}{question}")
     introduced: set[str] = set()
     for line in lines:
         color = colors.get(line["role"], default_color)

@@ -173,7 +173,7 @@ def test_dialogue_voice_timings_and_pauses(tmp_path, monkeypatch):
     monkeypatch.setenv("GEMINI_TTS", "on")
     tone = lambda text, voice: np.ones(int(0.5 * dv.SAMPLE_RATE), dtype=np.float32) * 0.5  # noqa: E731
     with patch.object(dv, "_gemini_pcm", side_effect=tone):
-        res = dv.synthesize({**SERIES, "tts_mode": "lines"}, _episode(), tmp_path)
+        res = dv.synthesize({**SERIES, "tts_mode": "lines", "voice_tempo": 1.0}, _episode(), tmp_path)
     lines = res["lines"]
     assert res["engine"] == "gemini" and len(lines) == 10
     assert lines[1]["start"] - lines[0]["end"] == pytest.approx(dv.PAUSE_AFTER_COLD_OPEN, abs=0.01)
@@ -195,7 +195,7 @@ def test_dialogue_mode_one_request_plus_narrator(tmp_path, monkeypatch):
     words = [[{"word": "слово", "start": s, "end": e}] for s, e in bounds]
     tts = MagicMock(side_effect=[_tone(12.0), _tone(2.0)])
     with patch.object(dv, "_gemini_tts", tts), patch.object(dv, "_line_words", return_value=words):
-        res = dv.synthesize(SERIES, episode, tmp_path)
+        res = dv.synthesize({**SERIES, "voice_tempo": 1.0}, episode, tmp_path)  # паузы — без ускорения
     assert res["engine"] == "gemini-dialogue" and tts.call_count == 2   # диалог + рассказчик
     text, config = tts.call_args_list[0].args
     speakers = config["multiSpeakerVoiceConfig"]["speakerVoiceConfigs"]
@@ -434,3 +434,73 @@ def test_kie_run_task_retries_only_transient(monkeypatch):
         pass
     assert kc._transient(kc.KieError("задача m: 500 Internal Error")) and \
         not kc._transient(kc.KieError("задача m не завершилась за 1500 с"))
+
+
+def test_scale_timing_speeds_lines_and_words():
+    from agents.dialogue_voice import scale_timing
+    lines = [{"role": "ВЕРА", "text": "Да.", "start": 1.15, "end": 2.3,
+              "words": [{"word": "Да.", "start": 1.15, "end": 2.3}]},
+             {"role": "ЛЕВ", "text": "Нет.", "start": 2.3, "end": 3.45}]
+    out = scale_timing(lines, 1.15)
+    assert (out[0]["start"], out[0]["end"]) == (1.0, 2.0) and out[0]["words"][0]["end"] == 2.0
+    assert out[1]["end"] == 3.0 and "words" not in out[1] and lines[0]["start"] == 1.15  # исходник не тронут
+
+
+def test_apply_tempo_shortens_track(tmp_path):
+    import wave
+    from agents import dialogue_voice as dv
+    path = tmp_path / "d.wav"
+    dv._write_wav(np.sin(np.linspace(0, 2000, dv.SAMPLE_RATE * 2)).astype(np.float32), path)
+    dialogue = {"audio_path": str(path), "duration": 2.0, "engine": "edge",
+                "lines": [{"role": "ВЕРА", "text": "Да.", "start": 0.0, "end": 2.0}]}
+    assert dv.apply_tempo(dialogue, 1.0) is dialogue
+    fast = dv.apply_tempo(dialogue, 1.25)
+    with wave.open(fast["audio_path"]) as w:
+        assert w.getnframes() / w.getframerate() == pytest.approx(1.6, abs=0.05)
+    assert fast["duration"] == pytest.approx(1.6, abs=0.05) and fast["lines"][0]["end"] == 1.6
+
+
+def test_plan_pieces_splits_long_stills_and_alternates_framing():
+    from agents.series_assembly import plan_pieces
+    shots = [{"image_path": "a.png"}, {"image_path": "b.png", "video_path": "b.mp4"}, {"image_path": "c.png"}]
+    timeline = [{"index": 0, "duration": 7.0, "clip": False}, {"index": 1, "duration": 5.0, "clip": True},
+                {"index": 2, "duration": 2.5, "clip": False}, {"index": 0, "duration": 2.0, "clip": False}]
+    pieces = plan_pieces(timeline, shots, max_still=3.0)
+    assert [(p["index"], p["punch"]) for p in pieces] == [
+        (0, False), (0, True), (0, False),  # 7 с → три куска, крупность чередуется
+        (1, False),                          # клип не режется
+        (2, False),
+        (0, True)]                           # возврат к кадру — продолжение чередования
+    assert pieces[0]["duration"] == pytest.approx(7 / 3) and pieces[3]["clip"]
+    assert sum(p["duration"] for p in pieces) == pytest.approx(16.5)
+    # без max_still — как раньше: кусок на отрезок, без наезда
+    assert [p["punch"] for p in plan_pieces(timeline, shots)] == [False] * 4
+
+
+def test_dialogue_ass_question_until_turn(tmp_path):
+    from agents.subtitle_agent import write_dialogue_ass
+    lines = [{"role": "ЛЕВ", "text": "Скрипку я продал.", "start": 0.0, "end": 2.0},
+             {"role": "ВЕРА", "text": "Зачем?", "start": 2.3, "end": 3.0},
+             {"role": "ЛЕВ", "text": "Я не слышу левым ухом.", "start": 3.3, "end": 5.0}]
+    path = tmp_path / "s.ass"
+    write_dialogue_ass(lines, str(path), {}, question="Зачем он носит гантели в кофре?", question_end=3.3)
+    events = [l for l in path.read_text(encoding="utf-8").splitlines() if ",Question," in l]
+    assert len(events) == 1 and events[0].startswith("Dialogue: 3,0:00:00.00,0:00:03.30,Question,")
+    assert events[0].endswith("Зачем он носит гантели в кофре?")
+    write_dialogue_ass(lines, str(path), {})
+    assert ",Question," not in path.read_text(encoding="utf-8").split("[Events]")[1]
+
+
+def test_hook_question_rejects_spoiler_and_bad_format():
+    episode = {"lines": [{"role": "ЛЕВ", "text": "Скрипку я продал."},
+                         {"role": "ВЕРА", "text": "Зачем?"},
+                         {"role": "ЛЕВ", "text": "Я не слышу левым ухом."}]}
+    answers = iter(['{"question": "«Зачем он носит гантели в кофре?»"}',
+                    '{"question": "Почему он не слышит левым ухом?"}',
+                    '{"question": "Что он скрывает"}'])
+    with patch.object(aa, "_llm", side_effect=lambda *a, **k: next(answers)):
+        assert aa.hook_question(SERIES, episode, turn_line=2) == "Зачем он носит гантели в кофре?"
+        assert aa.hook_question(SERIES, episode, turn_line=2) is None   # пересказывает поворот
+        assert aa.hook_question(SERIES, episode, turn_line=2) is None   # не вопрос
+    with patch.object(aa, "_llm", side_effect=RuntimeError("нет сети")):
+        assert aa.hook_question(SERIES, episode) is None

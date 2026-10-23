@@ -1351,7 +1351,7 @@ def run_series_pipeline(
             data = json.loads(open(script_file, encoding="utf-8").read())
             case = data["case"]
             episode = {"title": data["title"], "case": case, "lines": data["lines"], "episode_no": episode_no,
-                       "client_role": case["client_name"].upper()}
+                       "client_role": case["client_name"].upper(), "question": data.get("question")}
             idea = _case_as_idea(case, series)
             _save_step(conn, run_id, "anthology_episode", "success",
                        {"title": episode["title"], "case": case, "lines": episode["lines"]})
@@ -1393,6 +1393,13 @@ def run_series_pipeline(
             # 3. Раскадровка
             plan = retry("anthology_shots", plan_shots, series, episode, max_retries=2)
 
+        # Вопрос-крючок вверху кадра — до поворота (бесплатный LLM; сбой — без плашки)
+        question = None
+        if series.get("hook_question"):
+            from agents.anthology_agent import hook_question
+            question = episode.get("question") or hook_question(series, episode, plan.get("turn_line"))
+            log_message("anthology_agent", f"Вопрос-крючок: {question or '—'}", "subtitle_agent")
+
         # 4. Озвучка — до платных кадров: бесплатный TTS упирается в дневную квоту, и если голоса нет,
         #    эпизод останавливается до трат на KIE. Затем кадры+анимация ∥ музыка
         from concurrent.futures import ThreadPoolExecutor
@@ -1431,9 +1438,11 @@ def run_series_pipeline(
         from agents import lipsync_agent, series_qa
 
         def produce(dialogue: dict) -> tuple[dict, list[dict]]:
+            turn = plan.get("turn_line")
             write_dialogue_ass(dialogue["lines"], subtitle_path, role_colors,
                                brand_text=f"{series['name']} · эпизод {episode_no}",
-                               labels=labels, intro_labels=intro_labels)
+                               labels=labels, intro_labels=intro_labels, question=question,
+                               question_end=dialogue["lines"][turn]["start"] if turn else None)
             # Говорящие лица на ключевых репликах (липсинк по готовой озвучке); сбой — статичный кадр
             shots = [dict(s) for s in scenes["shots"] if not s.get("lipsync")]
             lips = lipsync_agent.render(series, plan, shots, dialogue, out_dir)
@@ -1441,7 +1450,8 @@ def run_series_pipeline(
             if lips:
                 log_message("lipsync_agent", f"Липсинк: реплики {sorted(lips)}", "series_assembly")
             video = retry("series_assembly", assemble, shots, dialogue, subtitle_path, video_path,
-                          assignment, music["music_path"] if music else None, max_retries=2)
+                          assignment, music["music_path"] if music else None,
+                          max_still=series.get("max_still"), max_retries=2)
             log_message("series_assembly", f"Эпизод собран: {video['duration']} с", "series_qa")
             return video, shots
 

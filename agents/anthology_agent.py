@@ -17,6 +17,7 @@ API:
     propose_cases(series, topics, recent, n) → list[case]
     write_episode(series, case, facts, episode_no, feedback?) → episode
     plan_shots(series, episode) → {"client_visual_en", "shots": [...], "assignment": [{shot, slot, clip}]}
+    hook_question(series, episode, turn_line?) → вопрос для плашки вверху кадра | None
     save_episode(series, episode, run_id, post_id, db_path)   — только после реальной публикации
     queue_episode(...), next_ready(series, db_path), set_episode_status(id, status, db_path)
                                                               — очередь --prepare / --publish-next
@@ -1026,3 +1027,48 @@ def speaker_labels(series: dict, episode: dict) -> tuple[dict[str, str], dict[st
     intro = {heroine["role"]: heroine.get("intro") or heroine["name"],
              client: f"{case['client_name']}, {case['age']} · {occupation}"}
     return labels, intro
+
+
+# ── Вопрос-крючок вверху кадра ───────────────────────────────────────────────
+# Зритель держится до ответа на вопрос, который видит с первой секунды (2026-10-23: досматривали
+# начало, но уходили в середине — после первой реплики ждать было нечего).
+
+_QUESTION_PROMPT = """Вертикальный мини-сериал. Вверху экрана с первой секунды висит вопрос, ради ответа
+на который зритель досматривает серию. Ответ звучит в конце — в повороте (реплика {turn}).
+
+СЦЕНАРИЙ (номер. РОЛЬ: реплика):
+{lines}
+
+Напиши этот вопрос:
+- о главной загадке истории — почему герой так поступает или что на самом деле происходит;
+- по-разговорному, до 45 символов, заканчивается «?»;
+- без ответа и намёка на поворот, без имени психолога и слова «психолог»;
+- понятен тому, кто только что услышал первую реплику.
+
+Верни JSON: {{"question": "..."}}"""
+
+QUESTION_MAX = 60
+
+
+def hook_question(series: dict, episode: dict, turn_line: int | None = None) -> str | None:
+    """Вопрос-крючок для плашки вверху кадра; None — без плашки (сбой LLM, длинно, спойлер)."""
+    lines = episode["lines"]
+    try:
+        raw = _llm([{"role": "user", "content": _QUESTION_PROMPT.format(
+            lines=_lines_numbered(lines), turn=(turn_line + 1) if turn_line is not None else "ближе к концу")}],
+            tier="fast", json_mode=True, max_tokens=200, caller="anthology_question")
+        question = re.sub(r"\s+", " ", str(_json(raw).get("question") or "")).strip(" «»\"'")
+    except Exception as exc:
+        logger.warning("Anthology: вопрос-крючок не получен (%s) — без плашки", str(exc)[:120])
+        return None
+    if not 8 <= len(question) <= QUESTION_MAX or not question.endswith("?"):
+        logger.warning("Anthology: вопрос-крючок «%s» не подошёл — без плашки", question)
+        return None
+    def stems(text: str) -> set[str]:  # «слышит» и «слышу» — одно слово
+        return {w[:5] for w in re.findall(r"\w+", text.lower().replace("ё", "е")) if len(w) >= 4}
+
+    answer = " ".join(l["text"] for l in lines[turn_line:]) if turn_line is not None else ""
+    if answer and len(stems(question) & stems(answer)) >= 2:
+        logger.warning("Anthology: вопрос-крючок «%s» выдаёт поворот — без плашки", question)
+        return None
+    return question

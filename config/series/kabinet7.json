@@ -64,6 +64,9 @@
   "animated_key": 0,
   "animated_simple": 3,
   "lipsync_lines": "key",
+  "voice_tempo": 1.15,
+  "max_still": 3.0,
+  "hook_question": false,
   "schedule": {
     "enabled": true,
     "time": "19:00",

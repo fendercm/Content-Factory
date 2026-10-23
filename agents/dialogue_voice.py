@@ -15,9 +15,13 @@ Whisper: его слова выравниваются на текст сцена
 должен меняться между сериями). В Gemini TTS уходит только текст реплик: инструкция по стилю
 зачитывается вслух.
 
+Темп (series["voice_tempo"], по умолчанию 1.0): готовая дорожка ускоряется atempo без смены высоты,
+тайминги реплик и слов пересчитываются.
+
 API:
     synthesize(series, episode, out_dir) → {"audio_path", "lines": [{role, text, start, end}],
-                                             "engine", "duration"}
+                                             "engine", "duration", "tempo"?}
+    apply_tempo(dialogue, tempo) → dialogue с ускоренной дорожкой
 """
 
 import asyncio
@@ -395,4 +399,38 @@ def synthesize(series: dict, episode: dict, out_dir: Path) -> dict:
     audio_path = out_dir / "dialogue.wav"
     _write_wav(audio, audio_path)
     logger.info("Dialogue: %d реплик, %.1f с, движок %s", len(lines), duration, engine)
-    return {"audio_path": str(audio_path), "lines": timed, "engine": engine, "duration": round(duration, 3)}
+    dialogue = {"audio_path": str(audio_path), "lines": timed, "engine": engine, "duration": round(duration, 3)}
+    return apply_tempo(dialogue, float(series.get("voice_tempo", 1.0)))
+
+
+def scale_timing(lines: list[dict], tempo: float) -> list[dict]:
+    """Тайминги реплик и слов под дорожку, ускоренную в tempo раз."""
+    def at(t: float) -> float:
+        return round(t / tempo, 3)
+    return [{**line, "start": at(line["start"]), "end": at(line["end"]),
+             **({"words": [{**w, "start": at(w["start"]), "end": at(w["end"])} for w in line["words"]]}
+                if "words" in line else {})}
+            for line in lines]
+
+
+def apply_tempo(dialogue: dict, tempo: float) -> dict:
+    """
+    Темп речи без смены высоты голоса (atempo). Делается сразу после озвучки, поэтому субтитры, липсинк
+    и Series QA получают уже ускоренную дорожку. Gemini TTS в диалоге читает ~2 слова/с — для ленты
+    медленно: зрители уходили в середине серии (2026-10-23). tempo=1 — без изменений.
+    """
+    if abs(tempo - 1.0) < 1e-3:
+        return dialogue
+    if not 0.5 <= tempo <= 2.0:
+        raise ValueError(f"voice_tempo {tempo}: допустимо 0.5–2.0")
+    from utils.ffmpeg import run_ffmpeg
+
+    src = Path(dialogue["audio_path"])
+    dest = src.with_name(f"{src.stem}_x{tempo:g}.wav")
+    run_ffmpeg(["ffmpeg", "-y", "-v", "error", "-i", str(src), "-filter:a", f"atempo={tempo}",
+                "-ar", str(SAMPLE_RATE), "-ac", "1", "-c:a", "pcm_s16le", str(dest)], timeout=120, what="voice tempo")
+    with wave.open(str(dest), "rb") as w:
+        duration = w.getnframes() / w.getframerate()
+    logger.info("Dialogue: темп ×%g — %.1f с → %.1f с", tempo, dialogue["duration"], duration)
+    return {**dialogue, "audio_path": str(dest), "lines": scale_timing(dialogue["lines"], tempo),
+            "duration": round(duration, 3), "tempo": tempo}
