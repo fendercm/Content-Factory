@@ -562,3 +562,20 @@ def test_memory_scene_prompt_drops_office_light_keeps_series_look():
                  "No text, no captions, no watermark.", "keep each face"):
         assert keep in memory
     assert scene_style("Cinematic, warm lamp light. No text.") == "Cinematic. No text."
+
+
+def test_storyboard_dark_light_is_brightened():
+    """Раскадровщик пишет «Dimly lit», хотя просим светло: тёмный свет заменяется, цвет волос и одежды — нет."""
+    assert aa.brighten("Dimly lit kitchen at night, moody shadows.") == "brightly lit kitchen in the early evening, soft shadows."
+    assert aa.brighten("A dark hallway, he sits in the dark.") == "A bright hallway, he sits in soft daylight."
+    keep = "VERA with dark-chestnut hair in a dark-green cardigan, client in a dark coat."
+    assert aa.brighten(keep) == keep
+    assert "ЗАПРЕЩЕНЫ тёмные сцены" in aa._SHOTS_PROMPT
+    episode, data = _plan_input()
+    data["shots"]["memory_1"].update(prompt_en="Dimly lit stairwell, Alina climbs.", setting_en="a dark kitchen at night")
+    data["memory_lines"] = [2]
+    shots = {s["slot"]: s for s in aa.build_plan(data, episode, key=0, simple=3)["shots"]}
+    assert shots["memory_1"]["prompt_en"] == "brightly lit stairwell, Alina climbs."
+    assert shots["memory_1"]["setting_en"] == "a bright kitchen in the early evening"
+    from agents.scene_agent import _shot_prompt   # кадры из старой раскадровки (возобновление) — тоже
+    assert "Dimly" not in _shot_prompt(SERIES, {"client_visual_en": "x"}, {"characters": [], "prompt_en": "Dimly lit hall"})

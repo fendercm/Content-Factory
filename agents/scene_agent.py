@@ -70,12 +70,14 @@ def _shot_prompt(series: dict, plan: dict, shot: dict) -> str:
         who.append(f"{c} (reference image {i}): {desc}")
     cast = ("Characters — keep each face, hairstyle and clothing exactly as in its reference image: "
             + "; ".join(who) + ". ") if who else ""
+    from agents.anthology_agent import brighten  # и для раскадровок прошлых запусков (возобновление)
+
     # Сцены из жизни клиента — своё место действия и свет, не кабинет; тёмные кадры портили ролики
     if shot.get("setting_en"):
-        return (f"{scene_style(series['style_en'])} Setting: {shot['setting_en']}. {SCENE_LIGHT} {cast}"
-                f"Shot: {shot['prompt_en']}")
+        return (f"{scene_style(series['style_en'])} Setting: {brighten(shot['setting_en'])}. {SCENE_LIGHT} {cast}"
+                f"Shot: {brighten(shot['prompt_en'])}")
     return (f"{series['style_en']} Setting: {series['location_en']}. {cast}"
-            f"Shot: {shot['prompt_en']}")
+            f"Shot: {brighten(shot['prompt_en'])}")
 
 
 def render(series: dict, plan: dict, out_dir: Path) -> dict:

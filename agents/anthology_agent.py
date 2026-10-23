@@ -227,6 +227,8 @@ _SHOTS_PROMPT = """Ты — оператор-постановщик вертик
   "prompt_en" (что в кадре), "setting_en" (место и свет, по-английски), "with_client": true, если CLIENT
   в кадре. Никто в этих кадрах не говорит: CLIENT — со спины, в профиль или занят делом, рот закрыт;
   другие люди — со спины, издали или руки в кадре, без крупных лиц. Светло: день или тёплый вечерний свет.
+  ЗАПРЕЩЕНЫ тёмные сцены: ночь, полумрак, свечи, тени на лицах, слова dim, dimly lit, dark room, night,
+  moody, low-key, shadowy — тёмные кадры портят ролик. Пиши bright, daylight, well-lit.
 Для detail, wide, story и memory_* добавь "motion_en" — одно простое движение на 5 секунд по-английски:
 руки и предметы, дождь за окном, медленное движение камеры. Лиц крупно не показывай и рты не двигай —
 говорящие лица не оживляются, губы не совпали бы с речью.
@@ -1048,6 +1050,25 @@ def assign_shots(lines: list[dict], marks: dict, hero_role: str = "ВЕРА") ->
     return out
 
 
+# Раскадровщик пишет «Dimly lit», хотя просим светло, а тёмные кадры портили ролики. Заменяются только
+# формулировки света: «dark» само по себе не трогаем — это цвет волос и одежды (dark-chestnut hair)
+_DARK_LIGHT = [
+    (r"\bdimly[- ]lit\b", "brightly lit"), (r"\bpoorly[- ]lit\b", "well-lit"), (r"\bcandle[- ]?lit\b", "warmly lit"),
+    (r"\blow[- ]key\b", "soft high-key"), (r"\b(?:in|into) (?:the )?dark(?:ness)?\b", "in soft daylight"),
+    (r"\bdark(?:ened)? (room|kitchen|hallway|corridor|apartment|stairwell|street|bedroom|scene)\b", r"bright \1"),
+    (r"\b(?:late )?at night\b", "in the early evening"), (r"\bnight[- ]?time\b", "early evening"),
+    (r"\bmidnight\b", "early evening"), (r"\bdarkness\b", "soft light"), (r"\bdim\b", "soft"),
+    (r"\b(?:moody|gloomy|murky|shadowy)\b", "soft"), (r"\bdeep shadows?\b", "soft shadows"),
+]
+
+
+def brighten(text: str) -> str:
+    """Убирает из описания кадра тёмный свет (ночь, полумрак); прочий текст не меняется."""
+    for pattern, repl in _DARK_LIGHT:
+        text = re.sub(pattern, repl, text, flags=re.I)
+    return text
+
+
 def build_plan(data: dict, episode: dict, key: int, simple: int, hero_role: str = "ВЕРА") -> dict:
     """Ответ раскадровщика → кадры только используемых слотов + назначение кадра каждой реплике."""
     case = episode["case"]
@@ -1071,10 +1092,13 @@ def build_plan(data: dict, episode: dict, key: int, simple: int, hero_role: str 
         spec = specs.get(slot) or {}
         if slot in MEMORY_SLOTS:
             chars = ["CLIENT"] if spec.get("with_client") else []
-        shot = {"slot": slot, "characters": chars, "prompt_en": spec.get("prompt_en") or _SLOT_DEFAULTS[slot],
+        shot = {"slot": slot, "characters": chars, "prompt_en": brighten(spec.get("prompt_en") or _SLOT_DEFAULTS[slot]),
                 "animate": slot in animate_key | animate_simple}
         if spec.get("setting_en"):
-            shot["setting_en"] = spec["setting_en"]
+            shot["setting_en"] = brighten(spec["setting_en"])
+        if (shot["prompt_en"], shot.get("setting_en")) != (spec.get("prompt_en") or _SLOT_DEFAULTS[slot],
+                                                            spec.get("setting_en") or None):
+            logger.info("Anthology: кадр %s — тёмный свет заменён светлым", slot)
         if shot["animate"]:
             shot["priority"] = "key" if slot in animate_key else "simple"
             shot["motion_en"] = spec.get("motion_en") or "Subtle natural movement: blinking, breathing, slow push-in."
