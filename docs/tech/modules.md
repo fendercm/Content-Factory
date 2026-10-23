@@ -56,7 +56,7 @@
 | `agents/publisher_agent.py` | Zernio: presign → upload → один `POST /posts`; метки ИИ | `publish_video(..., ai_generated)` |
 | `agents/vk_publisher.py` | VK video.save в сообщество | `is_configured`, `publish_video` |
 | `agents/notify_agent.py` | Telegram: алерты, карточки, ролики для ручной загрузки | `send`, `send_video`, `send_manual_upload`, `alert_error`, `alert_success`, `alert_queued` |
-| `agents/analytics_agent.py` | статистика Zernio → `performance` | `run(days)`; `py agents/analytics_agent.py --days 7` |
+| `agents/analytics_agent.py` | статистика → `performance`: YouTube Data API `videos.list` для YouTube, Zernio `GET /analytics?postId=` для остальных | `run(days)`; `py agents/analytics_agent.py --days 7` |
 
 ## Инфраструктура — `utils/`
 

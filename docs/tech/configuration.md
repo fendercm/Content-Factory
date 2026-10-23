@@ -41,6 +41,8 @@
 ### Медиа и исследования (ролики по нишам)
 `PEXELS_API_KEY`, `UNSPLASH_ACCESS_KEY`, `POLLINATIONS_API_KEY`, `PIXAZO_API_KEY`/`PIXAZO_BASE_URL`,
 `FMA_API_KEY`, `YOUTUBE_API_KEY`, `TAVILY_API_KEY`, `BRAVE_API_KEY`, `SERPER_API_KEY`.
+`YOUTUBE_API_KEY` (YouTube Data API v3) нужен и статистике: `analytics_agent` берёт из него просмотры, лайки и
+комментарии роликов на YouTube. Без ключа — только Zernio, а у него статистика YouTube приходит с опозданием.
 
 ### Панель, планировщик, хранение
 | Переменная | Назначение |

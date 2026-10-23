@@ -11,9 +11,16 @@ Analytics Agent — забирает статистику постов чере�
 
 Флоу:
   1. GET /posts — список постов из Zernio
-  2. GET /posts/{id}/analytics — статистика по каждому
-  3. Upsert в таблицу performance в pipeline.db
-  4. Вернуть топ-3 по views за указанный период
+  2. YouTube: просмотры, лайки и комментарии из YouTube Data API (videos.list, YOUTUBE_API_KEY) —
+     живые публичные счётчики, 1 единица квоты на 50 роликов
+  3. Остальные (и YouTube без ключа): GET /analytics?postId={id} в Zernio. Zernio синхронизирует
+     статистику с площадкой с задержкой; пока синхронизации нет, отвечает 202 и нулями —
+     такие нули не метрики
+  4. Upsert в таблицу performance в pipeline.db (неизвестные метрики не затирают прежние)
+  5. Вернуть топ-3 по views за указанный период
+
+Удержание и время просмотра Data API не отдаёт: это YouTube Analytics API (OAuth владельца
+канала) или Zernio /analytics/youtube/daily-views.
 """
 
 import argparse
@@ -32,6 +39,7 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://zernio.com/api/v1"
+YOUTUBE_VIDEOS_URL = "https://www.googleapis.com/youtube/v3/videos"
 DB_PATH = os.getenv("DB_PATH", "pipeline.db")
 
 
@@ -63,16 +71,57 @@ def _fetch_posts(account_id: str, limit: int = 50) -> list[dict[str, Any]]:
 
 
 def _fetch_post_analytics(post_id: str) -> dict[str, Any]:
-    """Возвращает метрики одного поста."""
+    """
+    Возвращает ответ Zernio GET /analytics?postId=… для одного поста.
+
+    202 — синхронизация с площадкой ещё идёт: тело есть, но метрики в нём нулевые
+    (syncStatus="pending"); _zernio_metrics такие ответы отбрасывает.
+    """
     resp = requests.get(
-        f"{BASE_URL}/posts/{post_id}/analytics",
+        f"{BASE_URL}/analytics",
         headers=_headers(),
+        params={"postId": post_id},
         timeout=30,
     )
     if resp.status_code == 404:
+        logger.warning("Zernio: аналитики для поста %s нет (404)", post_id)
         return {}
     resp.raise_for_status()
     return resp.json()
+
+
+def _fetch_youtube_stats(video_ids: list[str]) -> dict[str, dict[str, int]]:
+    """
+    Живые публичные счётчики YouTube через Data API: {video_id: {views, likes, comments}}.
+    Без YOUTUBE_API_KEY или при ошибке — пустой dict (тогда метрики берутся из Zernio).
+    """
+    if not video_ids:
+        return {}
+    api_key = os.getenv("YOUTUBE_API_KEY", "")
+    if not api_key:
+        logger.warning("YOUTUBE_API_KEY не задан — статистика YouTube только из Zernio")
+        return {}
+    stats: dict[str, dict[str, int]] = {}
+    for i in range(0, len(video_ids), 50):
+        try:
+            resp = requests.get(
+                YOUTUBE_VIDEOS_URL,
+                headers={"X-Goog-Api-Key": api_key},
+                params={"part": "statistics", "id": ",".join(video_ids[i:i + 50])},
+                timeout=30,
+            )
+            resp.raise_for_status()
+        except requests.RequestException as exc:
+            logger.warning("YouTube Data API недоступен: %s", exc)
+            continue
+        for item in resp.json().get("items", []):
+            st = item.get("statistics", {})
+            stats[item["id"]] = {
+                "views": int(st.get("viewCount", 0) or 0),
+                "likes": int(st.get("likeCount", 0) or 0),
+                "comments": int(st.get("commentCount", 0) or 0),
+            }
+    return stats
 
 
 # ---------------------------------------------------------------------------
@@ -123,12 +172,13 @@ def _upsert_performance(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
         INSERT INTO performance
             (post_id, platform, title, views, likes, comments, published_at, fetched_at)
         VALUES
-            (:post_id, :platform, :title, :views, :likes, :comments, :published_at, :fetched_at)
+            (:post_id, :platform, :title, COALESCE(:views, 0), COALESCE(:likes, 0),
+             COALESCE(:comments, 0), :published_at, :fetched_at)
         ON CONFLICT(post_id) DO UPDATE SET
-            views        = excluded.views,
-            likes        = excluded.likes,
-            comments     = excluded.comments,
-            fetched_at   = excluded.fetched_at
+            views        = COALESCE(:views, performance.views),
+            likes        = COALESCE(:likes, performance.likes),
+            comments     = COALESCE(:comments, performance.comments),
+            fetched_at   = COALESCE(:fetched_at, performance.fetched_at)
     """, row)
     conn.commit()
 
@@ -137,9 +187,56 @@ def _upsert_performance(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
 # Основная логика
 # ---------------------------------------------------------------------------
 
-def _parse_post(post: dict[str, Any], analytics: dict[str, Any]) -> dict[str, Any]:
-    """Нормализует поля из разных форматов ответа Zernio."""
-    # ID
+def _first_platform(post: dict[str, Any]) -> dict[str, Any]:
+    platforms = post.get("platforms", [])
+    if isinstance(platforms, list) and platforms and isinstance(platforms[0], dict):
+        return platforms[0]
+    return {}
+
+
+def _platform_post_id(post: dict[str, Any]) -> str:
+    """ID ролика на площадке (для YouTube — videoId)."""
+    return _first_platform(post).get("platformPostId") or ""
+
+
+def _zernio_metrics(analytics: dict[str, Any]) -> dict[str, int] | None:
+    """
+    Метрики из ответа GET /analytics?postId=… или None, если Zernio их ещё не синхронизировал.
+
+    Пока syncStatus="pending", Zernio отдаёт analytics с нулями и lastUpdated=null —
+    это «нет данных», а не «ноль просмотров».
+    """
+    if not analytics:
+        return None
+    metrics = analytics.get("analytics") or {}
+    synced = analytics.get("syncStatus") == "synced" or bool(metrics.get("lastUpdated"))
+    if not synced:
+        # Сводка поста пустая — возможно, синхронизирована хотя бы одна площадка
+        for pa in analytics.get("platformAnalytics") or []:
+            if pa.get("syncStatus") == "synced" and pa.get("analytics"):
+                metrics, synced = pa["analytics"], True
+                break
+    if not synced:
+        return None
+    return {
+        "views": int(metrics.get("views") or 0),
+        "likes": int(metrics.get("likes") or 0),
+        "comments": int(metrics.get("comments") or 0),
+    }
+
+
+def _parse_post(
+    post: dict[str, Any],
+    analytics: dict[str, Any],
+    youtube_stats: dict[str, dict[str, int]] | None = None,
+) -> dict[str, Any]:
+    """
+    Нормализует пост Zernio в строку performance.
+
+    Источник метрик: YouTube Data API (для YouTube) → синхронизированная аналитика Zernio →
+    нет данных. При «нет данных» views/likes/comments = None: upsert не затрёт прежние цифры.
+    metrics_source ("youtube" | "zernio" | None) — только для лога, в БД не пишется.
+    """
     post_id = post.get("_id") or post.get("id", "")
 
     # Платформа (может быть список или строка)
@@ -152,21 +249,23 @@ def _parse_post(post: dict[str, Any], analytics: dict[str, Any]) -> dict[str, An
     title = post.get("title") or post.get("content", "")[:80]
     published_at = post.get("publishedAt") or post.get("createdAt", "")
 
-    # Метрики — Zernio возвращает их в analytics или прямо в посте
-    metrics = analytics.get("metrics", analytics) if analytics else {}
-    views = int(metrics.get("views", metrics.get("impressions", post.get("views", 0))) or 0)
-    likes = int(metrics.get("likes", metrics.get("reactions", post.get("likes", 0))) or 0)
-    comments = int(metrics.get("comments", post.get("comments", 0)) or 0)
+    video_id = _platform_post_id(post)
+    if platform == "youtube" and youtube_stats and video_id in youtube_stats:
+        metrics, source = youtube_stats[video_id], "youtube"
+    else:
+        metrics = _zernio_metrics(analytics)
+        source = "zernio" if metrics is not None else None
 
     return {
         "post_id": post_id,
         "platform": platform,
         "title": title,
-        "views": views,
-        "likes": likes,
-        "comments": comments,
+        "views": metrics["views"] if metrics else None,
+        "likes": metrics["likes"] if metrics else None,
+        "comments": metrics["comments"] if metrics else None,
         "published_at": published_at,
-        "fetched_at": datetime.now(timezone.utc).isoformat(),
+        "fetched_at": datetime.now(timezone.utc).isoformat() if metrics else None,
+        "metrics_source": source,
     }
 
 
@@ -198,28 +297,43 @@ def run(days: int = 7, db_path: str | None = None) -> list[dict[str, Any]]:
 
     logger.info("Найдено %d постов, запрашиваю аналитику...", len(posts))
 
-    updated = 0
+    recent = []
     for post in posts:
         published_at = post.get("publishedAt") or post.get("createdAt", "")
         # Фильтруем по дате
         if published_at and published_at < cutoff_iso:
             continue
+        if post.get("_id") or post.get("id"):
+            recent.append(post)
 
+    youtube_ids = [
+        vid for p in recent
+        if _first_platform(p).get("platform") == "youtube" and (vid := _platform_post_id(p))
+    ]
+    youtube_stats = _fetch_youtube_stats(youtube_ids)
+
+    updated = no_data = 0
+    for post in recent:
         post_id = post.get("_id") or post.get("id", "")
-        if not post_id:
-            continue
+        analytics: dict[str, Any] = {}
+        if _platform_post_id(post) not in youtube_stats:
+            try:
+                analytics = _fetch_post_analytics(post_id)
+            except Exception as exc:
+                logger.warning("Аналитика для %s недоступна: %s", post_id, exc)
 
-        try:
-            analytics = _fetch_post_analytics(post_id)
-        except Exception as exc:
-            logger.warning("Аналитика для %s недоступна: %s", post_id, exc)
-            analytics = {}
-
-        row = _parse_post(post, analytics)
+        row = _parse_post(post, analytics, youtube_stats)
         _upsert_performance(conn, row)
-        updated += 1
+        if row["metrics_source"] is None:
+            no_data += 1
+            logger.warning("Нет метрик для %s (%s): Zernio ещё не синхронизировал, прежние цифры сохранены",
+                           post_id, row["title"])
+        else:
+            updated += 1
+            logger.info("  %s [%s]: %d просмотров, %d лайков, %d комментариев",
+                        row["title"], row["metrics_source"], row["views"], row["likes"], row["comments"])
 
-    logger.info("Обновлено %d записей в performance", updated)
+    logger.info("Обновлено %d записей в performance, без данных %d", updated, no_data)
 
     # Топ-3 по просмотрам за период
     rows = conn.execute(

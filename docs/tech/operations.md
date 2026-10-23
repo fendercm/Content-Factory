@@ -20,7 +20,7 @@ FFmpeg должен быть в `PATH` (в Git Bash: `export PATH="/c/Users/<use
 | `schedule.time` каждого сериала с `enabled: true` | `main.py --format series --series <id> --publish-next` |
 | 09:00, 14:00, 20:00 | ролики по нишам (если не `SCHEDULER_MODE=series`) |
 | 21:00 | сводка за день в Telegram |
-| 08:30 | статистика Zernio (`analytics_agent`) |
+| 08:30 | статистика роликов (`analytics_agent`: YouTube Data API + Zernio) |
 | 04:00 | уборка диска (`housekeeping`) |
 
 Расписания сериалов перечитываются каждый цикл — перезапуск после правки в панели не нужен.
@@ -48,7 +48,7 @@ FFmpeg должен быть в `PATH` (в Git Bash: `export PATH="/c/Users/<use
 py -X utf8 -m pytest -q
 ```
 
-~170 тестов, ~15–25 с, без сети и платных вызовов. `tests/conftest.py` обнуляет ключи с побочными
+~185 тестов, ~15–35 с, без сети и платных вызовов. `tests/conftest.py` обнуляет ключи с побочными
 эффектами (Telegram, Zernio, VK). Обвязки, которые делают `import main`/`import utils.api_server`,
 запускаются отдельным процессом и обнуляют ключи сами: в Windows пустая переменная окружения не
 передаётся дочернему процессу, а импорт `api_server` в процесс pytest ломает его вывод.
@@ -89,3 +89,18 @@ py -X utf8 -m pytest -q
    `ZERNIO_ACCOUNT_ID_<СЕРИАЛ>` и аккаунты площадок).
 3. Перенести `pipeline.db`, `config/series/`, `assets/series/` (референсы героинь), `assets/music/`.
 4. `py -X utf8 -m pytest -q`, затем `start.bat`.
+
+## Статистика роликов
+
+`agents/analytics_agent.py` (по расписанию в 08:30, вручную `py -X utf8 agents/analytics_agent.py --days 7`):
+
+- Посты берутся из Zernio `GET /posts?accountId=ZERNIO_ACCOUNT_ID`.
+- YouTube: просмотры, лайки и комментарии — YouTube Data API `videos.list?part=statistics` по
+  `platformPostId` (ключ `YOUTUBE_API_KEY`, 1 единица квоты на 50 роликов). Это живые публичные счётчики.
+- Остальные площадки (и YouTube без ключа) — Zernio `GET /analytics?postId=…`. Пока Zernio не
+  синхронизировал статистику с площадкой, он отвечает 202 и нулями с `syncStatus: "pending"`; такие
+  нули считаются «нет данных» и прежние цифры в `performance` не затирают. Эндпоинта
+  `/posts/{id}/analytics` у Zernio нет; раньше агент обращался к нему, получал 404 и писал нули.
+- Удержание и время просмотра Data API не отдаёт. Источники: Zernio `/analytics/youtube/daily-views` и
+  `/analytics/youtube/video-retention` (данные с задержкой ~3 дня, общая дневная квота YouTube Analytics
+  у Zernio бывает исчерпана) или YouTube Analytics API с OAuth владельца канала.

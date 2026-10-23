@@ -28,7 +28,7 @@
 | Таблица | Назначение |
 |---|---|
 | `topics_used (topic, published_at)` | дедупликация тем за 30 дней; пишется только после реальной публикации |
-| `performance (post_id, platform, title, published_at, views, likes, comments, niche, hook, fetched_at)` | статистика Zernio (`analytics_agent`, upsert по `post_id`); панель сопоставляет с `anthology_episodes.post_id` |
+| `performance (post_id, platform, title, published_at, views, likes, comments, niche, hook, fetched_at)` | статистика (`analytics_agent`, upsert по `post_id`): YouTube — YouTube Data API, остальное — Zernio; метрики, которых нет, прежние цифры не затирают; панель сопоставляет с `anthology_episodes.post_id` |
 | `series`, `series_episodes` | многосерийность внутри ниши (`series_agent`) |
 | `lore_worlds`, `lore_characters`, `lore_episodes` | библия мира story-формата |
 
