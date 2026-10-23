@@ -170,7 +170,8 @@ def test_api_passes_max_usd_and_skips_run_key(tmp_path):
     lab_dir = tmp_path / "lab"
     lab_dir.mkdir()
     (lab_dir / "20261023_1200.json").write_text(json.dumps({
-        "A": {"case": {"title": "Кейс"}, "model": "m", "episode": {"title": "Серия", "lines": []}},
+        "A": {"case": {"title": "Кейс"}, "model": "m",
+              "episode": {"title": "Серия", "lines": [{"role": "ВЕРА", "text": "Да."}]}},
         "_run": {"run_id": "lab_20261023_1200", "cost_usd": 0.31, "max_usd": 0.5, "limit_hit": False}},
         ensure_ascii=False), encoding="utf-8")
     out = _api_check("""
@@ -193,7 +194,8 @@ def test_api_passes_max_usd_and_skips_run_key(tmp_path):
     assert "--max-usd" not in out["plain"]
     assert out["pitches"] == ["--max-usd", "1"] and out["from"] == ["--max-usd", "0"]
     assert len(out["bad"]) == 4 and all("max_usd" in e for e in out["bad"])
-    assert out["list"] == [{"stamp": "20261023_1200", "count": 1, "titles": ["Серия"], "cost_usd": 0.31}]
+    assert out["list"] == [{"stamp": "20261023_1200", "count": 1, "titles": ["Серия"], "scores": [None],
+                            "cost_usd": 0.31}]
     assert [i["label"] for i in out["get"]["items"]] == ["A"] and out["get"]["run"]["cost_usd"] == 0.31
 
 
