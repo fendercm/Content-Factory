@@ -624,3 +624,19 @@ def test_lipsync_first_line_audio_starts_where_its_shot_starts(tmp_path):
          patch.dict("sys.modules", {"utils.kie_client": kie}), patch("utils.kie_client", kie, create=True):
         clips = ls.render(SERIES, plan, shots, {"audio_path": "d.wav", "lines": lines}, tmp_path)
     assert sorted(clips) == [0, 2] and sorted(cuts) == [(0.0, 2.0), (3.3, 5.0)]
+
+
+def test_punch_keeps_face_height_out_of_subtitles(tmp_path):
+    """Наезд держит лицо на высоте FACE_Y, а не в центре: иначе субтитры закрывают рот (серия 2)."""
+    import subprocess
+    from agents.series_assembly import FACE_Y, _render_still
+    w, h = 108, 192
+    img, out = tmp_path / "face.png", tmp_path / "punch.mp4"
+    y0 = int(h * FACE_Y)                       # белая полоса «лица» на высоте FACE_Y
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"color=black:s={w}x{h}", "-vf",
+                    f"drawbox=x=0:y={y0 - 2}:w={w}:h=4:color=white:t=fill", "-frames:v", "1", str(img)], check=True)
+    _render_still(str(img), 0.2, str(out), zoom_in=True, size=(w, h), punch=True)
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(out), "-frames:v", "1", "-f", "rawvideo",
+                          "-pix_fmt", "gray", "-"], capture_output=True, check=True).stdout
+    rows = np.frombuffer(raw, np.uint8).reshape(h, w).mean(axis=1)
+    assert abs(int(rows.argmax()) - y0) <= 3, (int(rows.argmax()), y0)

@@ -129,7 +129,9 @@ def _render_still(image: str, duration: float, out: str, zoom_in: bool, size: tu
     step = 0.08 / frames
     base = PUNCH_ZOOM if punch else 1.0
     z = f"min({base}+{step:.6f}*on,{base + 0.08})" if zoom_in else f"max({base + 0.08}-{step:.6f}*on,{base})"
-    y = f"max(0,min(ih*{FACE_Y}-ih/zoom/2,ih-ih/zoom))" if punch else "ih/2-(ih/zoom/2)"
+    # Наезд вокруг лица: точка FACE_Y остаётся на той же высоте экрана. Центрирование лица опускало его
+    # в зону субтитров — подпись и реплика закрывали рот (пересборка серии 2, 2026-10-24)
+    y = f"max(0,min(ih*{FACE_Y}*(1-1/zoom),ih-ih/zoom))" if punch else "ih/2-(ih/zoom/2)"
     vf = (f"scale={w * 2}:{h * 2}:force_original_aspect_ratio=increase,crop={w * 2}:{h * 2},"
           f"zoompan=z='{z}':x='iw/2-(iw/zoom/2)':y='{y}':d={frames}:s={w}x{h}:fps={FPS},"
           f"{GRADE},format=yuv420p")
