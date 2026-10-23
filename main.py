@@ -1404,7 +1404,13 @@ def run_series_pipeline(
         #    эпизод останавливается до трат на KIE. Затем кадры+анимация ∥ музыка
         from concurrent.futures import ThreadPoolExecutor
         from agents import dialogue_voice, scene_agent
+        from utils.series_budget import check_balance
 
+        # Деньги на KIE — до озвучки и первых платных кадров: не хватает — BudgetError, алерт, траты не начаты
+        budget = check_balance(series, plan, scenes_ready=bool(scenes))
+        log_message("orchestrator", f"KIE: эпизод ≈ ${budget['need_usd']:.2f}, баланс "
+                    + (f"${budget['balance_usd']:.2f}" if budget["balance_usd"] is not None else "не узнать"),
+                    "dialogue_voice")
         dialogue = retry("dialogue_voice", dialogue_voice.synthesize, series, episode, out_dir)
         with ThreadPoolExecutor(max_workers=2, thread_name_prefix="series") as ex:
             f_scenes = None if scenes else ex.submit(retry, "scene_agent", scene_agent.render, series, plan,
