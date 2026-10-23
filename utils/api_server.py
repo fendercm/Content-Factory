@@ -793,10 +793,45 @@ def api_lab_list():
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        cases = list(data.values())
-        out.append({"stamp": path.stem, "count": len(cases),
-                    "titles": [(c.get("episode") or {}).get("title") or c["case"]["title"] for c in cases]})
+        if not isinstance(data, dict):
+            continue
+        items = [_lab_item(label, item) for label, item in data.items() if isinstance(item, dict)]
+        out.append({"stamp": path.stem, "count": len(items), "titles": [it["title"] for it in items],
+                    "scores": [(it["critic"] or {}).get("score") for it in items]})
     return jsonify(out[:30])
+
+
+def _lab_item(label: str, item: dict, model: str | None = None) -> dict:
+    """Вариант лаборатории для панели. Старые прогоны — без критика, кругов, `drop_line` и открытий:
+    недостающее отдаётся пустым, чтобы страница не разбиралась с форматами."""
+    from agents.anthology_agent import _CRITIC_CHECKS
+    case = item.get("case") if isinstance(item.get("case"), dict) else {}
+    ep = item.get("episode") if isinstance(item.get("episode"), dict) else None
+    lines = ep.get("lines") if ep and isinstance(ep.get("lines"), list) else []
+    if ep is not None and not lines:
+        ep = None
+    reveals = item.get("reveals") or (ep or {}).get("reveals") or []
+    view = {**item, "label": label, "model": model or item.get("model"), "case": case, "episode": ep,
+            "title": (ep or {}).get("title") or case.get("title") or label,
+            "words": sum(len(str(l.get("text", "")).split()) for l in lines if isinstance(l, dict)),
+            "reveals": [str(r) for r in reveals] if isinstance(reveals, list) else [], "critic": None}
+    critic = item.get("critic")
+    if not isinstance(critic, dict):
+        return view
+    rounds = [r for r in critic.get("rounds") or [] if isinstance(r, dict)]
+    # Итоговый текст — первый круг с лучшей оценкой (так выбирает write_from_pitch)
+    best = max(range(len(rounds)), key=lambda i: (rounds[i].get("score") or 0, -i)) if rounds else None
+    drop = critic.get("drop_line")
+    failed = [str(k) for k in critic.get("failed") or []]
+    view["critic"] = {
+        "score": critic.get("score"), "failed": failed,
+        "failed_text": {k: _CRITIC_CHECKS.get(k, k) for k in failed},
+        "fixes": [str(f) for f in critic.get("fixes") or []],
+        "drop_line": drop if isinstance(drop, int) and not isinstance(drop, bool) and 1 <= drop <= len(lines) else None,
+        "rounds": [{"score": r.get("score"), "failed": [str(k) for k in r.get("failed") or []],
+                    "words": r.get("words"), "best": i == best} for i, r in enumerate(rounds)],
+    }
+    return view
 
 
 @app.get("/api/lab/<stamp>")
@@ -806,11 +841,17 @@ def api_lab_get(stamp: str):
     path = LAB_DIR / f"{stamp}.json"
     if not path.is_file():
         return jsonify({"error": "not found"}), 404
-    data = json.loads(path.read_text(encoding="utf-8"))
-    key_path = LAB_DIR / f"{stamp}_key.json"
-    key = json.loads(key_path.read_text(encoding="utf-8")) if key_path.is_file() else {}
-    return jsonify({"stamp": stamp, "items": [{"label": label, **item, "model": key.get(label, item.get("model"))}
-                                              for label, item in data.items()]})
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        key_path = LAB_DIR / f"{stamp}_key.json"
+        key = json.loads(key_path.read_text(encoding="utf-8")) if key_path.is_file() else {}
+    except (OSError, ValueError):
+        return jsonify({"error": "файл прогона повреждён"}), 422
+    if not isinstance(data, dict):
+        return jsonify({"error": "файл прогона в старом формате"}), 422
+    key = key if isinstance(key, dict) else {}
+    return jsonify({"stamp": stamp, "items": [_lab_item(label, item, key.get(label))
+                                              for label, item in data.items() if isinstance(item, dict)]})
 
 
 def _scripts(series_id: str) -> list[dict]:
@@ -858,10 +899,20 @@ def api_script_save():
             if m:
                 lines.append({"role": m.group(1).strip().upper(), "text": m.group(3).strip(),
                               **({"emotion": m.group(2).strip()} if m.group(2) else {})})
+    # Из лаборатории приходят реплики эпизода как есть ({role, text, emotion}) — лишнее не сохраняем
+    lines = [{"role": str(l["role"]).strip().upper(), "text": str(l["text"]).strip(),
+              **({"emotion": str(l["emotion"]).strip()} if str(l.get("emotion") or "").strip() else {})}
+             for l in lines if isinstance(l, dict) and str(l.get("role", "")).strip() and str(l.get("text", "")).strip()
+             ] if isinstance(lines, list) else []
+    case = case if isinstance(case, dict) else {}
     required = ("client_name", "age", "gender", "occupation", "signature_detail")
     missing = [k for k in required if not str(case.get(k, "")).strip()]
     if not title or not lines or missing:
         return jsonify({"error": "нужны название, реплики и клиент: " + ", ".join(missing or ["—"])}), 400
+    try:
+        age = int(case["age"])
+    except (TypeError, ValueError):
+        return jsonify({"error": "возраст клиента — число"}), 400
     client_role = str(case["client_name"]).upper()
     hero_role = series["heroine"]["role"]
     bad = sorted({l["role"] for l in lines} - {hero_role, client_role, "РАССКАЗЧИК"})
@@ -869,8 +920,9 @@ def api_script_save():
         return jsonify({"error": f"роли {bad}: в сценарии только {hero_role}, {client_role} и РАССКАЗЧИК"}), 400
     case = {"title": title, "surface_complaint": case.get("surface_complaint", ""), "real_reason": "",
             "psych_concept": case.get("psych_concept", ""), "research_query": case.get("psych_concept", ""), **case,
-            "age": int(case["age"])}
-    slug = re.sub(r"[^a-z0-9]+", "_", data.get("slug") or "").strip("_") or datetime.now().strftime("%Y%m%d_%H%M%S")
+            "title": title, "age": age}   # у варианта лаборатории название эпизода новее названия завязки
+    slug = re.sub(r"[^a-z0-9]+", "_", str(data.get("slug") or "").lower()).strip("_") or \
+        datetime.now().strftime("%Y%m%d_%H%M%S")
     path = SCRIPTS_DIR / f"{series['id']}_{slug}.json"
     SCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"title": title, "case": case, "lines": lines}, ensure_ascii=False, indent=2),
