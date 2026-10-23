@@ -31,6 +31,7 @@ W, H, FPS = 1080, 1920, 30
 MIN_SHOT = 1.0      # секунд — короче кадр не смотрится, сливаем с соседним
 TAIL = 0.8          # хвост после последней реплики
 MAX_SLOWDOWN = 1.2  # насколько можно замедлить 5-секундный клип
+CLIP_SECONDS = 5.0  # длина анимации Kling/Wan
 GRADE = "eq=saturation=1.05:contrast=1.03"
 PUNCH_ZOOM = 1.3    # наезд при смене крупности
 FACE_Y = 0.38       # где по высоте обычно лицо в вертикальном кадре — центр наезда
@@ -78,23 +79,46 @@ def build_timeline(assignment: list[dict], lines: list[dict], speech_end: float,
     return merged
 
 
-def plan_pieces(timeline: list[dict], shots: list[dict], max_still: float | None = None) -> list[dict]:
+def plan_pieces(timeline: list[dict], shots: list[dict], max_still: float | None = None,
+                clip_seconds: dict[int, float] | None = None) -> list[dict]:
     """
     Отрезки таймлайна → куски рендера. Клип (анимация, липсинк) — один кусок. Статичный кадр длиннее
     max_still делится на равные куски; крупность чередуется по числу показов кадра: первый показ —
     полный кадр, следующий — наезд (punch), и так далее, в том числе при возврате к кадру позже.
+    Анимация короче отрезка даже с замедлением (clip_seconds[i] × MAX_SLOWDOWN, по умолчанию 5 с) — остаток
+    не стоп-кадр, а снимок этого кадра с наездом. Границы кусков — на сетке кадров по накопленному времени:
+    округление каждого куска отдельно копило до 0.15 с сдвига картинки от звука на 24 кусках (серия 2).
     """
     pieces, shown = [], {}
-    for seg in timeline:
-        if seg["clip"] and shots[seg["index"]].get("video_path"):
-            pieces.append({"index": seg["index"], "duration": seg["duration"], "clip": True, "punch": False})
-            continue
-        n = max(1, math.ceil(seg["duration"] / max_still - 1e-6)) if max_still else 1
+
+    def stills(index: int, duration: float) -> None:
+        n = max(1, math.ceil(duration / max_still - 1e-6)) if max_still else 1
         for _ in range(n):
-            k = shown.get(seg["index"], 0)
-            shown[seg["index"]] = k + 1
-            pieces.append({"index": seg["index"], "duration": seg["duration"] / n, "clip": False,
+            k = shown.get(index, 0)
+            shown[index] = k + 1
+            pieces.append({"index": index, "duration": duration / n, "clip": False,
                            "punch": bool(max_still) and k % 2 == 1})
+
+    for seg in timeline:
+        shot = shots[seg["index"]]
+        if seg["clip"] and shot.get("video_path"):
+            play = (clip_seconds or {}).get(seg["index"], CLIP_SECONDS) * MAX_SLOWDOWN
+            rest = seg["duration"] - play
+            if max_still and not shot.get("lipsync") and shot.get("image_path") and rest >= MIN_SHOT:
+                pieces.append({"index": seg["index"], "duration": play, "clip": True, "punch": False})
+                shown[seg["index"]] = max(shown.get(seg["index"], 0), 1)  # клип был полным кадром
+                stills(seg["index"], rest)
+            else:
+                pieces.append({"index": seg["index"], "duration": seg["duration"], "clip": True, "punch": False})
+            continue
+        stills(seg["index"], seg["duration"])
+
+    t, frame = 0.0, 0
+    for p in pieces:
+        t += p["duration"]
+        end = max(int(round(t * FPS)), frame + 1)
+        p["duration"] = (end - frame) / FPS
+        frame = end
     return pieces
 
 
@@ -140,7 +164,10 @@ def assemble(shots: list[dict], dialogue: dict, subtitle_path: str | None, out_p
     work = out_path.parent / f"{out_path.stem}_segments"
     work.mkdir(parents=True, exist_ok=True)
 
-    timeline = plan_pieces(build_timeline(assignment, dialogue["lines"], dialogue["duration"]), shots, max_still)
+    clip_seconds = {i: _duration(s["video_path"]) for i, s in enumerate(shots)
+                    if max_still and s.get("video_path") and not s.get("lipsync")}
+    timeline = plan_pieces(build_timeline(assignment, dialogue["lines"], dialogue["duration"]), shots, max_still,
+                           clip_seconds)
     seg_files = []
     for n, seg in enumerate(timeline):
         shot = shots[seg["index"]]

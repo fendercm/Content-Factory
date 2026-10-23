@@ -1,5 +1,6 @@
 """Тесты сериального пайплайна без сети: разбор сценария, раскадровка, таймлайн, озвучка, KIE."""
 
+from itertools import accumulate
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -579,3 +580,28 @@ def test_storyboard_dark_light_is_brightened():
     assert shots["memory_1"]["setting_en"] == "a bright kitchen in the early evening"
     from agents.scene_agent import _shot_prompt   # кадры из старой раскадровки (возобновление) — тоже
     assert "Dimly" not in _shot_prompt(SERIES, {"client_visual_en": "x"}, {"characters": [], "prompt_en": "Dimly lit hall"})
+
+
+def test_plan_pieces_snaps_to_frames_and_replaces_frozen_clip_tail():
+    from agents.series_assembly import FPS, plan_pieces
+    shots = [{"image_path": "a.png"}, {"image_path": "d.png", "video_path": "d.mp4"},
+             {"image_path": "l.png", "video_path": "l.mp4", "lipsync": True}]
+    # отрезки серии 2 после темпа ×1.15: без привязки к сетке кадров копилось до 0.15 с
+    durations = [6.035, 3.113, 6.939, 6.122, 2.226, 5.948, 1.913, 6.243, 4.939, 6.087, 4.835, 3.073]
+    timeline = [{"index": 0, "duration": d, "clip": False} for d in durations]
+    pieces = plan_pieces(timeline, shots, max_still=3.0)
+    for p in pieces:
+        assert p["duration"] * FPS == pytest.approx(round(p["duration"] * FPS))   # целое число кадров
+    assert sum(p["duration"] for p in pieces) == pytest.approx(sum(durations), abs=0.5 / FPS)
+    edges = list(accumulate(p["duration"] for p in pieces))
+    for seg_end in accumulate(durations):                          # каждая смена кадра — не дальше полукадра
+        assert min(abs(e - seg_end) for e in edges) <= 0.5 / FPS + 1e-9
+    # анимация 5 с на 7.98-секундном отрезке: 6 с клипа с замедлением, остаток — снимок с наездом, не стоп-кадр
+    pieces = plan_pieces([{"index": 1, "duration": 7.98, "clip": True}], shots, max_still=3.0, clip_seconds={1: 5.0})
+    assert [(p["clip"], p["punch"]) for p in pieces] == [(True, False), (False, True)]
+    assert pieces[0]["duration"] == pytest.approx(6.0) and pieces[1]["duration"] == pytest.approx(1.98, abs=1 / FPS)
+    # хвост короче секунды, липсинк и монтаж без max_still — один кусок клипа, как раньше
+    for seg, kw in (({"index": 1, "duration": 6.5, "clip": True}, {"max_still": 3.0}),
+                    ({"index": 2, "duration": 9.0, "clip": True}, {"max_still": 3.0}),
+                    ({"index": 1, "duration": 9.0, "clip": True}, {})):
+        assert [p["clip"] for p in plan_pieces([seg], shots, **kw)] == [True]
