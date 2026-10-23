@@ -178,3 +178,30 @@ def test_critic_script_numbered_bold_escaped_or_list_is_parsed(monkeypatch, seri
         assert ep["title"] == "Бублик" and ep["lines"][0]["emotion"] == "тихо"
     monkeypatch.setattr(aa, "_llm", lambda *a, **k: '{"watch": 6, "script": "  "}')
     assert aa.critique_episode({"lines": lines}, series, edit=True)["script"] is None
+
+
+def test_best_version_counts_failed_checks(monkeypatch, series):
+    """Версия на 8 с двумя проваленными пунктами не обходит версию на 7 со всеми пунктами."""
+    edited = [dict(l) for l in BUBLIK["lines"]]
+    edited[-1] = {**edited[-1], "text": "Наверное, мне стоит подумать."}
+    critic = iter([
+        {"checks": {k: True for k in aa._CRITIC_CHECKS}, "watch": 7, "fixes": ["усилить"],
+         "script": _screenplay(edited)},
+        {"checks": {"turn": False, "logic": False}, "watch": 8, "fixes": ["поворот"], "script": "не сценарий"},
+    ])
+
+    def fake_llm(messages, tier, json_mode, max_tokens, caller):
+        if caller == "anthology_story":
+            return json.dumps({"story": "история", **BUBLIK["case"]}, ensure_ascii=False)
+        if caller == "anthology_critic":
+            return json.dumps(next(critic), ensure_ascii=False)
+        return _screenplay(BUBLIK["lines"])
+
+    monkeypatch.setattr(aa, "_llm", fake_llm)
+    ep = aa.write_from_pitch(series, PITCH)
+    assert [r["score"] for r in ep["critic"]["rounds"]] == [7, 8]
+    assert ep["critic"]["score"] == 7 and ep["critic"]["failed"] == []
+    assert ep["lines"][-1]["text"] == BUBLIK["lines"][-1]["text"]
+    # при равной разнице — меньше провалов; без оценки — хуже любой оценённой
+    rank = lambda s, f: aa._review_rank({"score": s, "failed": ["x"] * f})
+    assert rank(8, 1) < rank(7, 0) < rank(9, 1) and aa._review_rank({"score": None, "failed": []}) < rank(1, 5)

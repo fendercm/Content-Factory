@@ -906,10 +906,18 @@ def _lab_problems(ep: dict, series: dict) -> list[str]:
     return problems
 
 
+def _review_rank(review: dict) -> tuple:
+    """Чем больше, тем лучше версия. Проваленный пункт стоит балла «досмотрит»: 8 с двумя провалами
+    хуже 7 без провалов; при равенстве — меньше провалов. Без оценки (критик упал) — хуже любой оценённой."""
+    if review["score"] is None:
+        return (float("-inf"), 0)
+    return (review["score"] - len(review["failed"]), -len(review["failed"]))
+
+
 def write_from_pitch(series: dict, pitch: dict, episode_no: int = 1) -> dict:
     """
     Завязка → история → диалог по тактам → критик оценивает и сам правит текст → до CRITIC_ROUNDS кругов.
-    Возвращает лучший вариант (по оценке критика среди прошедших проверки) с историей и замечаниями.
+    Возвращает лучший вариант (_review_rank: оценка минус проваленные пункты) с историей и замечаниями.
     """
     dev = develop_story(series, pitch)
     case, story = dev["case"], dev["story"]
@@ -947,7 +955,7 @@ def write_from_pitch(series: dict, pitch: dict, episode_no: int = 1) -> dict:
         review = critique_episode(ep, series, edit=rnd < CRITIC_ROUNDS)
         rounds.append({"score": review["score"], "failed": review["failed"], "fixes": review["fixes"],
                        "drop_line": review["drop_line"], "words": len(spoken_text(ep).split())})
-        if best is None or (review["score"] or 0) > (best[1]["score"] or 0):
+        if best is None or _review_rank(review) > _review_rank(best[1]):
             best = (ep, review)
         passed = review["score"] is None or (review["score"] >= CRITIC_PASS and not review["failed"])
         if passed or not review.get("script"):
